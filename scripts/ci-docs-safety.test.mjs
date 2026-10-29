@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -369,6 +369,56 @@ test('tck-promoted-gate filter covers every broker src module the TCK surface im
     }
   }
   assert.deepEqual([...uncovered].sort(), [], 'TCK surface imports outside the tck filter skip the promoted TCK jobs');
+});
+
+// The broker runs in-repo workspace packages (`a2a-*`, imported by bare
+// specifier) inside the same JSON-RPC surface: the review-lineage engine moved
+// out of `packages/broker/src` into `packages/review-lifecycle` (#2477), and
+// `packages/broker/src/**` no longer matches it. Follow the surface's relative
+// imports transitively, and every workspace package reached that way (through
+// its root entry point) must be in the filter too.
+test('tck-promoted-gate filter covers every workspace package the TCK surface reaches (#2477)', () => {
+  const gate = readFileSync(join(repoRoot, '.github/workflows/tck-promoted-gate.yml'), 'utf8');
+  const tckBlock = gate.match(/^ {12}tck:\n((?: {14}.*\n)+)/m)?.[1];
+  assert.ok(tckBlock, 'tck filter block not found');
+  const globs = [...tckBlock.matchAll(/^ {14}- '([^']+)'$/gm)].map((m) => m[1]);
+  const covered = (file) => globs.some((glob) => (glob.endsWith('/**')
+    ? file.startsWith(glob.slice(0, -2))
+    : file === glob));
+
+  const workspaceDirs = new Map(readdirSync(join(repoRoot, 'packages'))
+    .filter((dir) => existsSync(join(repoRoot, 'packages', dir, 'package.json')))
+    .map((dir) => [JSON.parse(readFileSync(join(repoRoot, 'packages', dir, 'package.json'), 'utf8')).name, `packages/${dir}`]));
+
+  const src = 'packages/broker/src';
+  const queue = [
+    ...readdirSync(join(repoRoot, src, 'a2a'))
+      .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))
+      .map((name) => `${src}/a2a/${name}`),
+    `${src}/server.ts`,
+  ];
+  const seen = new Set();
+  const reached = new Set();
+  while (queue.length) {
+    const file = queue.pop();
+    if (seen.has(file) || !file.endsWith('.ts') || !existsSync(join(repoRoot, file))) continue;
+    seen.add(file);
+    const dir = file.slice(0, file.lastIndexOf('/'));
+    for (const [, spec] of readFileSync(join(repoRoot, file), 'utf8').matchAll(/\b(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g)) {
+      if (spec.startsWith('.')) {
+        queue.push(join(dir, spec).replace(/\.js$/, '.ts'));
+      } else if (workspaceDirs.has(spec.split('/')[0])) {
+        const pkgDir = workspaceDirs.get(spec.split('/')[0]);
+        if (pkgDir !== 'packages/broker' && !reached.has(pkgDir)) {
+          reached.add(pkgDir);
+          queue.push(`${pkgDir}/src/index.ts`);
+        }
+      }
+    }
+  }
+  assert.ok(reached.has('packages/review-lifecycle'), 'the TCK surface reaches a2a-review-lifecycle through core/broker.ts');
+  const uncovered = [...reached].filter((pkgDir) => !covered(`${pkgDir}/src/index.ts`));
+  assert.deepEqual(uncovered.sort(), [], 'workspace packages the TCK surface runs must be in the tck filter');
 });
 
 test('package exposes tracked markdown link validation script', () => {

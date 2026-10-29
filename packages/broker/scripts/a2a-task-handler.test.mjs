@@ -2296,7 +2296,7 @@ test("lineage-bound review: handler output feeds the worker producer and the bro
     const result = handleTask(task, lineageEnv(bin));
     assert.equal(result.error, undefined);
     const { planReviewReport } = await import("../dist/workers/review-report-producer.js");
-    const { authorizeReviewerReviewLineageReport } = await import("../dist/review-lifecycle/review-report-source.js");
+    const { authorizeReviewerReviewLineageReport } = await import("a2a-review-lifecycle");
     const plan = planReviewReport({ task, result: result.result, workerId: "reviewer-node" });
     assert.equal(plan.kind, "report", JSON.stringify(plan));
     assert.equal(plan.request.receipt.verdict, "fail");

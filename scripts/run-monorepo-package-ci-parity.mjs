@@ -119,6 +119,24 @@ export const PACKAGE_CI_SURFACES = {
       requiredFiles: ['README.md', 'scripts/coverage-baseline-report.mjs'],
     },
   },
+  'review-lifecycle': {
+    packageDir: 'packages/review-lifecycle',
+    // (#2085) no package-scoped floor command — see the broker surface note.
+    // (#2085) no standalone check/build: pretest runs the build before test.
+    // #2477: this suite left the broker test manifest with the code; the
+    // package tests read the repo-root fixtures/review-lifecycle/ replays.
+    commands: [
+      ['npm', ['test', '-w', 'packages/review-lifecycle']],
+      ['npm', ['run', 'coverage:baseline', '-w', 'packages/review-lifecycle']],
+    ],
+    metadata: {
+      private: true,
+      license: 'MIT',
+      requiredScripts: ['build', 'check', 'test', 'coverage:baseline'],
+      requiredFiles: ['README.md', 'scripts/coverage-baseline-report.mjs'],
+      requiredExports: ['.'],
+    },
+  },
 };
 
 function fail(message) {

@@ -4,6 +4,7 @@
     { "path": "packages/policy-referee" },
     { "path": "packages/attestation" },
     { "path": "packages/nclex-evaluation" },
+    { "path": "packages/review-lifecycle" },
     { "path": "packages/broker" }
   ]
 }

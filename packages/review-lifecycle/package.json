@@ -1,0 +1,46 @@
+{
+  "name": "a2a-review-lifecycle",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Bounded PR review lifecycle engine: review-lineage contracts, canonical-JSON hashing, finding ledgers, source authorization, observation, and offline scorecard",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jinwon-int/a2a-nexus.git",
+    "directory": "packages/review-lifecycle"
+  },
+  "homepage": "https://github.com/jinwon-int/a2a-nexus/tree/main/packages/review-lifecycle",
+  "bugs": {
+    "url": "https://github.com/jinwon-int/a2a-nexus/issues"
+  },
+  "files": [
+    "dist",
+    "scripts",
+    "README.md",
+    "package.json"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json",
+    "check": "tsc -b tsconfig.json",
+    "pretest": "npm run build",
+    "test": "node --test dist/*.test.js",
+    "coverage:baseline": "npm run build && node scripts/coverage-baseline-report.mjs"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^6.0.3"
+  }
+}

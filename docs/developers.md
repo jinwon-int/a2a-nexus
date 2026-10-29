@@ -12,6 +12,7 @@
 | `packages/attestation/` | Attestation | Verdict signing, evidence assembly, redaction/spawn gates. |
 | `packages/policy-referee/` | Policy referee | Declarative broker policy evaluation at create/claim time. |
 | `packages/nclex-evaluation/` | NCLEX evaluation | Content-PR evaluation preset and merge-ready projection. |
+| `packages/review-lifecycle/` | Review lifecycle | Bounded PR review lifecycle engine: review-lineage contracts, canonical-JSON hashing, source authorization, offline scorecard CLI. The broker keeps persistence and HTTP routes. |
 | `contracts/`, `fixtures/` | Shared contracts | Cross-package contracts and public-safe fixtures only. |
 
 Do not import another package's internal `src/` path. Use package public

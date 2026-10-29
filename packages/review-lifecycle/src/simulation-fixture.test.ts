@@ -11,7 +11,7 @@ import {
 } from "./simulation-fixture.js";
 
 const FIXTURE_DIR = fileURLToPath(
-  new URL("../../../../fixtures/review-lifecycle/", import.meta.url),
+  new URL("../../../fixtures/review-lifecycle/", import.meta.url),
 );
 const EXPECTED_FIXTURES = [
   "converging.json",

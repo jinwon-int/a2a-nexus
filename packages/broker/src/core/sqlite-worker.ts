@@ -10,7 +10,7 @@
 import { parentPort, workerData } from "node:worker_threads";
 import { SqliteBrokerStateStore } from "./store.js";
 import type { BrokerSnapshot, BrokerStateSaveHints, SqliteBrokerLoadSource } from "./store.js";
-import type { ProjectedReviewLineageObservation } from "../review-lifecycle/observation.js";
+import type { ProjectedReviewLineageObservation } from "a2a-review-lifecycle";
 import type {
   AuthorizedReviewLineageSourceAdmissionV1,
 } from "./review-lineage-observation-store.js";

@@ -68,6 +68,7 @@ for (const dir of packages) {
     'a2a-attestation',
     'a2a-nclex-evaluation',
     'a2a-policy-referee',
+    'a2a-review-lifecycle',
   ]);
   for (const name of Object.keys(manifest.dependencies ?? {})) {
     if (!RUNTIME_DEPENDENCY_ALLOWLIST.has(name)) {
@@ -106,7 +107,7 @@ function runSolutionBuild() {
   const tsc = createRequire(path.join(root, 'scripts', 'check-packages.mjs')).resolve('typescript/bin/tsc');
   const result = spawnSync('node', [tsc, '-b', 'tsconfig.json'], { cwd: root, encoding: 'utf8' });
   return {
-    dir: 'solution (broker + policy-referee + attestation + nclex-evaluation)',
+    dir: 'solution (broker + policy-referee + attestation + nclex-evaluation + review-lifecycle)',
     status: result.status ?? 1,
     output: `${result.stdout ?? ''}${result.stderr ?? ''}`,
   };
@@ -118,7 +119,13 @@ const results = manifestsOnly
       runSolutionBuild(),
       ...(await Promise.all(
         runnable
-          .filter((dir) => dir !== 'packages/broker' && dir !== 'packages/policy-referee' && dir !== 'packages/attestation' && dir !== 'packages/nclex-evaluation')
+          .filter((dir) => ![
+            'packages/broker',
+            'packages/policy-referee',
+            'packages/attestation',
+            'packages/nclex-evaluation',
+            'packages/review-lifecycle',
+          ].includes(dir))
           .map(runCheck),
       )),
     ];

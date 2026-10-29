@@ -6,25 +6,19 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { Worker } from "node:worker_threads";
 
-import { intentHash } from "../review-lifecycle/canonical-json.js";
 import {
+  intentHash,
   deriveObservationIdempotencyKey,
   parseReviewLineageObservation,
-  type ProjectedReviewLineageObservation,
-} from "../review-lifecycle/observation.js";
-import {
   authorizeOperatorReviewLineageCreate,
-} from "../review-lifecycle/lineage-create-source.js";
-import {
   authorizeOperatorReviewLineageCancel,
-} from "../review-lifecycle/operator-cancel-source.js";
-import {
   projectReviewLineageProducerFact,
-} from "../review-lifecycle/producer-contract.js";
+} from "a2a-review-lifecycle";
 import type {
+  ProjectedReviewLineageObservation,
   IntentContractV1,
   ReviewLineageBudgetV1,
-} from "../review-lifecycle/types.js";
+} from "a2a-review-lifecycle";
 import {
   REVIEW_LINEAGE_AUTHORIZED_SOURCE_EVENT_TABLE,
   REVIEW_LINEAGE_OBSERVATION_LEDGER_TABLE,

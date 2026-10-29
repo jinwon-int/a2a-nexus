@@ -12,8 +12,10 @@ import type {
 } from "./types.js";
 import type { CrossBrokerTerminalBriefProjection } from "./cross-broker-terminal-brief.js";
 import type { PersistedWavePlan } from "./wave-plan-store.js";
-import type { ReviewLineageRecord } from "../review-lifecycle/types.js";
-import type { ProjectedReviewLineageObservation } from "../review-lifecycle/observation.js";
+import type {
+  ReviewLineageRecord,
+  ProjectedReviewLineageObservation,
+} from "a2a-review-lifecycle";
 import type {
   AuthorizedReviewLineageSourceAdmissionV1,
   ReviewLineageObservationApplicationResult,

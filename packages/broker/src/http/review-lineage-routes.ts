@@ -13,8 +13,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
-import { ObservationValidationError } from "../review-lifecycle/observation.js";
-import { SourceCarrierValidationError } from "../review-lifecycle/source-carrier.js";
+import {
+  ObservationValidationError,
+  SourceCarrierValidationError,
+} from "a2a-review-lifecycle";
 import {
   assertRequesterHasRole,
   type A2AWorkerRouteScope,

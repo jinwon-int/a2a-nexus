@@ -7,14 +7,12 @@ import test from "node:test";
 import {
   findingSignature,
   intentHash,
-} from "../review-lifecycle/canonical-json.js";
-import {
   parseReviewLineageObservation,
-} from "../review-lifecycle/observation.js";
+} from "a2a-review-lifecycle";
 import type {
   IntentContractV1,
   ReviewLineageBudgetV1,
-} from "../review-lifecycle/types.js";
+} from "a2a-review-lifecycle";
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
 import { SqliteBrokerStateStore } from "../core/store.js";
 import { handleReviewLineageRoutesIfMatched } from "./review-lineage-routes.js";

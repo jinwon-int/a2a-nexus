@@ -3,8 +3,11 @@ import test from "node:test";
 
 import { SqliteBrokerStateStore } from "../core/store.js";
 import type { TaskRecord, TaskResult } from "../core/types.js";
-import { findingSignature, intentHash } from "../review-lifecycle/canonical-json.js";
-import { authorizeReviewerReviewLineageReport } from "../review-lifecycle/review-report-source.js";
+import {
+  findingSignature,
+  intentHash,
+  authorizeReviewerReviewLineageReport,
+} from "a2a-review-lifecycle";
 import { A2A_WORKER_ROUTE_SCOPES } from "../core/request-security.js";
 import { jsonHeaders, startTestServer } from "../server-test-helpers.js";
 import { A2ABrokerWorker } from "../worker.js";

@@ -8,31 +8,19 @@ import test from "node:test";
 import {
   findingSignature,
   intentHash,
-} from "../review-lifecycle/canonical-json.js";
-import {
   authorizeOperatorReviewLineageCorrectionGeneration,
-} from "../review-lifecycle/correction-generation-source.js";
-import {
   authorizeOperatorReviewLineageCreate,
-} from "../review-lifecycle/lineage-create-source.js";
-import {
   authorizeOperatorReviewLineageCancel,
-} from "../review-lifecycle/operator-cancel-source.js";
-import {
   projectReviewLineageProducerFact,
-} from "../review-lifecycle/producer-contract.js";
-import {
   authorizeReviewerReviewLineageReport,
-} from "../review-lifecycle/review-report-source.js";
-import {
   REVIEW_LINEAGE_SOURCE_CARRIER_KIND,
   authorizeReviewLineageSourceCarrier,
   createReviewLineageTrustedSourceContext,
-} from "../review-lifecycle/source-carrier.js";
+} from "a2a-review-lifecycle";
 import type {
   IntentContractV1,
   ReviewLineageBudgetV1,
-} from "../review-lifecycle/types.js";
+} from "a2a-review-lifecycle";
 import {
   REVIEW_LINEAGE_AUTHORIZED_SOURCE_EVENT_TABLE,
   REVIEW_LINEAGE_OBSERVATION_LEDGER_TABLE,

@@ -48,6 +48,7 @@ export const ASYNC_SAFETY_PACKAGES = Object.freeze([
   'packages/docker-runner',
   'packages/nclex-evaluation',
   'packages/policy-referee',
+  'packages/review-lifecycle',
 ]);
 
 /**

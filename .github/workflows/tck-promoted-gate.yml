@@ -56,6 +56,16 @@ jobs:
               # about one minute of wall clock. ci-docs-safety.test.mjs checks
               # that every module the surface imports stays covered.
               - 'packages/broker/src/**'
+              # In-repo workspace packages the broker runs inside that surface
+              # (bare `a2a-*` imports). The review-lineage engine left
+              # packages/broker/src for packages/review-lifecycle (#2477), so
+              # the broker glob alone no longer covers it.
+              # ci-docs-safety.test.mjs follows the surface's imports into
+              # these packages and checks that each one stays listed.
+              - 'packages/attestation/**'
+              - 'packages/nclex-evaluation/**'
+              - 'packages/policy-referee/**'
+              - 'packages/review-lifecycle/**'
               - 'packages/broker/scripts/a2a-tck-harness*.mjs'
               - 'packages/broker/scripts/append-tck-history.mjs'
               - 'packages/broker/scripts/check-tck-regressions.mjs'

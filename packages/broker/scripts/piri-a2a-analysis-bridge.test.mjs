@@ -888,7 +888,7 @@ test("piri output schema admits the reviewLineage block with the broker's findin
 	const block = schema.properties.reviewLineage;
 	assert.equal(block.additionalProperties, false);
 	assert.deepEqual(block.required, ["newFindings", "resolvedFindingIds", "reopenedFindingIds"]);
-	const types = readFileSync(resolve(import.meta.dirname, "../src/review-lifecycle/types.ts"), "utf8");
+	const types = readFileSync(resolve(import.meta.dirname, "../../review-lifecycle/src/types.ts"), "utf8");
 	const union = (name) => [...types.match(new RegExp(`export type ${name} =([^;]+);`))[1].matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
 	const item = block.properties.newFindings.items.properties;
 	assert.deepEqual(item.severity.enum, union("FindingSeverity"));

@@ -3,8 +3,8 @@
  * NCLEX content PR → review-lineage spec (#2362, #2274/#2351 follow-up).
  *
  * One lineage per (nclex PR, reviewer role). A lineage models a single
- * reviewer stream (review-lifecycle/lifecycle.ts: the first clean `pass`
- * terminates it, later reports are `report_out_of_state`), so the parallel
+ * reviewer stream (packages/review-lifecycle/src/lifecycle.ts: the first
+ * clean `pass` terminates it, later reports are `report_out_of_state`), so the parallel
  * role lanes of one NCLEX head (content_clinical, evidence_adversarial,
  * high_risk_safety) must never share a lineage.
  *

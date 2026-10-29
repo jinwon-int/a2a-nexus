@@ -10,7 +10,7 @@ This guide is the external-reader path for a disposable local A2A Nexus broker p
 
 ### Supported install path
 
-Source-only install from this checkout is the **only supported install path** for the public alpha. All workspace packages (`packages/broker`, `packages/docker-runner`, `packages/attestation`, `packages/policy-referee`, `packages/nclex-evaluation`) are `private` and unpublished, so there is **no supported `npm install`, Docker image, or GHCR pull path** — those remain approval-gated and are not authorized by public repository visibility alone. Clone the repo, then build and run from `packages/*` as shown below. See [Product boundaries](product-boundaries.md) for the full supported-vs-unsupported surface.
+Source-only install from this checkout is the **only supported install path** for the public alpha. All workspace packages (`packages/broker`, `packages/docker-runner`, `packages/attestation`, `packages/policy-referee`, `packages/nclex-evaluation`, `packages/review-lifecycle`) are `private` and unpublished, so there is **no supported `npm install`, Docker image, or GHCR pull path** — those remain approval-gated and are not authorized by public repository visibility alone. Clone the repo, then build and run from `packages/*` as shown below. See [Product boundaries](product-boundaries.md) for the full supported-vs-unsupported surface.
 
 Install dependencies without lifecycle scripts:
 

@@ -9,7 +9,8 @@ for issue #1518:
 - `scope-drift.json` — an out-of-scope candidate is rejected while the
   original head remains current.
 
-`packages/broker/src/review-lifecycle/simulation-fixture.ts` strictly parses
+`packages/review-lifecycle/src/simulation-fixture.ts` (workspace package
+`a2a-review-lifecycle`, moved from the broker in #2477) strictly parses
 each fixture and runs the existing pure lifecycle engine. The fixtures have no
 broker, task-completion, retry, finalizer, network, persistence, branch-write,
 or deployment authority.
@@ -17,7 +18,8 @@ or deployment authority.
 Run the focused harness:
 
 ```bash
-npx tsx --test packages/broker/src/review-lifecycle/simulation-fixture.test.ts
+npm run build -w packages/review-lifecycle
+node --test packages/review-lifecycle/dist/simulation-fixture.test.js
 ```
 
 Actual task-completion observation remains a later contract-first slice. The

@@ -18,6 +18,7 @@ const DEFAULT_SCAN_ROOTS = [
   'packages/docker-runner/src',
   'packages/policy-referee/src',
   'packages/attestation/src',
+  'packages/review-lifecycle/src',
 ];
 
 const SCANNED_EXTENSIONS = new Set(['.mjs', '.js', '.cjs', '.ts', '.tsx', '.sh', '.bash']);

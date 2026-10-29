@@ -1011,7 +1011,7 @@ export const terminalOutboxPayloadIssueSchema =
 // Investigated for the same drift and there is none — the same call as
 // `wave-plan-routes.ts` in #2055, recorded here so it is not re-investigated.
 // Every `/review-lineages*` write goes through
-// `review-lifecycle/observation.ts`, which rebuilds `contract`, `budget`,
+// `packages/review-lifecycle/src/observation.ts`, which rebuilds `contract`, `budget`,
 // `receipt` and each ledger finding as *fresh* objects out of per-field
 // parsers (`intentContractAt`, `budgetAt`, `findingAt`); `createLineage`
 // then assembles the record from those normalized values and broker-owned

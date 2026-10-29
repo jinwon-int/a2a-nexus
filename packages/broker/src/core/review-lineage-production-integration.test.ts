@@ -8,16 +8,14 @@ import test from "node:test";
 import {
   findingSignature,
   intentHash,
-} from "../review-lifecycle/canonical-json.js";
-import {
   ObservationValidationError,
   parseReviewLineageObservation,
-  type ProjectedReviewLineageObservation,
-} from "../review-lifecycle/observation.js";
+} from "a2a-review-lifecycle";
 import type {
+  ProjectedReviewLineageObservation,
   IntentContractV1,
   ReviewLineageBudgetV1,
-} from "../review-lifecycle/types.js";
+} from "a2a-review-lifecycle";
 import { InMemoryA2ABroker } from "./broker.js";
 import {
   REVIEW_LINEAGE_AUTHORIZED_SOURCE_EVENT_TABLE,
