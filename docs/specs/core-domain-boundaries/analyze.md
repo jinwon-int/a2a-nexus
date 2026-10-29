@@ -4,6 +4,11 @@
 > #2453 (parent #1601, modularize-first). No runtime change, no file move, no
 > new script, and no gate change is made or authorized by this document.
 > Measured at `origin/main` `30832157` (2026-10-29).
+> **Revised 2026-10-29** after an independent review: Step 0 now has a fifth
+> edit (the earlier numbers applied the sink only to edges that were already
+> cross-domain), the TCK filter risk is resolved by #2476, more path consumers
+> are listed, and the owner decisions are recorded in
+> [Owner decisions](#owner-decisions-2026-10-29).
 
 ## Summary
 
@@ -26,31 +31,36 @@
   today. Three things cause it: the kernel is not a sink (8 value edges out of
   it), there are 4 value back-edges into `broker.ts`, and a handful of
   misplaced shared shapes.
-- **Step 0 removes every value-level domain cycle with no file move.** The
-  step is: sink 15 shared shape and port modules into the kernel, reclassify 6
-  modules, and re-point 4 imports. After it, the target allow-matrix shows
-  **1 value violation** (from 20) and 24 type-only violations (from 57). The
-  value-only domain graph without the facade becomes acyclic.
-- **Proposed order:** PR-0 enforcement scaffold and Step 0, then execution
-  (pilot, S), policy-approval (largest win, low inbound coupling), claim,
-  evidence-retrieval, dispatch, completion, then the outer layers (observability,
-  transport, store). The kernel and the facade stay at the `core/` root.
-- **Enforcement:** extend `scripts/check-broker-core-dependency-isolation.mjs`
-  and its existing test with a directory-derived domain map and an
-  allow-matrix. No new `scripts/*.mjs` and no new npm script, because both
-  budgets are full (160/160, 45/45).
+- **Step 0 removes every value-level domain cycle with no file move — with
+  five edits.** The step is: sink 15 shared shape and port modules into the
+  kernel, reclassify 6 modules, re-point 4 imports, and sink the
+  `CURRENT_BROKER_STATE_VERSION` constant that `store-schemas` (a sunk module)
+  value-imports from `store-contracts`. After it, the target allow-matrix shows
+  **1 value violation (from 20) and 23 type-only (from 37); 24 total (from
+  57)**, and the value-only domain graph without the facade is acyclic.
+  Without the fifth edit the result is 25 / 2 and {completion, dispatch,
+  execution, kernel, store} stays cyclic.
+- **Proposed order (owner decision 2026-10-29):** the #2454 package move first,
+  then PR-0 (enforcement scaffold with a committed filename-to-domain map, plus
+  Step 0), then retire the CLI-only policy modules, then execution as the move
+  pilot. The later order (policy-approval, claim, evidence-retrieval, dispatch,
+  completion, outer layers) stays a proposal. The kernel and the facade stay at
+  the `core/` root.
+- **Enforcement:** replace the line-based import scan in
+  `scripts/check-broker-core-dependency-isolation.mjs` (it misses the
+  multi-line imports used by 83 core modules) and drive it from the domain map
+  with an allow-matrix. No new `scripts/*.mjs` and no new npm script, because
+  both budgets are full (160/160, 45/45).
 - **Biggest hidden risks:**
-  0. The core JSON-RPC TCK safety net named in #2453 does **not** run on
-     `core/`-only PRs today. The `changes` filter of `tck-promoted-gate.yml`
-     lists `src/a2a/**` and `server.ts`, but not `src/core/**`, and skipped
-     jobs satisfy the required checks.
+  0. ~~The TCK filter skipped `core/`-only PRs~~ — **resolved by #2476**
+     (`tck-promoted-gate` filter is now `packages/broker/src/**`).
   1. The broker test manifest globs `dist/core/*.test.js` without recursion,
-     so moved tests would silently stop running.
+     so moved tests would silently stop running (`tests 0` still exits 0).
   2. A domain directory whose name contains a ceremony marker (for example
      `approval`) would turn every module inside it into a ceremony module.
-  3. 62 operator scripts import `dist/core/<file>.js` paths. A past subdirectory
-     move broke 17 scripts this way; `scripts/check-dist-import-resolution.mjs`
-     now guards against it.
+  3. 58 operator scripts import literal `dist/core/<file>.js` paths, and a few
+     build the path at runtime, which `scripts/check-dist-import-resolution.mjs`
+     does not see (see Risks 4).
 
 ## Inputs and relation to prior work
 
@@ -310,8 +320,9 @@ What the matrix shows:
 | file | value only | **none** |
 | domain | all / value | 1 component containing all 11 non-test domains |
 | domain | value, facade and test-support excluded | 1 component: claim, completion, dispatch, evidence-retrieval, execution, kernel, observability, policy-approval, store |
-| domain | value, no facade, after the Step-0 sink only | {completion, dispatch, execution, kernel, policy-approval} and {evidence-retrieval, store} |
-| domain | value, no facade, after the full Step 0 (below) | **none** |
+| domain | value, no facade, after the Step-0 sink only | 1 component: claim, completion, dispatch, evidence-retrieval, execution, kernel, observability, policy-approval, store |
+| domain | value, no facade, after Step 0 edits 1–4 | {completion, dispatch, execution, kernel, store} (`store-schemas` → `store-contracts` becomes kernel → store) |
+| domain | value, no facade, after the full Step 0 (all five edits, below) | **none** |
 
 The 31-module type-only cycle is the `broker.ts` / `store.ts` / `broker-*`
 extraction family. The 4-module cycle is `store-contracts`, `store-schemas`,
@@ -374,8 +385,8 @@ split are listed here with a proposed disposition.
 | `broker-payload-validators` | kernel | dispatch/policy importers only | **dispatch** (create-time validators) |
 | `broker-worker-status` | claim | observability ×3, claim ×2 | **kernel** (pure status derivation) |
 | `broker-task-request-normalizers` | dispatch | imported by 3 kernel modules | **kernel** |
-| `complexity-orchestration-recommendation` / `-dry-run` | dispatch / policy-approval | each other | keep the complexity chain together. See "needs confirmation". |
-| `review-lineage-observation-store` (and siblings) | evidence-retrieval | store | **store**, or move to `src/review-lifecycle/`. See "needs confirmation". |
+| `complexity-orchestration-recommendation` / `-dry-run` | dispatch / policy-approval | each other | split it: runtime-reached links stay, CLI-only links retire. See [Owner decisions](#owner-decisions-2026-10-29) #4. |
+| `review-lineage-observation-store` (and siblings) | evidence-retrieval | store | **store** (owner decision #3; the `src/review-lifecycle/` option is withdrawn). |
 
 The other 20 flags are single-vote cases with no structural effect:
 `a2a-execution-policy`, `a2a-intent-router`, `a2a-round-policy`,
@@ -447,18 +458,31 @@ persistence only through ports: the `*-repository` interfaces and
 | state | violations (all / value) |
 |---|---:|
 | today | 57 / 20 |
-| after the Step-0 sink only (15 modules counted as kernel) | 32 / 9 |
-| after the full Step 0 | **24 / 1** |
+| after the Step-0 sink only (15 modules counted as kernel) | 33 / 10 |
+| after Step 0 edits 1–4 (sink, reclassify, re-point) | 25 / 2 |
+| after the full Step 0 (plus the `CURRENT_BROKER_STATE_VERSION` sink) | **24 / 1** |
 
-The full Step 0 is: the sink, plus 6 reclassifications, plus 4 re-pointed
-imports. The 6 reclassifications are:
+These rows apply the sink and reclassification to **all** edges, including
+edges that were intra-domain before (the first revision applied them only to
+already-cross-domain edges and reported 32 / 9 and 24 / 1 without the fifth
+edit). The full Step 0 is: the sink, plus 6 reclassifications, plus 4
+re-pointed imports, plus one constant move. The 6 reclassifications are:
 
 - `broker-payload-validators` and `runtime-safety-gates` → dispatch
 - `…-sidecar-integration-rehearsal` → completion
 - the three `review-lineage-*` modules → store
 
 The 4 re-pointed imports are the three facade value back-edges plus
-`HOT_READ_HARD_MAX_LIMIT`.
+`HOT_READ_HARD_MAX_LIMIT` (a symbol move into a kernel module, not only a
+specifier change). The facade re-points are behavior-preserving: `broker.ts`
+re-exports `BrokerError` and `DEFAULT_BROKER_RETENTION_POLICY` from their
+defining modules (same binding) and has no top-level side effects. Of the four
+facade back-edges, the `broker-test-helpers` one is type-erased by `tsc`, so
+three remain at runtime.
+
+The fifth edit moves `CURRENT_BROKER_STATE_VERSION` from `store-contracts` into
+`store-schemas` (kernel) and re-exports it from `store-contracts`, so existing
+importers are unchanged.
 
 The 15 sunk modules are `broker-task-request-normalizers`,
 `task-error-details`, `broker-wake-normalizers`, `store-schemas`,
@@ -467,7 +491,7 @@ The 15 sunk modules are `broker-task-request-normalizers`,
 
 The remaining value violation is `broker-stale-task-requeue` →
 `broker-task-diagnostics` (`getTaskRequeueReason`): move the function to claim,
-or sink it. The 24 type-only violations break down as:
+or sink it. The 23 type-only violations break down as:
 
 - 8 `import type … from "./broker.js"` re-export shortcuts
 - 6 domain types aggregated by `broker-contracts`
@@ -495,8 +519,8 @@ or `policy` inflate them.
 
 | step | scope | prerequisites (edge fixes) | rule turned on | guard | size |
 |---|---|---|---|---|---|
-| **PR-0** | Enforcement scaffold plus Step 0, no moves | Re-point 3 facade value imports and the `HOT_READ_HARD_MAX_LIMIT` import. Fix the test-manifest glob. Add `packages/broker/src/core/**` to the `tck-promoted-gate` `changes` filter. | Extend `check-broker-core-dependency-isolation.mjs`: domain = `core/<dir>/`; the root is *legacy*; allow-matrix; value edges strict for carved dirs; type edges ratcheted against a JSON baseline | Existing checker unit test (synthetic fixtures); broker build; test-count parity | S (about 200 lines of script and test, about 6 source lines) |
-| **1** | `core/execution/` (9 modules + 5 tests, 2.3k LOC) | none after PR-0 | execution may import kernel, dispatch, claim; only completion and above may import execution | build, broker test manifest (count unchanged), `tck-promoted-gate` (only once PR-0 widens its filter), `check-dist-import-resolution`, script budget flat | S (about 23 import sites). It is the pilot that proves the recipe. |
+| **PR-0** | Enforcement scaffold plus Step 0, no moves (after the #2454 package move lands — both edit the same `test-manifest.json` line) | The five Step 0 edits. Make the test-manifest glob recursive and add a test-count comparison (no such tool exists yet). Teach `check-dist-import-resolution` (or the new checker) about computed specifiers and the `src/core/*.mjs` source imports listed in Risks 4. | Replace the line-based scan in `check-broker-core-dependency-isolation.mjs` with a parser that sees multi-line and `export … from` imports; domain = committed filename-to-domain map with a completeness check (every core module declared); allow-matrix; value edges strict; type edges ratcheted against a JSON baseline | Checker unit test (synthetic fixtures, incl. multi-line imports); broker build; test-count comparison; TCK (#2476) | M (the scanner replacement makes the earlier "S" estimate too small) |
+| **1** | `core/execution/` (9 modules + 5 tests, 2.3k LOC) | none after PR-0 and the CLI-only retirement | execution may import kernel, dispatch, claim; only completion and above may import execution | build, broker test manifest (count unchanged), `tck-promoted-gate`, `check-dist-import-resolution`, script budget flat | S (about 23 import sites; 5 dist and 4 src references outside core). It is the pilot that proves the recipe. |
 | **2a/2b** | `core/policy/` (35 modules after 2 reclassifications, plus their tests; about 14.7k LOC): 2a the orchestration-intelligence and complexity chains; 2b Terminal Brief approval, source-public, proposals, `policy` | Reclassify `runtime-safety-gates` → dispatch and `…-sidecar-integration-rehearsal` → completion (they stay at the root until those steps). Keep A7 on hold or land it first, but not concurrently. | policy may import kernel and the loop domains; the loop domains may not import policy | the same guards; ceremony count must stay 20 | M + M (about 61 import sites, 44 of them `packages/broker/scripts` CLI wrappers) |
 | **3** | `core/claim/` (11 modules after the sink + 5 tests) | Move `getTaskRequeueReason` to claim; sink `broker-worker-status` and `broker-wake-normalizers` (they stay at the root) | claim may import only the kernel | same | S (about 22 sites) |
 | **4** | `core/evidence/` (8 modules after the `review-lineage-*` decision) | Decide `review-lineage-*` placement; sink `HOT_READ_HARD_MAX_LIMIT` | evidence may import kernel and the loop domains | same | S–M (about 28 sites) |
@@ -511,17 +535,21 @@ similarity, and the broker test count should be identical before and after.
 
 ## Enforcement design (for PR-0; not implemented here)
 
-- **Where.** Extend `scripts/check-broker-core-dependency-isolation.mjs` and
+- **Where.** Rework `scripts/check-broker-core-dependency-isolation.mjs` and
   `scripts/check-broker-core-dependency-isolation.test.mjs`. Both are already
   in the release gate, and `check:broker-core-dependency-isolation` already
   exists. This adds no `scripts/*.mjs` (160/160) and no npm script (45/45).
-  A small JSON baseline for type-only violations, next to
-  `docs/readiness/public-language-baseline.json` or under `docs/ops/`, is data
-  and does not count against any budget.
-- **Domain derivation.** The first path segment under `core/` is the domain.
-  Root files are *legacy* until step 7, then *kernel*, with `broker.ts` as the
-  facade. Directories make the check self-describing, so it needs no
-  filename-to-domain map that could drift.
+  The current scanner reads imports line by line, so it misses multi-line
+  imports (83 core modules use them) and `import()`; it must be replaced, not
+  extended. A small JSON baseline for type-only violations and the domain map,
+  under `docs/ops/`, are data and do not count against any budget.
+- **Domain derivation (owner decision: map first, move later).** A committed
+  filename-to-domain JSON map assigns every core module to a domain, and the
+  check fails when a module is missing from the map, so a new file must
+  declare its domain and the map cannot drift silently. This protects the
+  Step 0 result immediately, with no file move. Physical `core/<domain>/`
+  directories come later, one domain per move PR; when a domain directory
+  exists, its path is authoritative and the map entry is removed.
 - **Rules.**
   1. A carved domain imports only its own directory, the root, and the
      allowed domains.
@@ -535,20 +563,19 @@ similarity, and the broker test count should be identical before and after.
 
 ## Risks
 
-0. **The TCK gate skips `core/` changes.** `tck-promoted-gate.yml` gates its
-   six promoted jobs with a `changes` path filter. Those jobs are agent_card,
-   version negotiation, artifact/message projection, error codes and
-   ErrorInfo, task not found / invalid task, and streaming / subscribe
-   ordering. The filter covers `packages/broker/src/a2a/**`, `server.ts`, TCK
-   scripts and docs, but not `packages/broker/src/core/**`. A skipped job
-   reports `skipped`, which satisfies the required check, so a pure `core/`
-   move PR is not TCK-gated today. PR-0 should add `packages/broker/src/core/**`
-   to the filter. That is a CI-only change. Alternatively, each move PR runs
-   the workflow through `workflow_dispatch` and links the run.
+0. **The TCK gate skipped `core/` changes — resolved.** #2476 (`508b4f18`)
+   widened the `tck-promoted-gate.yml` `changes` filter to
+   `packages/broker/src/**` and added a test that every module the TCK surface
+   imports stays covered. A core-only change was shown to run all promoted
+   jobs (run 40870395308).
 1. **Silent test loss.** `packages/broker/scripts/test-manifest.json` runs
-   `dist/core/*.test.js`, which is not recursive. Moved tests would stop
-   running while CI stays green. PR-0 must add `dist/core/*/*.test.js` and
-   compare the test count before and after.
+   `dist/core/*.test.js` through `/bin/sh`, which is not recursive, and a glob
+   with no match still exits 0 (`tests 0`). Moved tests would stop running
+   while CI stays green. Other places pin the flat layout too: the
+   `ratchet-harness` list, 4 broker npm scripts with `dist/core` test paths,
+   and 4 core tests that resolve `../../fixtures` from `__dirname`. PR-0 must
+   make the glob recursive and add a before/after test-count comparison (no
+   such tool exists today).
 2. **Ceremony budget by path.** `isCeremonyModule()` matches the *relative
    path*. A directory named `policy-approval/`, `approval/` or `rehearsal/`
    would mark every module inside it as ceremony and fail the 21 budget. Use
@@ -556,10 +583,20 @@ similarity, and the broker test count should be identical before and after.
 3. **Core-module budget.** The module count is recursive, so `git mv` is
    neutral. A barrel `index.ts` per domain would add one module each and fail
    181/181. Either skip barrels or offset them by retiring CLI-only modules.
-4. **Compiled-path consumers.** 62 `packages/broker/scripts/*.mjs` files plus
-   several `scripts/lib/*` files import `dist/core/<file>.js`. The precedent:
-   a subdirectory move once left 17 scripts dead. Run
-   `scripts/check-dist-import-resolution.mjs` on every move PR.
+4. **Compiled-path consumers.** 62 `packages/broker/scripts/*.mjs` files
+   mention `dist/core/` paths: 58 import literal `dist/core/<file>.js`
+   specifiers, 2 build the path at runtime, and 2 are coverage data. (The
+   first revision also claimed `scripts/lib/*` files import `dist/core`; that
+   was wrong.) The precedent: a subdirectory move once left 17 scripts dead.
+   `scripts/check-dist-import-resolution.mjs` checks literal specifiers only,
+   so these break silently:
+   - computed specifiers: `export-sqlite-state.mjs` (template literal to
+     `store.js`; a DB recovery tool), `operator-approval-request.mjs`
+     (`join()`), and 3 `test/conformance/*` files (`path.join` to `dist/core`);
+   - source imports of `src/core/requester-role-contract.mjs` from
+     `scripts/a2a-dispatch-round.mjs` and `scripts/lib/task-assign-entrypoint.mjs`.
+   Path strings stored as data also need updates: `shared-state-*-v1-values`
+   `sourceRefs`, the secret-scan allowlist, and two coverage floors.
 5. **Runtime path joins.** `sqlite-worker.js` is resolved relative to
    `sqlite-worker-thread-persistence`, so both must move together.
    `request-security.ts` imports `./requester-role-contract.mjs`.
@@ -573,41 +610,48 @@ similarity, and the broker test count should be identical before and after.
 8. **Heuristic error.** The classification is filename-led and override-heavy
    (53 overrides). The numbers are stable per rule set, but a reviewer may
    move individual modules. Each such move shifts the per-domain LOC, not the
-   file-level graph or the cycle findings.
+   file-level graph or the cycle findings. The domain regex `dry-?run` also
+   differs from the budget's `dry-run` marker.
+9. **Survey-script limits.** The appendix script does not treat
+   `export * from` as an edge and classifies an un-awaited `import()` as
+   type-only. Neither pattern occurs in `core/` today, so the numbers stand,
+   but PR-0's checker must handle both.
 
-## Needs confirmation
+## Owner decisions (2026-10-29)
 
-1. **Physical directories or a data map.** This analysis proposes
-   `core/<domain>/` directories, so the check derives domains from paths. The
-   alternative is a committed filename-to-domain JSON map with no moves: less
-   churn, but the map can drift. Owner choice.
-2. **Ordering of execution vs policy-approval.** Execution is proposed as the
-   pilot because it is small and cycle-free. Starting with policy-approval
-   instead gives the largest LOC win first and lines up with the #1601
-   spin-offs (policy-referee, attestation).
-3. **`review-lineage-*` placement** (1,068 LOC). Options are store, evidence,
-   or out of `core/` into `src/review-lifecycle/`, the bounded-review-lifecycle
-   spin-off candidate.
-4. **The complexity chain** (classifier → recommendation → dry-run → envelope →
-   plan draft → preflight seal, 3.5k LOC). Is it dispatch planning, or approval
-   ceremony to be retired as policy data? Today it is split across two buckets.
-5. **Whether type-only edges should eventually be strict** or stay ratcheted.
-   They are erased at runtime, but they are what keeps the domain SCC alive.
-6. **CLI-only policy-approval modules** (8 with no `src` importer). Should
-   they be retired before the move? That would avoid renaming code that should
-   become policy data.
-7. **Widening the `tck-promoted-gate` filter to `src/core/**`.** This makes
-   the TCK run on every `core/` PR, a CI-time cost. The alternative is a
-   per-move-PR `workflow_dispatch` run with a linked result.
+The owner accepted the review recommendations ("1", 2026-10-29). These replace
+the earlier "Needs confirmation" list.
+
+| # | Question | Decision | Why |
+|---|---|---|---|
+| 1 | Physical directories or a data map | **Hybrid: committed filename-to-domain map with a completeness check in PR-0; physical moves later, one domain per PR** | Protects Step 0 at once with no churn across 60+ path consumers; avoids leaving the root unchecked for ~6 PRs; the completeness check prevents map drift |
+| 2 | Pilot: execution or policy-approval | **execution** | Few outside references (5 dist, 4 src); policy-approval is entangled with the A7 hold, ceremony naming, 44 CLI wrappers, and the retirement in #6 |
+| 3 | `review-lineage-*` placement | **store** | Matches the #2454 decision record (persistence adapters stay in the broker); `review-lineage-observation-store` value-imports `store-schemas`, so putting it in the review-lifecycle package would make that package depend on the broker. The `src/review-lifecycle/` option is withdrawn. |
+| 4 | Complexity chain | **Split it.** classifier, recommendation, envelope-draft and plan-draft are reached at runtime through `http/complexity-orchestration-routes.ts` (`/complexity-orchestration/recommendation`, `/complexity-execution-plan/draft`) and stay in dispatch/policy. dry-run, preflight-seal and operator-approval-request are CLI-only and become retirement candidates. | Route retirement, if ever, only after call-count instrumentation shows zero use (#1665 style) |
+| 5 | Type-only edges strict or ratcheted | **Ratchet now (baseline only goes down); strict per domain when a domain is extracted** | 8 of the 23 are `broker.js` re-export shortcuts (easy); 6 are `broker-contracts` aggregation (structural); strict now would bloat PR-0 |
+| 6 | Retire CLI-only policy modules before moving | **Yes, before the moves.** The 8: `broker-rehearsal-manifest`, `complexity-orchestration-dry-run`, `operator-approval-request`, `orchestration-intelligence-worker-subagent-spawn-bridge`, `source-public-approval-rehearsal`, `source-public-execution-orchestrator`, `terminal-brief-auto-closeout-dryrun-runner`, `two-broker-safety-matrix` | No functional change since August and no workflow reference. The source-public gate uses its own `scripts/lib/source-public-gate-kit`. `operator-approval-request` needs its npm script and 8 docs cleaned up in the same PR. |
+| 7 | TCK filter | **Done in #2476** | — |
+
+**Sequence:** (1) this correction; (2) the #2454 `packages/review-lifecycle`
+move (child issue); (3) PR-0; (4) CLI-only retirement; (5) execution pilot.
+(2) and (3) edit the same `test-manifest.json` line, so they merge in that
+order, not in parallel. Each implementation PR is approved separately; this
+record authorizes none of them.
 
 ## Appendix: survey script
 
 Throwaway. Do not add it under `scripts/` because of the budget. Copy it to a
 scratch directory outside the checkout and run
 `node survey.mjs <checkout> > out.json`. At `30832157` it prints `base`
-`{"files":181,"loc":67936,"edges":521,"typeOnly":208}`. The "full Step 0" row
-applies the reclassifications and re-points listed above to `crossEdges` and
-re-runs the same matrix.
+`{"files":181,"loc":67936,"edges":521,"typeOnly":208}`.
+
+**Correction (2026-10-29):** the script's "full Step 0" row applies the
+reclassifications and re-points only to `crossEdges`. That misses edges that
+were intra-domain before the sink (for example `store-schemas` →
+`store-contracts`, store-internal before, kernel → store after). Sink and
+reclassify must be applied to **all** edges; doing so gives the corrected
+numbers in the violations table (33 / 10, 25 / 2, and 24 / 1 with the fifth
+edit).
 
 <details>
 <summary>survey.mjs</summary>
