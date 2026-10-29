@@ -48,9 +48,14 @@ jobs:
           ref: ${{ github.event.merge_group.head_sha || github.ref }}
           filters: |
             tck:
-              - 'packages/broker/src/a2a/**'
-              - 'packages/broker/src/fixtures/a2a-protocol-compatibility.ts'
-              - 'packages/broker/src/server.ts'
+              # The whole broker source, not just the JSON-RPC surface
+              # (src/a2a, server.ts): that surface is implemented by core/,
+              # http/, diagnostics/ and top-level server-* modules, and a
+              # core-only PR used to skip these jobs while `skipped` still
+              # satisfied the required checks (#2474). A full promoted run is
+              # about one minute of wall clock. ci-docs-safety.test.mjs checks
+              # that every module the surface imports stays covered.
+              - 'packages/broker/src/**'
               - 'packages/broker/scripts/a2a-tck-harness*.mjs'
               - 'packages/broker/scripts/append-tck-history.mjs'
               - 'packages/broker/scripts/check-tck-regressions.mjs'

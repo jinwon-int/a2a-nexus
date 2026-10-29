@@ -16,8 +16,9 @@ test("promoted TCK gate keeps the documented agent_card category", () => {
 
   assert.match(workflow, /name:\s*tck-promoted-gate/);
   assert.match(workflow, /pull_request:/);
-  assert.match(workflow, /packages\/broker\/src\/a2a\/\*\*/);
-  assert.match(workflow, /packages\/broker\/src\/server\.ts/);
+  // The whole broker source covers the JSON-RPC surface (src/a2a, server.ts)
+  // and the modules that implement it (#2474).
+  assert.match(workflow, /- 'packages\/broker\/src\/\*\*'/);
   assert.match(workflow, /npm run tck:run -- --level must --transport jsonrpc --/);
   assert.match(workflow, /--ignore=tests\/compatibility\/core_operations/);
   assert.match(workflow, /--ignore=tests\/compatibility\/grpc/);
