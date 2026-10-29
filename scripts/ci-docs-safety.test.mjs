@@ -338,6 +338,39 @@ test('tck-promoted-gate filter covers the shared tck-promoted-setup action (#225
   assert.ok(paths.includes('.github/actions/tck-promoted-setup/**'), 'action edits must run the promoted TCK jobs');
 });
 
+// The TCK drives the JSON-RPC surface (`src/a2a/**`, `src/server.ts`), which is
+// implemented by modules elsewhere under `packages/broker/src` (core/, http/,
+// diagnostics/, top-level server-* files). A change to any of them must run the
+// promoted TCK jobs; a filter that names only the surface lets a core-only PR
+// report `skipped`, which satisfies the required checks (#2474).
+test('tck-promoted-gate filter covers every broker src module the TCK surface imports (#2474)', () => {
+  const gate = readFileSync(join(repoRoot, '.github/workflows/tck-promoted-gate.yml'), 'utf8');
+  const tckBlock = gate.match(/^ {12}tck:\n((?: {14}.*\n)+)/m)?.[1];
+  assert.ok(tckBlock, 'tck filter block not found');
+  const globs = [...tckBlock.matchAll(/^ {14}- '([^']+)'$/gm)].map((m) => m[1]);
+  const covered = (file) => globs.some((glob) => (glob.endsWith('/**')
+    ? file.startsWith(glob.slice(0, -2))
+    : file === glob));
+
+  const src = 'packages/broker/src';
+  const surface = [
+    ...readdirSync(join(repoRoot, src, 'a2a'))
+      .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))
+      .map((name) => `${src}/a2a/${name}`),
+    `${src}/server.ts`,
+  ];
+  const uncovered = new Set();
+  for (const file of surface) {
+    const dir = file.slice(0, file.lastIndexOf('/'));
+    for (const [, spec] of readFileSync(join(repoRoot, file), 'utf8').matchAll(/from ['"](\.{1,2}\/[^'"]+)['"]/g)) {
+      const target = join(dir, spec).replace(/\.js$/, '.ts');
+      if (!covered(file)) uncovered.add(file);
+      if (!covered(target)) uncovered.add(target);
+    }
+  }
+  assert.deepEqual([...uncovered].sort(), [], 'TCK surface imports outside the tck filter skip the promoted TCK jobs');
+});
+
 test('package exposes tracked markdown link validation script', () => {
   const scripts = packageJson().scripts ?? {};
   assert.equal(scripts['check:markdown-links'], 'node scripts/check-markdown-links.mjs');
