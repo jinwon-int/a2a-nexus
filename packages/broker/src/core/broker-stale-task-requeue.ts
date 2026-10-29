@@ -6,7 +6,7 @@
 // move — state effects are callback-injected via StaleTaskRequeueContext (the
 // broker-exchange.ts pattern); InMemoryA2ABroker keeps public delegators.
 import { REQUEUE_EXHAUSTED_ERROR_CODE } from "./broker-error.js";
-import { getTaskRequeueReason } from "./broker-task-diagnostics.js";
+import { resolveTaskStalenessSignalMs } from "./broker-status-predicates.js";
 import { isWorkerStale } from "./broker-worker-status.js";
 import type { TaskUpdateReason } from "./broker-contracts.js";
 import type {
@@ -18,6 +18,46 @@ import type {
   TombstoneReason,
   WorkerRecord,
 } from "./types.js";
+
+/**
+ * Why a claimed/running task should be requeued, or null when it should not.
+ * Moved from broker-task-diagnostics (#2453 Step 0) so the claim domain does
+ * not value-import observability; broker-task-diagnostics re-exports it.
+ */
+export function getTaskRequeueReason(
+  task: TaskRecord,
+  olderThanMs: number,
+  staleWorkerIds: Set<string>,
+  nowMs: number,
+): string | null {
+  if (task.status !== "claimed" && task.status !== "running") {
+    return null;
+  }
+
+  if (task.completedAt) {
+    return null;
+  }
+
+  // A checkpointed task is deliberately suspended (paused/awaiting_operator),
+  // not stale: requeueing it would strip the public input-required projection
+  // while the checkpoint remains. Checkpoint expiry is handled separately by
+  // the timeout sweep (contract: cancelled on timeout), not by requeue.
+  if (task.checkpoint) {
+    return null;
+  }
+
+  if (task.claimedBy && staleWorkerIds.has(task.claimedBy)) {
+    return `worker ${task.claimedBy} is stale`;
+  }
+
+  const lastActivityAt = resolveTaskStalenessSignalMs(task, nowMs);
+
+  if (nowMs - lastActivityAt >= olderThanMs) {
+    return `task exceeded stale threshold ${olderThanMs}ms`;
+  }
+
+  return null;
+}
 
 export interface StaleTaskRequeueContext {
   tasks: ReadonlyMap<string, TaskRecord>;

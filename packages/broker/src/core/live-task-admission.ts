@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { BrokerError } from "./broker.js";
+import { BrokerError } from "./broker-error.js";
 import { buildLiveApprovalConsumptionKey, type LiveApprovalScope } from "./runtime-safety-gates.js";
 import type { BrokerStateStore } from "./store-contracts.js";
 import type { CreateTaskRequest, WorkerView } from "./types.js";

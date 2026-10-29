@@ -12,6 +12,14 @@ import type {
   WorkerRecord,
 } from "./types.js";
 
+/**
+ * Hard upper bound for one hot-table read page (#2078 C2). Lives in this kernel
+ * module (#2453 Step 0) so the task read model can bound full-list reads without
+ * importing the SQLite projection layer; store-hot-select-projections re-exports
+ * it, so its existing importers are unchanged.
+ */
+export const HOT_READ_HARD_MAX_LIMIT = 25_000;
+
 export function taskMatchesFilters(task: TaskRecord, filters?: TaskListFilters): boolean {
   if (filters?.exchangeId && task.exchangeId !== filters.exchangeId) {
     return false;

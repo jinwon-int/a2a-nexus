@@ -9,6 +9,8 @@
 > cross-domain), the TCK filter risk is resolved by #2476, more path consumers
 > are listed, and the owner decisions are recorded in
 > [Owner decisions](#owner-decisions-2026-10-29).
+> **PR-0 implemented** (enforcement plus Step 0): see
+> [PR-0 implemented](#pr-0-implemented).
 
 ## Summary
 
@@ -637,6 +639,48 @@ move (child issue); (3) PR-0; (4) CLI-only retirement; (5) execution pilot.
 (2) and (3) edit the same `test-manifest.json` line, so they merge in that
 order, not in parallel. Each implementation PR is approved separately; this
 record authorizes none of them.
+
+## PR-0 implemented
+
+PR-0 (#2453) landed the enforcement scaffold and the full Step 0, with no file
+move:
+
+- **Map and allow-matrix:** `docs/ops/broker-core-domain-map.json` assigns all
+  181 core modules (post-Step 0: kernel 27, policy-approval 35, completion 24,
+  store 20, dispatch 18, transport 17, claim 11, execution 9, observability 9,
+  evidence-retrieval 8, test-support 2, facade 1) and holds the matrix above
+  (`mayImport`, plus `mayImportTypeOnly` for dispatch → claim).
+- **Checker:** `npm run check:broker-core-dependency-isolation` (release-gate
+  step `broker-core-dependency-isolation`; unit test
+  `scripts/check-broker-core-dependency-isolation.test.mjs`). It parses imports
+  with the TypeScript compiler API and fails on a module missing from the map, a
+  map entry with no module, any value edge the matrix forbids, or a type-only
+  violation not in `docs/ops/broker-core-type-edge-baseline.json`.
+- **Step 0 result:** 0 value violations (the remaining `getTaskRequeueReason`
+  edge was fixed by moving the function into `broker-stale-task-requeue`, with
+  a re-export from `broker-task-diagnostics`) and 23 type-only violations, all
+  baselined.
+- **Silent test loss:** the manifest runs `'dist/core/**/*.test.js'` (quoted, so
+  node expands it recursively). `run-test-manifest.mjs` fails when a test step
+  matches 0 files, or when a compiled test with a source file is matched by no
+  step.
+- **Computed paths:** `scripts/check-dist-import-resolution.mjs` inventories the
+  Risks 4 consumers (`CORE_PATH_CONSUMERS`). It fails on a new unlisted
+  consumer, a stale entry, or a reference that no longer resolves.
+
+**Updating the map and the baseline:**
+
+1. A new core module: add `"<file>.ts": "<domain>"` to `modules`. Once a
+   `core/<domain>/` directory exists, a file inside it takes its domain from
+   the directory and must not have a map entry.
+2. A value violation: re-point the import to the defining module, move the
+   symbol down a layer (re-exporting from its old home), or change the module's
+   domain. Do not widen `mayImport` without review.
+3. A type-only violation: never add it to the baseline by hand. Re-point the
+   import or declare a narrow port. When a baselined entry is fixed, the check
+   reports it; run
+   `node scripts/check-broker-core-dependency-isolation.mjs --lower-baseline`.
+   That command refuses to write if it would add an entry.
 
 ## Appendix: survey script
 

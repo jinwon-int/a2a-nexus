@@ -159,6 +159,101 @@ export function collectUnresolved(root, { scriptDirs = SCRIPT_DIRS, exists = fs.
   return { checked, unresolved };
 }
 
+// ---------------------------------------------------------------------------
+// Computed broker-core path consumers (#2453 PR-0, analyze.md Risks 4).
+//
+// The literal scan above cannot see a core path that is built at runtime
+// (template literal, path.join) or held as data, nor a *source* import of
+// `src/core/*.mjs`. Moving a core module would break those silently. This
+// inventory names every non-test script that mentions a broker core JS path
+// outside a literal compiled-output import specifier, and the check below
+//   1. fails when a scanned script gains such a reference that is not listed
+//      here (so a new consumer is declared, and found by the next move);
+//   2. fails when a listed script no longer contains its reference (stale);
+//   3. fails when a listed reference no longer resolves to a core module
+//      (dist/core/<x>.js -> src/core/<x>.ts; src/core/<x>.mjs as is), which is
+//      exactly what a `git mv` into core/<domain>/ does.
+// References are broker-package-relative (`dist/core/...`, `src/core/...`).
+
+const SELF = fileURLToPath(import.meta.url);
+
+/** Directories (non-recursive) scanned for computed core-path consumers. */
+export const CORE_PATH_SCAN_DIRS = ['scripts', 'scripts/lib', 'packages/broker/scripts', 'packages/broker/scripts/lib', 'test/conformance', 'test/conformance/lib'];
+
+export const CORE_PATH_CONSUMERS = {
+  // DB recovery tool: template literal `${rootDir}/dist/core/store.js` in import().
+  'packages/broker/scripts/export-sqlite-state.mjs': ['dist/core/store.js'],
+  // join(REPO_ROOT, "dist/core/operator-approval-request.js") in import().
+  'packages/broker/scripts/operator-approval-request.mjs': ['dist/core/operator-approval-request.js'],
+  // Conformance harness: path.join(root, 'packages/broker/dist/core/...').
+  'test/conformance/check-three-component-e2e.mjs': ['dist/core/store.js'],
+  'test/conformance/check-trace-propagation.mjs': ['dist/core/broker.js'],
+  'test/conformance/lib/ensure-built.mjs': ['dist/core/broker.js', 'dist/core/store.js'],
+  // Source imports of the requester-role contract (not compiled output).
+  'scripts/a2a-dispatch-round.mjs': ['src/core/requester-role-contract.mjs'],
+  'scripts/lib/task-assign-entrypoint.mjs': ['src/core/requester-role-contract.mjs'],
+  // Coverage floors keyed by compiled path (data).
+  'scripts/check-promotion-capstone-conformance.mjs': ['dist/core/release-evidence.js'],
+  'packages/broker/scripts/coverage-baseline-report.mjs': ['dist/core/release-evidence.js', 'dist/core/release-evidence.test.js'],
+};
+
+const CORE_PATH_REFERENCE = /(?:packages\/broker\/)?((?:dist|src)\/core\/[\w.-]+(?:\/[\w.-]+)*\.m?js)\b/g;
+
+/** Broker core JS paths a script mentions outside a literal compiled-output import specifier. */
+export function extractCorePathReferences(source) {
+  const covered = [];
+  for (const match of source.matchAll(IMPORT_SPECIFIER)) {
+    if (extractDistSpecifiers(match[0]).length > 0) covered.push([match.index, match.index + match[0].length]);
+  }
+  const refs = new Set();
+  for (const match of source.matchAll(CORE_PATH_REFERENCE)) {
+    if (covered.some(([start, end]) => match.index >= start && match.index < end)) continue;
+    const lineStart = source.lastIndexOf('\n', match.index) + 1;
+    if (/^\s*(?:\/\/|\/\*|\*)/.test(source.slice(lineStart, match.index))) continue; // comment line
+    refs.add(match[1]);
+  }
+  return [...refs].sort();
+}
+
+/** Resolve a broker-relative core reference to an existing source module. */
+export function corePathReferenceResolves(root, ref, exists = fs.existsSync) {
+  const broker = path.join(root, 'packages', 'broker');
+  if (exists(path.join(broker, ref))) return true;
+  if (ref.startsWith('dist/')) {
+    const source = path.join(broker, ref.replace(/^dist\//, 'src/').replace(/\.js$/, '.ts'));
+    return exists(source);
+  }
+  return false;
+}
+
+export function checkCorePathConsumers(root, { scanDirs = CORE_PATH_SCAN_DIRS, inventory = CORE_PATH_CONSUMERS, exists = fs.existsSync } = {}) {
+  const problems = [];
+  const found = new Map();
+  for (const dir of scanDirs) {
+    for (const file of listScriptFiles(path.join(root, dir))) {
+      if (/\.test\.m?js$/.test(file) || file === SELF) continue;
+      const refs = extractCorePathReferences(fs.readFileSync(file, 'utf8'));
+      if (refs.length) found.set(path.relative(root, file).split(path.sep).join('/'), refs);
+    }
+  }
+  for (const [file, refs] of found) {
+    const declared = new Set(inventory[file] ?? []);
+    for (const ref of refs) {
+      if (!declared.has(ref)) problems.push(`${file} references '${ref}' outside a literal import specifier; add it to CORE_PATH_CONSUMERS so a core move updates it`);
+    }
+  }
+  let checked = 0;
+  for (const [file, refs] of Object.entries(inventory)) {
+    const present = new Set(found.get(file) ?? []);
+    for (const ref of refs) {
+      checked += 1;
+      if (!present.has(ref)) problems.push(`CORE_PATH_CONSUMERS is stale: ${file} no longer references '${ref}'`);
+      else if (!corePathReferenceResolves(root, ref, exists)) problems.push(`${file} references '${ref}', which no longer resolves to a broker core module — update the computed path`);
+    }
+  }
+  return { checked, problems };
+}
+
 function main() {
   const { fail, finish } = createDocCheckContext({ name: 'dist import resolution' });
   const root = process.cwd();
@@ -171,7 +266,10 @@ function main() {
         'Point the specifier at the module\'s current path — `node --check` cannot catch this.',
     );
   }
-  finish(`dist import resolution ok: ${checked} specifiers`);
+  const consumers = checkCorePathConsumers(root);
+  console.log(`dist import resolution: ${consumers.checked} computed core-path references inventoried, ${consumers.problems.length} problem(s)`);
+  for (const problem of consumers.problems) fail(problem);
+  finish(`dist import resolution ok: ${checked} specifiers, ${consumers.checked} computed core-path references`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
