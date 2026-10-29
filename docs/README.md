@@ -32,6 +32,7 @@ It is the canonical workflow entry point; detailed references remain below.
 - [agent-payment-dispute-packet.md](agent-payment-dispute-packet.md) — source-only dispute evidence packet and offline verifier fixture
 - [adapter-migration-path.md](adapter-migration-path.md) — adapter migration design
 - [topology-decision-record.md](topology-decision-record.md) — topology ADR
+- [spin-off-extraction-decision-record.md](spin-off-extraction-decision-record.md) — review-lifecycle `packages/*` split and repo-extraction verdicts (#2454)
 - [termux-proot-distro-a2a-runner.md](termux-proot-distro-a2a-runner.md) — Termux worker setup
 
 ## Operating (operators and finalizers)
