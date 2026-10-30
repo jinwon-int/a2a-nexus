@@ -5,8 +5,8 @@
 import {
   computeTaskDiagnosticStatus,
   resolveTaskStalenessSignalMs,
-} from "./broker-status-predicates.js";
-import { isWorkerStale } from "./broker-worker-status.js";
+} from "../broker-status-predicates.js";
+import { isWorkerStale } from "../broker-worker-status.js";
 import type {
   A2AExchangeMessageRecord,
   AuditAction,
@@ -16,16 +16,16 @@ import type {
   TaskRecord,
   TaskTombstone,
   WorkerRecord,
-} from "./types.js";
+} from "../types.js";
 // TaskDiagnosticsOptions is defined and exported by broker.ts; imported here
 // type-only, so there is no runtime import cycle.
-import type { TaskDiagnosticsOptions } from "./broker.js";
-import { classifySameSourceRedispatch } from "../worker-review.js";
+import type { TaskDiagnosticsOptions } from "../broker.js";
+import { classifySameSourceRedispatch } from "../../worker-review.js";
 
 // The requeue-reason rule belongs to the claim domain and lives beside the
 // stale-task requeue engine (#2453 Step 0); re-exported here so existing
 // importers keep their specifier.
-export { getTaskRequeueReason } from "./claim/broker-stale-task-requeue.js";
+export { getTaskRequeueReason } from "../claim/broker-stale-task-requeue.js";
 
 export function collectThreadMessageIds(
   messages: A2AExchangeMessageRecord[],

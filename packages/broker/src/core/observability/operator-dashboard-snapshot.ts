@@ -1,4 +1,4 @@
-import { TERMINAL_TASK_STATUSES, type BrokerDashboard, type TaskDiagnosticReport, type TaskKind, type TaskLaneDecision, type TaskLaneReasonCode, type TaskRecord, type TaskStatus } from "./types.js";
+import { TERMINAL_TASK_STATUSES, type BrokerDashboard, type TaskDiagnosticReport, type TaskKind, type TaskLaneDecision, type TaskLaneReasonCode, type TaskRecord, type TaskStatus } from "../types.js";
 
 /**
  * Precomputed diagnostics shared between the dashboard snapshot and the alert

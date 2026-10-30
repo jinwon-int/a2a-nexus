@@ -12,7 +12,7 @@ import type {
   TaskRecord,
   TaskTombstone,
   WorkerRecord,
-} from "./types.js";
+} from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures

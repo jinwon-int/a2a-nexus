@@ -176,10 +176,10 @@ The `broker_audit_events` table uses a runtime-cap ring-buffer retention model:
   push out the oldest.
 - **Warning band at 80% of cap:** The health projection uses
   `DEFAULT_AUDIT_RUNTIME_LIMIT_WARNING_RATIO` (0.8, see
-  `src/core/hot-table-growth.ts`). With the default 5,000 cap, this fires at
+  `src/core/observability/hot-table-growth.ts`). With the default 5,000 cap, this fires at
   **4,000 rows**, not at the generic 1,000-row table threshold.
 - **Not critical by count alone at steady state:** The severity classifier
-  (`computeTableSeverity` in `src/core/hot-table-growth.ts`) does **not**
+  (`computeTableSeverity` in `src/core/observability/hot-table-growth.ts`) does **not**
   classify `broker_audit_events` as `critical` solely because it reached the
   generic `DEFAULT_SINGLE_TABLE_CRITICAL_ROWS` threshold (5,000). An actual
   pressure signal must be present: memory exceeding the critical threshold,

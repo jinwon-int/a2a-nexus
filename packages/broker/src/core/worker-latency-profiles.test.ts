@@ -5,7 +5,7 @@ import {
   aggregateWorkerLatencyProfiles,
   WORKER_RECEIPT_TELEMETRY_SCHEMA_VERSION,
   workerIdentityForTask,
-} from "./task-stats.js";
+} from "./observability/task-stats.js";
 import type { AuditEvent, TaskRecord } from "./types.js";
 
 function task(overrides: Partial<TaskRecord> & { id: string }): TaskRecord {

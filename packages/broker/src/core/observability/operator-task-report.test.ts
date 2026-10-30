@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { buildOperatorTaskReport } from "./operator-task-report.js";
-import type { TaskRecord } from "./types.js";
+import type { TaskRecord } from "../types.js";
 
 function task(overrides: Partial<TaskRecord> = {}): TaskRecord {
   const now = "2026-05-01T00:00:00.000Z";

@@ -9,7 +9,7 @@ import type { BoundedPoller, BoundedPollerOptions } from "./github/bounded-polle
 import type { GitHubIngestionService } from "./github/ingestion.js";
 import type { BrokerRuntimeHotLimitOptions } from "./broker-runtime-config.js";
 import type { WavePlanDagV2RecordStore } from "./wave-plan-dag-v2/record-store.js";
-import type { Alert, AlertScanResult } from "./core/alert-projection.js";
+import type { Alert, AlertScanResult } from "./core/observability/alert-projection.js";
 import type { BrokerError, BrokerRetentionPolicy, InMemoryA2ABroker } from "./core/broker.js";
 import type { A2AHttpSignatureKeyRegistry } from "./core/request-security.js";
 import type { BrokerStateStore, SqliteBrokerLoadSource } from "./core/store.js";

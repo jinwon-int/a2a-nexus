@@ -21,7 +21,7 @@ import {
 import {
   findLatestTaskAuditEvent,
   buildTaskDiagnosticReport,
-} from "./broker-task-diagnostics.js";
+} from "./observability/broker-task-diagnostics.js";
 import { normalizeWorkerRecord } from "./claim/broker-worker-identity.js";
 import {
   applyWorkerHeartbeatRuntimeUpdate,
@@ -84,7 +84,7 @@ import {
   isoNow,
   uniqueIds,
 } from "./broker-helpers.js";
-import { buildBrokerDashboard } from "./broker-dashboard.js";
+import { buildBrokerDashboard } from "./observability/broker-dashboard.js";
 import {
   addBrokerExchangeMessage,
   listBrokerExchangeMessages,
@@ -134,7 +134,7 @@ import {
 } from "./evidence-retrieval/broker-evidence-read.js";
 import { buildCleanupDryRunPlan } from "./broker-cleanup-discovery.js";
 import { buildWorkerCapacitySummary } from "./claim/broker-worker-capacity.js";
-import { buildCompactDiagnostics } from "./broker-compact-diagnostics.js";
+import { buildCompactDiagnostics } from "./observability/broker-compact-diagnostics.js";
 import {
   listBrokerWorkerViews,
   listBrokerWorkers,

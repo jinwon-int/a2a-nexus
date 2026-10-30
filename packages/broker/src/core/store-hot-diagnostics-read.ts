@@ -20,7 +20,7 @@ import type {
   BrokerHotHintCounts,
   BrokerHotTerminalOutboxDiagnostics,
   BrokerInvalidHotEntityRow,
-} from "./hot-diagnostics.js";
+} from "./observability/hot-diagnostics.js";
 import { taskSchema, workerSchema } from "./store-schemas.js";
 import type {
   BrokerHotTableLoadMetricEntry,

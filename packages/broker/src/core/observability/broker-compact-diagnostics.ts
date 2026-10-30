@@ -7,12 +7,12 @@
 //
 // This module imports only leaf helpers and constants plus type-only references
 // to broker.ts, so there is no runtime import cycle.
-import { countBy } from "./broker-helpers.js";
-import { computeTaskDiagnosticStatus } from "./broker-status-predicates.js";
-import { isWorkerStale } from "./broker-worker-status.js";
-import { REQUEUE_EXHAUSTED_ERROR_CODE } from "./broker-error.js";
-import type { AuditEvent, TaskRecord, TaskStatus, WorkerRecord } from "./types.js";
-import type { BrokerCompactDiagnostics, BrokerRetentionPolicy } from "./broker.js";
+import { countBy } from "../broker-helpers.js";
+import { computeTaskDiagnosticStatus } from "../broker-status-predicates.js";
+import { isWorkerStale } from "../broker-worker-status.js";
+import { REQUEUE_EXHAUSTED_ERROR_CODE } from "../broker-error.js";
+import type { AuditEvent, TaskRecord, TaskStatus, WorkerRecord } from "../types.js";
+import type { BrokerCompactDiagnostics, BrokerRetentionPolicy } from "../broker.js";
 
 export interface CompactDiagnosticsInput {
   tasks: TaskRecord[];

@@ -14,7 +14,7 @@ import type {
   TaskError,
   TaskTombstone,
   WorkerRecord,
-} from "./types.js";
+} from "../types.js";
 import type { HotTableGrowthProjection } from "./hot-table-growth.js";
 
 // ---------------------------------------------------------------------------

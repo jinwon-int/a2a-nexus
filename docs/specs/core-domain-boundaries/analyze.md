@@ -24,6 +24,8 @@
 > [Dispatch move](#dispatch-move).
 > **Completion move implemented** (split-order row 6): see
 > [Completion move](#completion-move).
+> **Observability move implemented** (split-order row 7, first of three
+> domains): see [Observability move](#observability-move).
 
 ## Summary
 
@@ -963,6 +965,30 @@ baseline.
 **Worker artifact:** `dist/core/github-task-completion.js` is in the worker
 dist closure and moves to `dist/core/completion/`. Like the dispatch move,
 this ships in one pack-built artifact with the next regular worker deploy.
+
+## Observability move
+
+The first of row 7's three domains. Row 7 is split into four PRs:
+observability, transport, store, and finally the root flip from *legacy* to
+*kernel*, which is a gate rule change.
+
+**Moved:** 9 modules (`alert-projection`, `broker-compact-diagnostics`,
+`broker-dashboard`, `broker-task-diagnostics`, `hot-diagnostics`,
+`hot-table-growth`, `operator-dashboard-snapshot`, `operator-task-report`,
+`task-stats`) and 5 tests to `packages/broker/src/core/observability/`.
+
+**Changes:**
+
+- 54 specifiers rewritten.
+- 15 path strings updated in docs and the piri A/B fixture.
+- 9 map entries removed; 3 type-baseline entries re-keyed.
+
+**Left unchanged on purpose:** `docs/ops/round-quality-scorecard.json`
+quotes `core/task-stats` inside historical round evidence text.
+
+**Results:** 175 core modules (observability 9), 96 map entries. Value
+violations stay at 0 and type-only at 23 = baseline. No observability module
+is in the worker dist closure.
 
 ## Appendix: survey script
 

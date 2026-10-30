@@ -75,7 +75,7 @@
       "sourcePaths": [
         "packages/broker/src/core/broker-status-predicates.ts",
         "packages/broker/src/core/execution/broker-task-checkpoint.ts",
-        "packages/broker/src/core/broker-task-diagnostics.ts",
+        "packages/broker/src/core/observability/broker-task-diagnostics.ts",
         "packages/broker/src/core/lifecycle.test.ts"
       ],
       "rubric": [

@@ -4,13 +4,13 @@ import type {
   TaskLaneReasonCode,
   TaskRecord,
   TaskStatus,
-} from "./types.js";
-import { TERMINAL_TASK_STATUSES } from "./types.js";
+} from "../types.js";
+import { TERMINAL_TASK_STATUSES } from "../types.js";
 import {
   FAST_LANE_ASSIGNMENT_MODE,
   FAST_LANE_ASSIGNMENT_VERSION,
   TASK_LANE_REASON_CODES,
-} from "../task-lane-classifier.js";
+} from "../../task-lane-classifier.js";
 
 const DEFAULT_MAX_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_TOP_ROUNDS = 10;

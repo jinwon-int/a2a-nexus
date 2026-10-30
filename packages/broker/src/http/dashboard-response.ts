@@ -1,16 +1,16 @@
 import { InMemoryA2ABroker } from "../core/broker.js";
 import { InMemoryRateLimiter, type RateLimitPressureSnapshot } from "../core/request-security.js";
 import type { BrokerDashboard } from "../core/types.js";
-import { projectAlerts, type AlertScanResult } from "../core/alert-projection.js";
+import { projectAlerts, type AlertScanResult } from "../core/observability/alert-projection.js";
 import { computeTaskDiagnosticStatus } from "../core/broker-status-predicates.js";
 import type { TaskDiagnosticReport } from "../core/types.js";
-import type { SharedTaskDiagnostics } from "../core/operator-dashboard-snapshot.js";
+import type { SharedTaskDiagnostics } from "../core/observability/operator-dashboard-snapshot.js";
 import type { BrokerHotEntityDiagnostics } from "../core/store.js";
-import type { HotTableGrowthProjection } from "../core/hot-table-growth.js";
+import type { HotTableGrowthProjection } from "../core/observability/hot-table-growth.js";
 import {
   buildOperatorDashboardSnapshot,
   type OperatorDashboardSnapshot,
-} from "../core/operator-dashboard-snapshot.js";
+} from "../core/observability/operator-dashboard-snapshot.js";
 import type {
   BrokerBuildInfo,
   BrokerPersistenceQueueDiagnostics,

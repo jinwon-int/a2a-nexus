@@ -8,7 +8,7 @@ import {
   summarizeTaskLatency,
   validateLaneAssignmentForStats,
 } from "./task-stats.js";
-import type { AuditEvent, TaskLaneAssignment, TaskLaneReasonCode, TaskRecord } from "./types.js";
+import type { AuditEvent, TaskLaneAssignment, TaskLaneReasonCode, TaskRecord } from "../types.js";
 
 function task(overrides: Partial<TaskRecord>): TaskRecord {
   const createdAt = overrides.createdAt ?? "2026-07-05T00:00:00.000Z";

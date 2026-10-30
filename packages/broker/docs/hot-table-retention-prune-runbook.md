@@ -93,7 +93,7 @@ npm run rollout -- broker_cleanup_safe_prune \
 ## 4. Health/Readiness Warnings
 
 The `/health` endpoint surfaces hot-table growth warnings through the
-`projectHotTableGrowth` projection (`src/core/hot-table-growth.ts`):
+`projectHotTableGrowth` projection (`src/core/observability/hot-table-growth.ts`):
 
 | Severity | Condition | Health Effect |
 |---|---|---|
@@ -154,7 +154,7 @@ is restored before resuming normal operation.
 - [hot-table-health.md](./hot-table-health.md) — RCA, mitigation guide, alert thresholds
 - [audit-retention-rollback-20260501.md](./audit-retention-rollback-20260501.md) —
   Audit retention hotfix & rollback proof
-- `src/core/hot-table-growth.ts` — Projection logic
+- `src/core/observability/hot-table-growth.ts` — Projection logic
 - `src/core/broker-cleanup.ts` — Dry-run planning & execution
 - `src/core/store.ts` — SQLite hot-table retention planners
 - `src/core/broker.ts` — `BrokerRetentionPolicy` defaults

@@ -116,7 +116,7 @@ v1은 exact structured key만 본다. orchestration key는 값이 `false`여도 
 
 `GET /stats/tasks` 응답에는 브로커가 기록한 섀도 판정의 코호트 집계인
 `laneCohorts`(`a2a.task-lane-shadow-cohorts.v1`)가 advisory로 포함된다.
-읽기 전용 순수 함수(`core/task-stats.ts`)로 계산되고 별도 루트/모듈 없이
+읽기 전용 순수 함수(`core/observability/task-stats.ts`)로 계산되고 별도 루트/모듈 없이
 기존 응답에 붙는다. 인증·창(window) 파라미터·기존 필드는 전부 그대로다.
 
 - **입력은 브로커 소유 `TaskRecord.laneAssignment`뿐**이다. payload의

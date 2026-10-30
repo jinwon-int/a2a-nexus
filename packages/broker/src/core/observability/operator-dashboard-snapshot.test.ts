@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { buildOperatorDashboardSnapshot } from "./operator-dashboard-snapshot.js";
-import type { BrokerDashboard, TaskDiagnosticReport, TaskRecord } from "./types.js";
+import type { BrokerDashboard, TaskDiagnosticReport, TaskRecord } from "../types.js";
 
 function task(overrides: Partial<TaskRecord> & Pick<TaskRecord, "id" | "status">): TaskRecord {
   return {
