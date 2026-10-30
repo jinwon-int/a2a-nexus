@@ -797,6 +797,14 @@ change (the only tightening: a `succeeded` lane whose own marker says
   one-line remedy, and the bridge — so the model — is never invoked. Unset pins
   are skipped. Auth and model-reachability probes are not part of this
   preflight (they cost a live call).
+- **Which bridge a worker runs (#2493).** Worker metadata
+  `analysisBridgeSha256` is the sha256 of the script bridge the worker loaded
+  at start, published whether the pin preflight passes or fails. Compare it
+  with `git show <rev>:packages/broker/scripts/<bridge>.mjs | sha256sum` to
+  name the bridge revision. `analysisBuildSha` is the worker's **dist build**
+  revision (`A2A_WORKER_BUILD_SHA`, else the generated build-info), not the
+  bridge: a script-only bridge sync leaves it unchanged. A bridge swapped
+  without a worker restart shows the old digest until the next start.
 - **Diversity.** The gate's `diversity` block measures pairwise line Jaccard
   over `findings ∪ risks ∪ recommendations` (whitespace-normalized sets) of the
   lanes that counted toward quorum: `n`, `n_distinct`, `mean_line_jaccard`,

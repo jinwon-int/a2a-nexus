@@ -462,3 +462,39 @@ test("a missing default bridge is still reported, not silently passed (#1597/#17
   assert.equal(probe.ready, false);
   assert.equal(probe.reason, "handler_artifact_missing");
 });
+
+test("#2493: analysisBridgeSha256 tracks the loaded bridge whether or not the pin passes, independent of analysisBuildSha", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-bridge-sha-"));
+  try {
+    const bridge = join(dir, "claude-a2a-analysis-bridge.mjs");
+    const env = { A2A_OPENCLAW_ANALYSIS_ENABLED: "1", A2A_HERMES_ANALYSIS_BIN: bridge, A2A_WORKER_BUILD_SHA: "39ec40ca" };
+    writeFileSync(bridge, "// bridge v1\n", "utf8");
+    const v1 = createHash("sha256").update(readFileSync(bridge)).digest("hex");
+    const first = withAnalysisProbeMetadata({}, probeAnalysisArtifactReadiness(env, true), env);
+    assert.equal(first?.analysisReady, "true");
+    assert.equal(first?.analysisBridgeSha256, v1);
+    assert.equal(first?.analysisBuildSha, "39ec40ca");
+
+    // A script-only bridge sync: the bridge digest moves, the dist build revision does not.
+    writeFileSync(bridge, "// bridge v2\n", "utf8");
+    const v2 = createHash("sha256").update(readFileSync(bridge)).digest("hex");
+    const second = withAnalysisProbeMetadata({}, probeAnalysisArtifactReadiness(env, true), env);
+    assert.notEqual(v2, v1);
+    assert.equal(second?.analysisBridgeSha256, v2);
+    assert.equal(second?.analysisBuildSha, "39ec40ca");
+
+    // A failing pin still publishes the digest of the bridge that failed it.
+    const pinned = { ...env, A2A_BRIDGE_PIN_SHA256: v1 };
+    const failed = withAnalysisProbeMetadata({}, probeAnalysisArtifactReadiness(pinned, true), pinned);
+    assert.equal(failed?.analysisReadyReason, "harness_preflight_failed");
+    assert.equal(failed?.analysisBridgeSha256, v2);
+
+    // No bridge file: no digest is invented.
+    rmSync(bridge);
+    const missing = withAnalysisProbeMetadata({}, probeAnalysisArtifactReadiness(env, true), env);
+    assert.equal(missing?.analysisReadyReason, "handler_artifact_missing");
+    assert.equal(missing?.analysisBridgeSha256, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
