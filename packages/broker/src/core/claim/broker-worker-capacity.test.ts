@@ -11,7 +11,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { buildWorkerCapacitySummary } from "./broker-worker-capacity.js";
-import type { WorkerRecord } from "./types.js";
+import type { WorkerRecord } from "../types.js";
 
 const NOW = Date.parse("2026-08-10T00:00:00.000Z");
 

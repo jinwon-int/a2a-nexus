@@ -12,7 +12,7 @@ import type { TaskRuntimeRepository } from "./task-repository.js";
 import type { TombstoneRuntimeRepository } from "./tombstone-repository.js";
 import type { ValidationRuntimeRepository } from "./validation-repository.js";
 import type { WorkerRuntimeRepository } from "./worker-repository.js";
-import type { WorkerCapabilityCardRepository } from "./worker-capability-card.js";
+import type { WorkerCapabilityCardRepository } from "./claim/worker-capability-card.js";
 import type { BrokerSnapshot } from "./store.js";
 import type { TaskRecord, TaskStatus } from "./types.js";
 import type { TaskCreateIdempotencyDecisionV1 } from "../shared-state-idempotency-gate-v1.js";

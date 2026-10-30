@@ -3,7 +3,7 @@
 // metadata and choose the fresher of two worker records. normalizeWorkerRecord
 // canonicalizes a record's capabilities via the capability normalizer module.
 import { normalizeCapabilities } from "./broker-capability-normalizers.js";
-import type { RegisterWorkerRequest, WorkerCapabilities, WorkerRecord } from "./types.js";
+import type { RegisterWorkerRequest, WorkerCapabilities, WorkerRecord } from "../types.js";
 
 const EPHEMERAL_WORKER_HEARTBEAT_METADATA_KEYS = new Set([
   "heartbeatAt",

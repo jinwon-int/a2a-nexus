@@ -223,5 +223,5 @@ accidentally converge.
 - `docs/a2a-protocol.md` — canonical broker protocol reference
 - `docs/worker-capability-registry.md` — worker capability registry design
 - `src/a2a/agent-card.ts` — AgentCard type and factory
-- `src/core/worker-capability-card.ts` — worker capability card types and validation
+- `src/core/claim/worker-capability-card.ts` — worker capability card types and validation
 - `src/fixtures/a2a-protocol-compatibility.ts` — golden compatibility constants

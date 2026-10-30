@@ -9,7 +9,7 @@ import {
   workerCapabilitiesEqual,
   workerMetadataMateriallyEqual,
 } from "./broker-worker-identity.js";
-import type { WorkerCapabilities } from "./types.js";
+import type { WorkerCapabilities } from "../types.js";
 
 function capabilities(overrides: Partial<WorkerCapabilities> = {}): WorkerCapabilities {
   return {

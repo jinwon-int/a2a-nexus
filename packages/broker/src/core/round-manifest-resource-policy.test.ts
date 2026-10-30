@@ -33,7 +33,7 @@ import {
   validateResourceAwareWorkerPolicy,
   type ResourceAwareWorkerPolicy,
   type WorkerOnboardingKind,
-} from "./resource-aware-worker-policy.js";
+} from "./claim/resource-aware-worker-policy.js";
 
 import {
   buildRoundManifest,

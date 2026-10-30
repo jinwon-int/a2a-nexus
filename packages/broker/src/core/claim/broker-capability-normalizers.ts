@@ -2,7 +2,7 @@
 // broker.ts. Pure functions over untrusted input that sanitize and canonicalize
 // worker capability fields (runtime flavor, provider capabilities, environment
 // lists). They hold no broker state and depend only on capability types.
-import type { WorkerCapabilities, A2AWorkerEnvironment, WorkerImplementationRuntime } from "./types.js";
+import type { WorkerCapabilities, A2AWorkerEnvironment, WorkerImplementationRuntime } from "../types.js";
 
 export function normalizeWorkerRuntimeFlavor(value: unknown): WorkerCapabilities["runtimeFlavor"] | undefined {
   if (typeof value !== "string") return undefined;

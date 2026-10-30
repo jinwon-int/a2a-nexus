@@ -16,6 +16,8 @@
 > [Step 4: CLI-only retirement](#step-4-cli-only-retirement).
 > **Step 5 implemented** (execution pilot, the first physical move): see
 > [Step 5: execution pilot](#step-5-execution-pilot).
+> **Claim move implemented** (split-order row 3): see
+> [Claim move](#claim-move).
 
 ## Summary
 
@@ -777,6 +779,49 @@ tests up, so the broker test count is unchanged.
 path. The source change merges normally, but rolling it out to workers is a
 separate deploy step with its own approval. Pack the artifact and run the
 `--deployed` guard first.
+
+## Claim move
+
+Split-order row 3, done with the Step 5 recipe. Its prerequisites were already
+met: PR-0 moved `getTaskRequeueReason` into `broker-stale-task-requeue`, and
+`broker-worker-status` and `broker-wake-normalizers` stay at the root as
+kernel.
+
+**Moved:** 11 modules and 5 tests to `packages/broker/src/core/claim/`.
+
+- Modules: `broker-capability-normalizers`, `broker-capability-profiles`,
+  `broker-stale-task-requeue`, `broker-worker-capacity`,
+  `broker-worker-identity`, `broker-worker-runtime`,
+  `heartbeat-persist-throttle`, `resource-aware-worker-policy`,
+  `worker-capability-card`, `worker-identity-churn-tracker`,
+  `worker-self-assessment-capacity`.
+- Tests: `broker-worker-capacity`, `broker-worker-identity-equality`,
+  `resource-aware-worker-policy`, `worker-capability-card`,
+  `worker-self-assessment-capacity`.
+
+**Changes:**
+
+- 46 specifiers rewritten.
+- 1 wrapper (`worker-self-assessment-capacity.mjs`) moves to
+  `../dist/core/claim/`.
+- 11 map entries removed; 1 type-baseline entry re-keyed.
+- 9 path strings in docs and comments updated. This time the sweep looked for
+  path strings, not only imports, before any test ran. That includes the
+  stale `broker-stale-task-requeue.ts:196` citation in
+  `delegated-approval-matrix.md`, which is now `:236`.
+
+**Results:** 175 core modules (`claim` 11, `execution` 9, both assigned by
+directory), 155 map entries. Value violations stay at 0 and type-only at 23 =
+baseline.
+
+**Worker artifact:** no claim module is in the worker dist closure. The only
+artifact change is the import path inside the payload script
+`worker-self-assessment-capacity.mjs`.
+
+**Rollout decision (owner, 2026-10-30):** the worker artifact changes from
+#2477, Step 5 and this move ship with the next regular worker deploy. There is
+no separate rollout now. Pack the artifact, run the `--deployed` guard, and run
+`clean:dist` as part of that deploy.
 
 ## Appendix: survey script
 

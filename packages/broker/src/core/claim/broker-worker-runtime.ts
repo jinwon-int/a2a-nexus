@@ -5,7 +5,7 @@ import type {
   WorkerCapabilities,
   WorkerHeartbeatRequest,
   WorkerRecord,
-} from "./types.js";
+} from "../types.js";
 
 // Pure worker registration/heartbeat runtime helpers for InMemoryA2ABroker.
 // They intentionally hold no broker state and perform no persistence/audit work.

@@ -20,7 +20,7 @@ import {
   createWorkerCapabilityCard,
   type CreateWorkerCapabilityCardOptions,
   type WorkerCapabilityCard,
-} from "./worker-capability-card.js";
+} from "./claim/worker-capability-card.js";
 import type { WorkerView } from "./types.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

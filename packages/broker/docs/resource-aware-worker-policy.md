@@ -119,7 +119,7 @@ import {
   evaluateWorkerOnboarding,
   mobilealpha_HERMES_POLICY,
   mobilebeta_STYLE_POLICY,
-} from "./core/resource-aware-worker-policy.js";
+} from "./core/claim/resource-aware-worker-policy.js";
 
 // Validate a policy
 const result = validateResourceAwareWorkerPolicy({
@@ -168,8 +168,8 @@ source-only and does not perform any live/runtime actions.
 
 | File | Purpose |
 | --- | --- |
-| `src/core/resource-aware-worker-policy.ts` | Types, validation, GO/NO-GO evaluation |
-| `src/core/resource-aware-worker-policy.test.ts` | Tests |
+| `src/core/claim/resource-aware-worker-policy.ts` | Types, validation, GO/NO-GO evaluation |
+| `src/core/claim/resource-aware-worker-policy.test.ts` | Tests |
 | `fixtures/resource-aware-worker-policy/*.json` | GO/NO-GO fixture examples |
 | `docs/resource-aware-worker-policy.md` | This document |
 

@@ -12,7 +12,7 @@ import {
   type WorkerAssignmentRole,
   type WorkerCapabilityCard,
 } from "./worker-capability-card.js";
-import type { WorkerView } from "./types.js";
+import type { WorkerView } from "../types.js";
 
 const BASE_WORKER: WorkerView = {
   nodeId: "workerdelta",

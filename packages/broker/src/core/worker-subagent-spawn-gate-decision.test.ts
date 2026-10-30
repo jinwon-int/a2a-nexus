@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildA2AWorkerSelfAssessmentCapacity } from "./worker-self-assessment-capacity.js";
+import { buildA2AWorkerSelfAssessmentCapacity } from "./claim/worker-self-assessment-capacity.js";
 import { buildA2AWorkerSubagentOrchestrationPolicy } from "a2a-attestation";
 import { buildA2AWorkerSubagentPlannerHandoff } from "./execution/worker-subagent-planner-handoff.js";
 import { buildA2AWorkerSubagentSpawnAuthorizationRequest } from "./execution/worker-subagent-spawn-authorization-request.js";

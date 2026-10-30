@@ -5,10 +5,10 @@
 // Driven by the in-process stale reaper and POST /tasks/requeue_stale. Pure
 // move — state effects are callback-injected via StaleTaskRequeueContext (the
 // broker-exchange.ts pattern); InMemoryA2ABroker keeps public delegators.
-import { REQUEUE_EXHAUSTED_ERROR_CODE } from "./broker-error.js";
-import { resolveTaskStalenessSignalMs } from "./broker-status-predicates.js";
-import { isWorkerStale } from "./broker-worker-status.js";
-import type { TaskUpdateReason } from "./broker-contracts.js";
+import { REQUEUE_EXHAUSTED_ERROR_CODE } from "../broker-error.js";
+import { resolveTaskStalenessSignalMs } from "../broker-status-predicates.js";
+import { isWorkerStale } from "../broker-worker-status.js";
+import type { TaskUpdateReason } from "../broker-contracts.js";
 import type {
   A2AExchangeState,
   AuditAction,
@@ -17,7 +17,7 @@ import type {
   TaskRecord,
   TombstoneReason,
   WorkerRecord,
-} from "./types.js";
+} from "../types.js";
 
 /**
  * Why a claimed/running task should be requeued, or null when it should not.

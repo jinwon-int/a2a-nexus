@@ -12,7 +12,7 @@
 // move secrets.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { A2AExchangeIntent } from "./types.js";
+import type { A2AExchangeIntent } from "../types.js";
 
 // ── Resource-aware policy flags ────────────────────────────────────────────
 
