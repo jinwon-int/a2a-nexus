@@ -56,7 +56,7 @@ import process from "node:process";
 import {
   collectRoundResults,
   buildRoundManifest,
-} from "../dist/core/round-result-collector.js";
+} from "../dist/core/completion/round-result-collector.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -16,7 +16,7 @@ const sourceFiles = {
   'packages/broker/src/core/store.ts': 'export interface Store { ackPersistence(): Promise<void>; }\n',
   'packages/broker/src/core/sqlite-worker-thread-persistence.ts': 'export const workerLiveness = true;\n',
   'packages/broker/src/server-persistence-ack.test.ts': 'test("durable persistence ack", () => {});\n',
-  'packages/broker/src/core/round-result-collector.ts': 'export function collectRoundResults() {}\n',
+  'packages/broker/src/core/completion/round-result-collector.ts': 'export function collectRoundResults() {}\n',
   'scripts/a2a-dispatch-round.mjs': 'const CLASS_ACCEPTED_UNCONFIRMED = "accepted-unconfirmed";\n',
 };
 

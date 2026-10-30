@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import type { TerminalTaskOutboxEvent } from "../core/terminal-event-outbox.js";
+import type { TerminalTaskOutboxEvent } from "../core/completion/terminal-event-outbox.js";
 import {
   assertNoOpenClawRuntimePaths,
   findOpenClawRuntimePaths,

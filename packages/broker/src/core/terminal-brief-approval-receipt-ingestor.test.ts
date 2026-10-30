@@ -10,8 +10,8 @@ import {
   extractTerminalBriefApprovalReceiptEvidence,
   renderTerminalBriefApprovalReceiptIngestorMarkdown,
 } from "./terminal-brief-approval-receipt-ingestor.js";
-import { buildTerminalBriefCloseoutGate } from "./terminal-brief-closeout-gate.js";
-import type { TerminalBriefFinalizerWorkflowPacket } from "./terminal-brief-finalizer-workflow.js";
+import { buildTerminalBriefCloseoutGate } from "./completion/terminal-brief-closeout-gate.js";
+import type { TerminalBriefFinalizerWorkflowPacket } from "./completion/terminal-brief-finalizer-workflow.js";
 
 const NOW = "2026-05-18T21:30:00.000Z";
 const FRESH = "2026-05-18T21:29:30.000Z";

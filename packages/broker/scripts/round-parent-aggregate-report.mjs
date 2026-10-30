@@ -9,7 +9,7 @@
 import { readFile } from 'node:fs/promises';
 import process from 'node:process';
 
-import { buildRoundParentAggregateTaskReport } from '../dist/core/round-status.js';
+import { buildRoundParentAggregateTaskReport } from '../dist/core/completion/round-status.js';
 
 function readOption(argv, name) {
   const inline = argv.find((arg) => arg.startsWith(`${name}=`));

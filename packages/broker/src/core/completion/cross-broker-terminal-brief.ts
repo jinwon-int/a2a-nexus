@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 
-import type { SettledTaskStatus } from "./types.js";
-import { isSettledTaskStatus } from "./broker-status-predicates.js";
-import { stableStringify } from "./value-guards.js";
+import type { SettledTaskStatus } from "../types.js";
+import { isSettledTaskStatus } from "../broker-status-predicates.js";
+import { stableStringify } from "../value-guards.js";
 import {
   validateTerminalBriefMetadata as canonicalValidateTerminalBriefMetadata,
-} from "./terminal-brief-metadata.js";
+} from "../terminal-brief-metadata.js";
 
 const MAX_SUMMARY_CHARS = 500;
 const MAX_BRIEF_CHARS = 160;

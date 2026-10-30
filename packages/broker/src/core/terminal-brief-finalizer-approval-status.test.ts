@@ -5,14 +5,14 @@ import { buildTerminalBriefApprovalDispatchAdapter } from "./terminal-brief-appr
 import { buildTerminalBriefApprovalExecutor } from "./terminal-brief-approval-executor.js";
 import { buildTerminalBriefApprovalReceiptIngestor } from "./terminal-brief-approval-receipt-ingestor.js";
 import { buildTerminalBriefApprovalRequest } from "./terminal-brief-approval-request.js";
-import { buildTerminalBriefCloseoutGate } from "./terminal-brief-closeout-gate.js";
+import { buildTerminalBriefCloseoutGate } from "./completion/terminal-brief-closeout-gate.js";
 import {
   buildTerminalBriefFinalizerApprovalStatus,
   extractTerminalBriefFinalizerApprovalReceiptStatus,
   extractTerminalBriefFinalizerApprovalStatusDispatch,
   renderTerminalBriefFinalizerApprovalStatusMarkdown,
 } from "./terminal-brief-finalizer-approval-status.js";
-import type { TerminalBriefFinalizerWorkflowPacket } from "./terminal-brief-finalizer-workflow.js";
+import type { TerminalBriefFinalizerWorkflowPacket } from "./completion/terminal-brief-finalizer-workflow.js";
 
 const NOW = "2026-05-18T22:30:00.000Z";
 const FRESH = "2026-05-18T22:29:30.000Z";

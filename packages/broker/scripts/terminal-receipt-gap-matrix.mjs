@@ -4,7 +4,7 @@
 import {
   renderTerminalReceiptGapMarkdown,
   runTerminalReceiptGapMatrix,
-} from '../dist/core/terminal-receipt-gap-matrix.js';
+} from '../dist/core/completion/terminal-receipt-gap-matrix.js';
 
 const matrix = runTerminalReceiptGapMatrix();
 console.log(renderTerminalReceiptGapMarkdown(matrix));

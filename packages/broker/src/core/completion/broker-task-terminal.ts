@@ -9,24 +9,24 @@
 // side-effects routed through the already-extracted proposal-write
 // delegators as bound callbacks; InMemoryA2ABroker keeps both public
 // methods as delegators.
-import { BrokerError } from "./broker-error.js";
-import { isoNow, uniqueIds } from "./broker-helpers.js";
+import { BrokerError } from "../broker-error.js";
+import { isoNow, uniqueIds } from "../broker-helpers.js";
 import {
   normalizeTaskError,
   normalizeTaskRecord,
   normalizeTaskResult,
-} from "./broker-task-record-normalizers.js";
-import { planClassAwareTaskRetry } from "./execution/task-retry-policy.js";
+} from "../broker-task-record-normalizers.js";
+import { planClassAwareTaskRetry } from "../execution/task-retry-policy.js";
 import { validateGithubTaskCompletionEvidence } from "./github-task-completion.js";
-import { extractReviewVerdict, validateReviewEvidence } from "../worker-review.js";
+import { extractReviewVerdict, validateReviewEvidence } from "../../worker-review.js";
 import {
   evaluateFinalizerVerdictAdmission,
   type FinalizerVerdictAdmissionResult,
   type FinalizerVerdictEnforcement,
 } from "./finalizer-verdict-admission.js";
-import { isRecord } from "./value-guards.js";
+import { isRecord } from "../value-guards.js";
 import type { FinalizerKeyring } from "a2a-attestation";
-import type { TaskUpdateReason } from "./broker-contracts.js";
+import type { TaskUpdateReason } from "../broker-contracts.js";
 import type {
   A2AExchangeState,
   ApplyProposalRequest,
@@ -39,7 +39,7 @@ import type {
   TaskResult,
   TombstoneReason,
   ValidationResult,
-} from "./types.js";
+} from "../types.js";
 
 export interface TaskTerminalContext {
   tasks: ReadonlyMap<string, TaskRecord>;

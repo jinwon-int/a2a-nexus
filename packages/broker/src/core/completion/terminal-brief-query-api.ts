@@ -16,7 +16,7 @@ import type {
   TerminalTaskEventOutbox,
   TerminalTaskOutboxEvent,
 } from "./terminal-event-outbox.js";
-import { SETTLED_TASK_STATUSES } from "./types.js";
+import { SETTLED_TASK_STATUSES } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Constants

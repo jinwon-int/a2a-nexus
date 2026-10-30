@@ -1,9 +1,9 @@
 import { isRecord } from "./value-guards.js";
 import { CursorEventBuffer } from "./event-buffer.js";
 import type { AuditAction, AuditEvent, TaskRecord } from "./types.js";
-import { buildTerminalBriefTitle, buildTerminalTaskPayload } from "./terminal-event-outbox.js";
-import { RoundProgressTracker, applyRoundProgressMetadata } from "./round-progress-tracker.js";
-import type { TerminalTaskEventPayload } from "./terminal-event-outbox.js";
+import { buildTerminalBriefTitle, buildTerminalTaskPayload } from "./completion/terminal-event-outbox.js";
+import { RoundProgressTracker, applyRoundProgressMetadata } from "./completion/round-progress-tracker.js";
+import type { TerminalTaskEventPayload } from "./completion/terminal-event-outbox.js";
 import type {
   TaskStatusEvent,
   TaskStatusEventKind,

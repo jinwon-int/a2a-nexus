@@ -5,7 +5,7 @@ import {
   type TerminalOutboxBacklogSignal,
   type TerminalOutboxBacklogSnapshot,
   type TerminalOutboxBacklogThresholds,
-} from "../terminal-outbox-backlog-risk.js";
+} from "../completion/terminal-outbox-backlog-risk.js";
 
 const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = new Set<TaskStatus>(TERMINAL_TASK_STATUSES);
 const TASK_STATUSES: TaskStatus[] = ["blocked", "queued", "claimed", "running", "succeeded", "failed", "canceled"];

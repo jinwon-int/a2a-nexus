@@ -32,7 +32,7 @@ Scope: redacted metadata only; this document does **not** include matched values
 | `packages/broker/docs/worker-delta-1032-a2ad-followup-03-review.md` | `private-topology-term`=1 | Documentation/protocol metadata; keep historical context with current-state caveats. |
 | `packages/broker/scripts/public-readiness-scan.test.mjs` | `github-token-shape`=1 | Test fixture metadata; keep synthetic/redacted. |
 | `packages/broker/scripts/round-coordinator-closeout-dry-run.test.mjs` | `github-token-shape`=2 | Test fixture metadata; keep synthetic/redacted. |
-| `packages/broker/src/core/cross-broker-terminal-brief.test.ts` | `absolute-private-path`=1 | Test fixture metadata; keep synthetic/redacted. |
+| `packages/broker/src/core/completion/cross-broker-terminal-brief.test.ts` | `absolute-private-path`=1 | Test fixture metadata; keep synthetic/redacted. |
 | `packages/broker/src/core/request-security.test.ts` | `private-topology-term`=1 | Test fixture metadata; keep synthetic/redacted. |
 | `packages/broker/src/core/task-events.test.ts` | `absolute-private-path`=5 | Test fixture metadata; keep synthetic/redacted. |
 | `packages/broker/src/github/handoff-receiver.test.ts` | `github-token-shape`=1 | Test fixture metadata; keep synthetic/redacted. |

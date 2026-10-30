@@ -19,10 +19,10 @@ import {
 import {
   buildTerminalBriefCloseoutGate,
   extractTerminalBriefFinalizerWorkflowPacket,
-} from "../dist/core/terminal-brief-closeout-gate.js";
+} from "../dist/core/completion/terminal-brief-closeout-gate.js";
 import {
   buildTerminalBriefFinalizerWorkflow,
-} from "../dist/core/terminal-brief-finalizer-workflow.js";
+} from "../dist/core/completion/terminal-brief-finalizer-workflow.js";
 
 function parseArgs(argv) {
   const readOption = (name) => {

@@ -53,7 +53,7 @@ import {
 import {
   DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION,
   type TerminalTaskOutboxEvent,
-} from "./terminal-event-outbox.js";
+} from "./completion/terminal-event-outbox.js";
 import {
   CURRENT_BROKER_STATE_VERSION as CURRENT_BROKER_STATE_VERSION_VALUE,
   DEFAULT_BROKER_STATE_MAX_BYTES as DEFAULT_BROKER_STATE_MAX_BYTES_VALUE,

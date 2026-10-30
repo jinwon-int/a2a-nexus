@@ -9,7 +9,7 @@ import test from "node:test";
 
 import { InMemoryA2ABroker } from "./broker.js";
 import { classifySameSourceRedispatch, extractReviewVerdict } from "../worker-review.js";
-import { buildTerminalBriefTitle } from "./terminal-event-outbox.js";
+import { buildTerminalBriefTitle } from "./completion/terminal-event-outbox.js";
 import type { TaskRecord } from "./types.js";
 
 const AUTHOR = "author-node";

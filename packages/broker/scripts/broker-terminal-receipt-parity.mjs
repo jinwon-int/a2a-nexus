@@ -9,7 +9,7 @@ import {
   analyzeBrokerTerminalReceiptSnapshot,
   compareBrokerTerminalReceiptParity,
   renderBrokerTerminalReceiptParityMarkdown,
-} from '../dist/core/broker-terminal-receipt-parity.js';
+} from '../dist/core/completion/broker-terminal-receipt-parity.js';
 
 const DEFAULT_LIMIT = 20;
 

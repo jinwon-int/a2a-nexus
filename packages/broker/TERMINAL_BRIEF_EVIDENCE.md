@@ -18,8 +18,8 @@ The fail-closed broker guard was implemented in R12 (PR #602) and lives in:
 
 | Component | File | Function |
 |---|---|---|
-| Preflight validation | `src/core/cross-broker-terminal-brief.ts` | `validateTerminalBriefForDispatch()` — validates parentRoundId, originBrokerId, parentRoundTotal, crossBrokerHandoff metadata before dispatch |
-| Projection ingestion guard | `src/core/cross-broker-terminal-brief.ts` | `CrossBrokerTerminalBriefProjectionStore.ingest()` — calls preflight validation, fails closed (rejects) if metadata is missing/inconsistent |
+| Preflight validation | `src/core/completion/cross-broker-terminal-brief.ts` | `validateTerminalBriefForDispatch()` — validates parentRoundId, originBrokerId, parentRoundTotal, crossBrokerHandoff metadata before dispatch |
+| Projection ingestion guard | `src/core/completion/cross-broker-terminal-brief.ts` | `CrossBrokerTerminalBriefProjectionStore.ingest()` — calls preflight validation, fails closed (rejects) if metadata is missing/inconsistent |
 | Post-dispatch verifier | `src/core/post-dispatch-verifier.ts` | `PostDispatchVerifier.verifyDispatch()` / `verifyCrossBrokerHandoff()` — validates crossBrokerHandoff payload fields |
 | Broker integration | `src/core/broker.ts` | `ingestCrossBrokerTerminalBriefProjection()` — only stores/enqueues projections that pass the guard |
 

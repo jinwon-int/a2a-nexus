@@ -32,7 +32,7 @@ proof pattern.
 - **Phase 2 (operator receipt semantics):** Encoded the four normal routing
   cases (brokeralpha Team1-only, brokeralpha cross-team, brokerbeta Team2-only, brokerbeta
   cross-team) as explicit dispatch invariants rather than per-canary
-  procedures. Published as `src/core/terminal-brief-routing.ts` with tests.
+  procedures. Published as `src/core/completion/terminal-brief-routing.ts` with tests.
   Core invariant: the initiating broker is the parent/origin broker and the
   only operator-facing Terminal Brief sender.
 
@@ -51,7 +51,7 @@ parent-origin routing.
 | [#617 — R14 workeralpha hot-table retention](https://github.com/jinwon-int/a2a-broker/issues/617) | Hot-table retention/compaction design, bounded health warnings | Entirely absorbed into `src/core/hot-table-growth.ts` (474 lines), `BrokerRetentionPolicy` in `src/core/broker.ts`, `docs/hot-table-retention-prune-runbook.md`, and `docs/hot-table-health.md` — all produced in R20 #641 (merged at current HEAD). | Recommend close. No remaining actionable gap. |
 | [#618 — R14 workerepsilon secret-safe diagnostics](https://github.com/jinwon-int/a2a-broker/issues/618) | Secret-safe diagnostics/rotation tooling without printing secrets | Absorbed into `docs/edge-secret-rotation-runbook.md` — full rotation checklist with redacted-only preflight evidence and no-secret-values guardrails. Team2 issue. | Recommend close. Team1 has no remaining action. |
 | [#619 — R14 workerzeta two-broker deploy safety](https://github.com/jinwon-int/a2a-broker/issues/619) | Two-broker deploy safety evidence, revision reporting, rollback notes | Absorbed into `docs/a2a-2broker-safety-regression-readiness-matrix.md`, `docs/team2-brokerbeta-ops-dashboard-capacity-parity.md`, `docs/team2-brokerbeta-worker-onboarding-retargeting.md`. Team2 issue. | Recommend close. Team1 has no remaining action. |
-| [#598 — R12 guard: cross-broker metadata fail-closed](https://github.com/jinwon-int/a2a-broker/issues/598) | Fail-closed when cross-broker dispatch omits parent Terminal Brief metadata | Entirely resolved by the closed #634 routing contract. `src/core/terminal-brief-routing.ts` explicitly rejects unknown initiators, unsupported scopes, and parentless projections. Tests in `src/core/terminal-brief-routing.test.ts` cover all four cases plus reject conditions. | Recommend close. Implemented and tested in closed #634. |
+| [#598 — R12 guard: cross-broker metadata fail-closed](https://github.com/jinwon-int/a2a-broker/issues/598) | Fail-closed when cross-broker dispatch omits parent Terminal Brief metadata | Entirely resolved by the closed #634 routing contract. `src/core/completion/terminal-brief-routing.ts` explicitly rejects unknown initiators, unsupported scopes, and parentless projections. Tests in `src/core/completion/terminal-brief-routing.test.ts` cover all four cases plus reject conditions. | Recommend close. Implemented and tested in closed #634. |
 
 ### STILL ACTIONABLE — recommend keep open
 

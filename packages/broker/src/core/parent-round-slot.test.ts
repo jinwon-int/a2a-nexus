@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { InMemoryA2ABroker } from "./broker.js";
-import type { CrossBrokerTerminalBriefProjectionRequest } from "./cross-broker-terminal-brief.js";
+import type { CrossBrokerTerminalBriefProjectionRequest } from "./completion/cross-broker-terminal-brief.js";
 import { jsonHeaders, startTestServer } from "../server-test-helpers.js";
 
 const PARENT = "brokeralpha";

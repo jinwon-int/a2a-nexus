@@ -258,5 +258,5 @@ Tests cover:
 - `scripts/a2a-task-handler.mjs` — Canonical worker handler implementation
 - `scripts/a2a-task-handler.mjs` — Legacy compatibility wrapper
 - `scripts/hermes-a2a-analysis-bridge.mjs` — Hermes-backed OpenClaw-compatible analysis bridge
-- `src/core/github-task-completion.ts` — Completion evidence validation
+- `src/core/completion/github-task-completion.ts` — Completion evidence validation
 - `docs/a2a-protocol.md` — A2A protocol reference

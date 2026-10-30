@@ -83,7 +83,7 @@ alternatives. The final decision still follows this precedence:
 4. The synthesis candidate from the dialectic lanes.
 
 The source guard for this rule is
-`src/core/a2a-dialectic-lite-finalizer.ts`, exposed through:
+`src/core/completion/a2a-dialectic-lite-finalizer.ts`, exposed through:
 
 ```bash
 npm run a2a_dialectic_lite_finalizer -- --input round.json

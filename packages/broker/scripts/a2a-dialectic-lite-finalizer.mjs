@@ -17,7 +17,7 @@ import process from "node:process";
 import {
   buildA2ADialecticLiteFinalizerPacket,
   renderA2ADialecticLiteFinalizerMarkdown,
-} from "../dist/core/a2a-dialectic-lite-finalizer.js";
+} from "../dist/core/completion/a2a-dialectic-lite-finalizer.js";
 
 function readOption(argv, name) {
   const inline = argv.find((arg) => arg.startsWith(name + "="));

@@ -12,7 +12,7 @@ import {
   buildRoundCompletePayload,
   type RoundManifest,
 } from "./round-result-collector.js";
-import type { TaskRecord, TaskResult } from "./types.js";
+import type { TaskRecord, TaskResult } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

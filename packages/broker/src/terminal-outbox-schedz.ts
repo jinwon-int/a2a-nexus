@@ -1,7 +1,7 @@
 // Terminal-outbox /schedz summary helpers extracted from server.ts: counter
 // increment/top-entry helpers, oldest-event age, and the outbox summary used by
 // the scheduler diagnostics endpoint. Pure functions over an outbox passed in.
-import type { TerminalTaskEventOutbox, TerminalTaskOutboxEvent } from "./core/terminal-event-outbox.js";
+import type { TerminalTaskEventOutbox, TerminalTaskOutboxEvent } from "./core/completion/terminal-event-outbox.js";
 
 type TerminalOutboxCounterEntry = { key: string; count: number };
 

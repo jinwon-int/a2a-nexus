@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { InMemoryA2ABroker } from "./broker.js";
-import { emptySnapshot, type BrokerSnapshot, type BrokerStateStore } from "./store.js";
+import { InMemoryA2ABroker } from "../broker.js";
+import { emptySnapshot, type BrokerSnapshot, type BrokerStateStore } from "../store.js";
 import type { TerminalTaskOutboxEvent } from "./terminal-event-outbox.js";
 import { CrossBrokerTerminalBriefProjectionStore } from "./cross-broker-terminal-brief.js";
 

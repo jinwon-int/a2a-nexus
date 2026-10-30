@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { InMemoryA2ABroker } from "./broker.js";
 import type { TaskStatusEvent, TerminalTaskEvent } from "./task-events.js";
-import type { TerminalTaskOutboxEvent } from "./terminal-event-outbox.js";
+import type { TerminalTaskOutboxEvent } from "./completion/terminal-event-outbox.js";
 
 function registerWorker(broker: InMemoryA2ABroker, nodeId = "worker-1"): void {
   broker.registerWorker({

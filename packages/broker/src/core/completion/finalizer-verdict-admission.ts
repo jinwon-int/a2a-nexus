@@ -25,8 +25,8 @@
 // blocks missing / wrong-decision / unbound / non-independent verdicts at the
 // accept moment, before side-effects, without faking the crypto it cannot do.
 import { verifyFinalizerVerdictSignature, type FinalizerKeyring } from "a2a-attestation";
-import type { TaskRecord, TaskResult } from "./types.js";
-import { isRecord } from "./value-guards.js";
+import type { TaskRecord, TaskResult } from "../types.js";
+import { isRecord } from "../value-guards.js";
 
 export const FINALIZER_VERDICT_SCHEMA = "a2a.finalizer.verdict.v1";
 const FINALIZER_ROLE_PREFIX = "finalizer:";

@@ -5,7 +5,7 @@ import type {
   TerminalBriefCloseoutGateAction,
   TerminalBriefCloseoutGateActionStatus,
   TerminalBriefCloseoutGatePacket,
-} from "./terminal-brief-closeout-gate.js";
+} from "./completion/terminal-brief-closeout-gate.js";
 
 export type TerminalBriefApprovalRequestDecision = "request_ready" | "waiting" | "blocked";
 

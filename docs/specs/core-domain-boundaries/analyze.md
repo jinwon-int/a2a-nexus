@@ -22,6 +22,8 @@
 > [Evidence move](#evidence-move).
 > **Dispatch move implemented** (split-order row 5): see
 > [Dispatch move](#dispatch-move).
+> **Completion move implemented** (split-order row 6): see
+> [Completion move](#completion-move).
 
 ## Summary
 
@@ -922,6 +924,45 @@ pack-built artifact. Per the 2026-10-30 owner decision this goes out with the
 next regular worker deploy, together with pack, the `--deployed` guard and
 `clean:dist`. Copying only the handler, without the new dist, breaks it with
 `ERR_MODULE_NOT_FOUND`.
+
+## Completion move
+
+Split-order row 6, done with the corrected recipe. `terminal-brief-metadata`
+and `task-error-details` stay at the root as kernel. `store.ts` →
+`terminal-event-outbox` is allowed, because `store` sits above `completion`.
+
+**Moved:** 24 modules and 20 name-matched tests to
+`packages/broker/src/core/completion/`. 23 of the modules come after the
+sink; the 24th is the one reclassified module. Integration tests that combine
+completion modules with `broker`, `store` and other modules stay at the root;
+examples are `cross-broker-relay-fallback`, `task-events` and
+`parent-round-*`. The domain checker does not assign test files to a domain.
+
+**Changes:**
+
+- 104 specifiers rewritten.
+- 51 path strings updated. They include the shared-state registries inside
+  src (`shared-state-idempotency-v1-values.ts`,
+  `shared-state-outbox-v1-values.ts`) and their golden fixture, 16 wrappers,
+  the runtime-reliability lane, and docs.
+- 24 map entries removed; 4 type-baseline entries re-keyed.
+
+**Left unchanged on purpose:** `fixtures/contract/bounded-pr-review-lifecycle.json`
+cites `packages/broker/src/core/broker-task-terminal.ts` (and `:106`) as
+example `declaredPaths` and `evidenceRefs`. That fixture is hashed by the
+canonical-JSON golden vectors in
+`test/conformance/check-bounded-pr-review-lifecycle.mjs`, so its strings are
+contract data, not live references. #2477 made the same call for its intent
+contract strings.
+
+**Results:** 175 core modules. Completion has 24, dispatch 18,
+evidence-retrieval 8, claim 11 and execution 9, all assigned by directory;
+105 map entries remain. Value violations stay at 0 and type-only at 23 =
+baseline.
+
+**Worker artifact:** `dist/core/github-task-completion.js` is in the worker
+dist closure and moves to `dist/core/completion/`. Like the dispatch move,
+this ships in one pack-built artifact with the next regular worker deploy.
 
 ## Appendix: survey script
 

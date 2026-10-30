@@ -12,7 +12,7 @@ import process from "node:process";
 import {
   buildTerminalBriefSidecarIntegrationRehearsal,
   renderTerminalBriefSidecarIntegrationRehearsalMarkdown,
-} from "../dist/core/terminal-brief-sidecar-integration-rehearsal.js";
+} from "../dist/core/completion/terminal-brief-sidecar-integration-rehearsal.js";
 
 function parseArgs(argv) {
   const readOption = (name) => {

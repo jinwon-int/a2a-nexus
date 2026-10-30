@@ -275,7 +275,7 @@ export const SHARED_STATE_OUTBOX_V1_VALUES = deepFreeze({
           "sqlite-unacknowledged-protected-memory-hard-cap-partial",
         sourceRefs: [
           {
-            path: "packages/broker/src/core/terminal-event-outbox.ts",
+            path: "packages/broker/src/core/completion/terminal-event-outbox.ts",
             symbol: "export class TerminalTaskEventOutbox",
             proves: [
               "producer",
@@ -325,7 +325,7 @@ export const SHARED_STATE_OUTBOX_V1_VALUES = deepFreeze({
             sourceRefs: [
               {
                 path:
-                  "packages/broker/src/core/terminal-event-outbox.ts",
+                  "packages/broker/src/core/completion/terminal-event-outbox.ts",
                 symbol:
                   "export function formatTerminalTaskEventId(taskId: string, status: TaskStatus, completedAt: string): string",
                 proves: [
@@ -357,7 +357,7 @@ export const SHARED_STATE_OUTBOX_V1_VALUES = deepFreeze({
             sourceRefs: [
               {
                 path:
-                  "packages/broker/src/core/terminal-event-outbox.ts",
+                  "packages/broker/src/core/completion/terminal-event-outbox.ts",
                 symbol:
                   "enqueueCrossBrokerProjection(projection: CrossBrokerTerminalBriefProjection)",
                 proves: [
@@ -369,7 +369,7 @@ export const SHARED_STATE_OUTBOX_V1_VALUES = deepFreeze({
               },
               {
                 path:
-                  "packages/broker/src/core/cross-broker-terminal-brief.ts",
+                  "packages/broker/src/core/completion/cross-broker-terminal-brief.ts",
                 symbol:
                   "return `${record.parentRoundId}::${record.handoffBrokerId ?? record.originBrokerId}::${childKey}`",
                 proves: [
@@ -386,7 +386,7 @@ export const SHARED_STATE_OUTBOX_V1_VALUES = deepFreeze({
             sourceRefs: [
               {
                 path:
-                  "packages/broker/src/core/terminal-event-outbox.ts",
+                  "packages/broker/src/core/completion/terminal-event-outbox.ts",
                 symbol: "private enqueueCrossBrokerOperatorFacingRow(",
                 proves: [
                   "producer",

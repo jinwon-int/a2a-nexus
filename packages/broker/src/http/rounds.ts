@@ -7,7 +7,7 @@ import type { ServerResponse } from "node:http";
 
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
 import { sendJson } from "./response.js";
-import type { RoundStatusSummary } from "../core/round-status.js";
+import type { RoundStatusSummary } from "../core/completion/round-status.js";
 
 export interface RoundStatusRouteContext {
   res: ServerResponse;

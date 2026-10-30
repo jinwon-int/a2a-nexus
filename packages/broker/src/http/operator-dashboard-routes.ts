@@ -13,7 +13,7 @@ import {
   InMemoryRateLimiter,
   type RequesterIdentity,
 } from "../core/request-security.js";
-import { summarizeTerminalBriefInbox } from "../core/terminal-brief-query-api.js";
+import { summarizeTerminalBriefInbox } from "../core/completion/terminal-brief-query-api.js";
 import { readPersistenceQueueDiagnostics } from "../persistence-queue-diagnostics.js";
 import { buildDashboardResponse } from "./dashboard-response.js";
 import { numberQueryParam } from "./read-path-filters.js";

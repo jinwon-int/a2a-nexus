@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { runReceiptGateCanaryMatrix } from "./receipt-gate-canary.js";
+import { runReceiptGateCanaryMatrix } from "../receipt-gate-canary.js";
 import {
   analyzeBrokerTerminalReceiptSnapshot,
   compareBrokerTerminalReceiptParity,

@@ -7,7 +7,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { InMemoryA2ABroker } from "./broker.js";
+import { InMemoryA2ABroker } from "../broker.js";
 import {
   RoundProgressTracker,
   applyRoundProgressMetadata,

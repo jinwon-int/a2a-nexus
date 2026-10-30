@@ -1,6 +1,6 @@
 import { SETTLED_TASK_STATUSES } from "../core/types.js";
 import type { BrokerExitCondition } from "../core/types.js";
-import type { TerminalTaskOutboxEvent, TerminalTaskEventPayload } from "../core/terminal-event-outbox.js";
+import type { TerminalTaskOutboxEvent, TerminalTaskEventPayload } from "../core/completion/terminal-event-outbox.js";
 
 /**
  * Round closeout reconciliation helpers (issue #243).

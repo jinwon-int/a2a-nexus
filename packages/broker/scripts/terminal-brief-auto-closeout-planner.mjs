@@ -15,7 +15,7 @@ import process from "node:process";
 import {
   buildAutoCloseoutPlan,
   renderAutoCloseoutPlanMarkdown,
-} from "../dist/core/terminal-brief-auto-closeout-planner.js";
+} from "../dist/core/completion/terminal-brief-auto-closeout-planner.js";
 
 const VALID_POLICY_MODES = new Set(["off", "draft", "comment_only", "comment_and_close"]);
 

@@ -6,7 +6,7 @@ import type {
   TerminalTaskOutboxEvent,
   TerminalTaskReceiptStatus,
   SettledTaskStatus,
-} from "../core/terminal-event-outbox.js";
+} from "../core/completion/terminal-event-outbox.js";
 import { redactSensitive } from "./projection.js";
 import { isRecord } from "../core/value-guards.js";
 

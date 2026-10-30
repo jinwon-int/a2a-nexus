@@ -18,7 +18,7 @@ export const DEFAULT_RELIABILITY_SOURCE_PATHS = [
   'packages/broker/src/core/store.ts',
   'packages/broker/src/core/sqlite-worker-thread-persistence.ts',
   'packages/broker/src/server-persistence-ack.test.ts',
-  'packages/broker/src/core/round-result-collector.ts',
+  'packages/broker/src/core/completion/round-result-collector.ts',
   'scripts/a2a-dispatch-round.mjs',
 ];
 

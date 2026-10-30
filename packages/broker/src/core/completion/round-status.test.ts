@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { buildRoundParentAggregateTaskReport, summarizeRoundStatus } from "./round-status.js";
-import type { TaskRecord, TaskStatus } from "./types.js";
+import type { TaskRecord, TaskStatus } from "../types.js";
 
 function task(id: string, status: TaskStatus, parentRoundId: string | undefined, extra: Partial<TaskRecord> = {}): TaskRecord {
   return {

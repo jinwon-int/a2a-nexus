@@ -9,14 +9,14 @@ import {
   buildCrossBrokerTerminalBriefProjectionFromEvent,
   pollCrossBrokerTerminalBriefReceiver,
   type CrossBrokerTerminalBriefReceiverFetch,
-} from "./cross-broker-terminal-brief-receiver.js";
-import type { CrossBrokerTerminalBriefProjectionRequest } from "./cross-broker-terminal-brief.js";
+} from "./completion/cross-broker-terminal-brief-receiver.js";
+import type { CrossBrokerTerminalBriefProjectionRequest } from "./completion/cross-broker-terminal-brief.js";
 import type { TaskStatusEvent } from "./task-events.js";
 import {
   TerminalTaskEventOutbox,
   buildRelayFallbackTitle,
   type TerminalTaskOutboxEvent,
-} from "./terminal-event-outbox.js";
+} from "./completion/terminal-event-outbox.js";
 import type { CreateTaskRequest, TaskRecord } from "./types.js";
 import { jsonHeaders, startTestServer } from "../server-test-helpers.js";
 

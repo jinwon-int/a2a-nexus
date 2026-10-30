@@ -17,7 +17,7 @@ import {
 } from "./finalizer-verdict-admission.js";
 import type { FinalizerKeyring } from "a2a-attestation";
 import { canonicalizeJson } from "a2a-attestation";
-import type { TaskRecord, TaskResult } from "./types.js";
+import type { TaskRecord, TaskResult } from "../types.js";
 
 const ANCHOR = "sha256:deadbeefanchor";
 

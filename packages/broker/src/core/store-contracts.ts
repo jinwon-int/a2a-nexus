@@ -10,7 +10,7 @@ import type {
   ValidationResult,
   WorkerRecord,
 } from "./types.js";
-import type { CrossBrokerTerminalBriefProjection } from "./cross-broker-terminal-brief.js";
+import type { CrossBrokerTerminalBriefProjection } from "./completion/cross-broker-terminal-brief.js";
 import type { PersistedWavePlan } from "./dispatch/wave-plan-store.js";
 import type {
   ReviewLineageRecord,
@@ -20,7 +20,7 @@ import type {
   AuthorizedReviewLineageSourceAdmissionV1,
   ReviewLineageObservationApplicationResult,
 } from "./review-lineage-observation-store.js";
-import type { TerminalTaskOutboxEvent } from "./terminal-event-outbox.js";
+import type { TerminalTaskOutboxEvent } from "./completion/terminal-event-outbox.js";
 import type { TaskPushNotificationConfig } from "../a2a/push-notification-config.js";
 import type {
   BrokerHotEntityDiagnostics,

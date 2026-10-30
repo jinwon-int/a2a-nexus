@@ -143,7 +143,7 @@ import {
   readBrokerWorkerView,
 } from "./evidence-retrieval/broker-worker-read.js";
 
-import type { RoundStatusSummary } from "./round-status.js";
+import type { RoundStatusSummary } from "./completion/round-status.js";
 
 import { normalizeTaskPolicyContext } from "./policy.js";
 import type { BrokerPolicyDocument } from "a2a-policy-referee";
@@ -152,7 +152,7 @@ import {
   selectInjectedKnowledge,
   type InjectedKnowledgeSnapshot,
 } from "./execution/broker-knowledge-injection.js";
-import type { FinalizerVerdictEnforcement } from "./finalizer-verdict-admission.js";
+import type { FinalizerVerdictEnforcement } from "./completion/finalizer-verdict-admission.js";
 import type { FinalizerKeyring } from "a2a-attestation";
 import * as taskAdmission from "./dispatch/broker-task-admission.js";
 import type { TaskAdmissionContext } from "./dispatch/broker-task-admission.js";
@@ -162,8 +162,8 @@ import * as proposalWrite from "./broker-proposal-write.js";
 import * as taskApproval from "./broker-task-approval.js";
 import * as taskCancellation from "./execution/broker-task-cancellation.js";
 import * as taskCheckpoint from "./execution/broker-task-checkpoint.js";
-import * as taskTerminal from "./broker-task-terminal.js";
-import type { TaskTerminalContext } from "./broker-task-terminal.js";
+import * as taskTerminal from "./completion/broker-task-terminal.js";
+import type { TaskTerminalContext } from "./completion/broker-task-terminal.js";
 import type { TaskCheckpointContext } from "./execution/broker-task-checkpoint.js";
 import type { TaskCancellationContext } from "./execution/broker-task-cancellation.js";
 import type { TaskApprovalContext } from "./broker-task-approval.js";
@@ -179,7 +179,7 @@ import {
 } from "../task-readiness.js";
 import { TASK_LANE_REASON_CODE_SET, classifyTaskLane } from "../task-lane-classifier.js";
 import { TaskEventStream } from "./task-event-stream.js";
-import { RoundProgressTracker } from "./round-progress-tracker.js";
+import { RoundProgressTracker } from "./completion/round-progress-tracker.js";
 import {
   ParentRoundRegistry,
   type ParentRoundAnchorResult,
@@ -194,7 +194,7 @@ import {
   type TerminalTaskOutboxReceiptUpdateInput,
   type TerminalTaskRelayFallbackInput,
   type TerminalTaskRelayFallbackResult,
-} from "./terminal-event-outbox.js";
+} from "./completion/terminal-event-outbox.js";
 import { ConferenceRoomManager } from "./conference-room.js";
 import { WavePlanStore, type StalledWavePlan } from "./dispatch/wave-plan-store.js";
 import type { WavePlan, WaveStageEvidence } from "./dispatch/wave-plan.js";
@@ -257,7 +257,7 @@ import {
   type CrossBrokerTerminalBriefProjectionFilters,
   type CrossBrokerTerminalBriefProjectionRequest,
   type CrossBrokerTerminalBriefProjectionResult,
-} from "./cross-broker-terminal-brief.js";
+} from "./completion/cross-broker-terminal-brief.js";
 import { normalizeA2ARoundTaskRequest } from "./dispatch/a2a-round-policy.js";
 import {
   assertWorkerRegistrationPayload,
@@ -272,7 +272,7 @@ import {
   normalizeTerminalBriefTeamScope,
   type TerminalBriefBrokerTeamRegistration,
   type TerminalBriefParentOriginRouteResult,
-} from "./terminal-brief-routing.js";
+} from "./completion/terminal-brief-routing.js";
 import type { ArtifactRuntimeRepository } from "./artifact-repository.js";
 import type { AuditRuntimeRepository } from "./audit-repository.js";
 import type { ExchangeMessageRuntimeRepository, ExchangeRuntimeRepository } from "./exchange-repository.js";

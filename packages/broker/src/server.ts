@@ -139,7 +139,7 @@ import { resolveBrokerBuildInfo } from "./broker-build-info.js";
 import { normalizeTaskReadinessMode } from "./task-readiness.js";
 import { loadBrokerPolicyFile } from "a2a-policy-referee";
 import { loadInjectedKnowledgeFile } from "./core/execution/broker-knowledge-injection.js";
-import { resolveFinalizerVerdictEnforcement } from "./core/finalizer-verdict-admission.js";
+import { resolveFinalizerVerdictEnforcement } from "./core/completion/finalizer-verdict-admission.js";
 import { loadFinalizerKeyringFile } from "a2a-attestation";
 import { resolveReviewLineageRolloutMode } from "./core/review-lineage-store.js";
 import { resolveWavePlanDagV2Mode } from "./core/dispatch/wave-plan-dag-v2-mode.js";
@@ -157,7 +157,7 @@ import {
 import { createBrokerAgentCard } from "./a2a/agent-card.js";
 import { PushNotificationConfigStore } from "./a2a/push-notification-config.js";
 import { signAgentCard } from "a2a-attestation";
-import { parseTerminalBriefBrokerTeams } from "./core/terminal-brief-routing.js";
+import { parseTerminalBriefBrokerTeams } from "./core/completion/terminal-brief-routing.js";
 import {
   loadCrossBrokerTrustAnchors,
   CrossBrokerNonceCache,

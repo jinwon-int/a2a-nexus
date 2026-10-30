@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { BROKER_POLICY_SCHEMA, type BrokerPolicyDocument } from "a2a-policy-referee";
 
 import { InMemoryA2ABroker } from "./broker.js";
-import { FINALIZER_VERDICT_SCHEMA } from "./finalizer-verdict-admission.js";
+import { FINALIZER_VERDICT_SCHEMA } from "./completion/finalizer-verdict-admission.js";
 import { BrokerError } from "./broker-error.js";
 import type { TaskResult } from "./types.js";
 

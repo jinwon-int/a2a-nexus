@@ -11,7 +11,7 @@ import process from "node:process";
 import {
   buildTerminalBriefCompletionPacket,
   renderTerminalBriefCompletionPacketMarkdown,
-} from "../dist/core/terminal-brief-completion-watcher.js";
+} from "../dist/core/completion/terminal-brief-completion-watcher.js";
 
 function parseArgs(argv) {
   const readOption = (name) => {

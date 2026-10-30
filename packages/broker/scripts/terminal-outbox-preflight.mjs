@@ -12,7 +12,7 @@ const DEFAULT_LIMIT = 5;
 const REQUESTER_ID = 'terminal-outbox-preflight';
 
 // ---------------------------------------------------------------------------
-// Legacy residue classifier (embedded, mirrors src/core/terminal-outbox-legacy-classifier.ts)
+// Legacy residue classifier (embedded, mirrors src/core/completion/terminal-outbox-legacy-classifier.ts)
 // Classifies terminal_outbox rows as current-window, legacy-residue, or unclassifiable.
 // ---------------------------------------------------------------------------
 
