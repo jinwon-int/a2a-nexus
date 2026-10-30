@@ -24,7 +24,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createHash } from "node:crypto";
-import { stableStringify } from "./value-guards.js";
+import { stableStringify } from "../value-guards.js";
 import type {
   TaskComplexityClassification,
   ComplexityLevel,

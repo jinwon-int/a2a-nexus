@@ -26,7 +26,7 @@ import {
   buildRoundManifest,
   renderRoundManifestMarkdown,
   validateRoundManifestOptions,
-} from "../dist/core/round-manifest.js";
+} from "../dist/core/dispatch/round-manifest.js";
 
 function parseArgs(argv) {
   const read = (name) => {

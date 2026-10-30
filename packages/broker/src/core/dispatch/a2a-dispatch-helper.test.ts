@@ -320,7 +320,7 @@ test("#2331 complete cross-broker handoff keeps the origin parent round in the t
   });
 });
 
-const HELPER_CLI = resolve(dirname(fileURLToPath(import.meta.url)), "../../scripts/a2a-dispatch-helper.mjs");
+const HELPER_CLI = resolve(dirname(fileURLToPath(import.meta.url)), "../../../scripts/a2a-dispatch-helper.mjs");
 const CLI_BASE_ARGS = [
   "--team-id", "team2",
   "--worker", "workerepsilon",

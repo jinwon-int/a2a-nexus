@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { InMemoryA2ABroker } from "./broker.js";
+import { InMemoryA2ABroker } from "../broker.js";
 import {
   MAX_PARENT_ROUND_ANCHORS,
   ParentRoundRegistry,
@@ -14,8 +14,8 @@ import {
   type ParentRoundMintInput,
   type ParentRoundRegistryEntry,
 } from "./parent-round-registry.js";
-import { CURRENT_BROKER_STATE_VERSION, type BrokerSnapshot } from "./store-contracts.js";
-import { SqliteBrokerStateStore } from "./store.js";
+import { CURRENT_BROKER_STATE_VERSION, type BrokerSnapshot } from "../store-contracts.js";
+import { SqliteBrokerStateStore } from "../store.js";
 
 const MINTED_AT = "2026-10-23T03:00:00.000Z";
 

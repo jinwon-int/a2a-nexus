@@ -9,9 +9,9 @@ Refs #2185.
 - [x] Non-goals state: no Jev adoption per se, no new routing engine, no replacement of
       #1601/#1597/#1815 scopes, no reuse violation of #885 assets.
 - [x] All seven existing assets referenced by repo path as reuse-only:
-      `packages/broker/src/core/work-mode-pre-dispatch-decision.ts`,
-      `packages/broker/src/core/complexity-orchestration-recommendation.ts`,
-      `packages/broker/src/core/scheduler-dry-run.ts`,
+      `packages/broker/src/core/dispatch/work-mode-pre-dispatch-decision.ts`,
+      `packages/broker/src/core/dispatch/complexity-orchestration-recommendation.ts`,
+      `packages/broker/src/core/dispatch/scheduler-dry-run.ts`,
       `docs/worker-latency-advisory.md`,
       `packages/broker/src/core/orchestration-intelligence-validation-framework.ts`,
       `packages/broker/src/core/orchestration-intelligence-validation-scorer.ts`,

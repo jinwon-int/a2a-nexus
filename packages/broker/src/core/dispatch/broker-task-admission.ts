@@ -5,8 +5,8 @@
 // linkage, and lifecycle worker-identity gates. Pure move — state effects are
 // callback-injected via TaskAdmissionContext (the broker-exchange.ts pattern);
 // InMemoryA2ABroker keeps thin private delegators so call sites are unchanged.
-import { BrokerError } from "./broker-error.js";
-import { isoNow } from "./broker-helpers.js";
+import { BrokerError } from "../broker-error.js";
+import { isoNow } from "../broker-helpers.js";
 import {
   assertA2ARoundTaskPolicy,
   assertCreateTaskRecordShape,
@@ -20,8 +20,8 @@ import {
   type BrokerPolicyDocument,
 } from "a2a-policy-referee";
 import { evaluateImplementationReadiness, isImplementationTaskType } from "./scheduler-dry-run.js";
-import { assertTransition, assertTaskOwnership } from "./broker-transition-guards.js";
-import { evaluateTaskReadiness, type TaskReadinessMode } from "../task-readiness.js";
+import { assertTransition, assertTaskOwnership } from "../broker-transition-guards.js";
+import { evaluateTaskReadiness, type TaskReadinessMode } from "../../task-readiness.js";
 import type {
   AuditAction,
   AuditEvent,
@@ -30,7 +30,7 @@ import type {
   TaskRecord,
   WorkerRecord,
   WorkerView,
-} from "./types.js";
+} from "../types.js";
 
 const DEFAULT_A2A_ROUND_WORKER_OFFLINE_AFTER_MS = 90_000;
 

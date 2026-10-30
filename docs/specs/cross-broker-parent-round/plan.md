@@ -23,9 +23,9 @@ broker core(판정·outbox·receiver·http·store 스냅샷)와 dispatch helper�
   `handoffBrokerId` 필수화, `missing_anchor` code, 4-case fixture 확장.
 - `a2a-broker`(`packages/broker`): `core/cross-broker-terminal-brief.ts`,
   `core/terminal-event-outbox.ts`, `core/cross-broker-terminal-brief-receiver.ts`,
-  `core/broker.ts`(판정 배선), 신규 `core/parent-round-registry.ts`,
+  `core/broker.ts`(판정 배선), 신규 `core/dispatch/parent-round-registry.ts`,
   `http/a2a-terminal-outbox-routes.ts`(sender-proof 모드), 신규
-  `http/parent-round-routes.ts`, `core/a2a-dispatch-helper.ts` +
+  `http/parent-round-routes.ts`, `core/dispatch/a2a-dispatch-helper.ts` +
   `scripts/a2a-dispatch-helper.mjs`, `store.ts`(스냅샷 sidecar), `server.ts`(env).
 - `a2a-docker-runner`: 변경 없음.
 - harness bridges: 변경 없음.

@@ -19,7 +19,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { InMemoryA2ABroker } from "./broker.js";
-import { resolveTaskPolicyMode } from "./broker-task-admission.js";
+import { resolveTaskPolicyMode } from "./dispatch/broker-task-admission.js";
 import { BROKER_POLICY_SCHEMA, validateBrokerPolicyDocument } from "a2a-policy-referee";
 
 function denyModesPolicy(mode: "warn" | "enforce") {

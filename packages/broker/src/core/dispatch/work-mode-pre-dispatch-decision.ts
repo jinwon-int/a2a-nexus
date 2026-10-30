@@ -1,6 +1,6 @@
-import { isRecord } from "./value-guards.js";
+import { isRecord } from "../value-guards.js";
 import { createHash } from "node:crypto";
-import { numberValue, optionalBoolean, optionalString } from "./value-text.js";
+import { numberValue, optionalBoolean, optionalString } from "../value-text.js";
 
 export type A2AWorkMode = "solo" | "team1" | "hybrid";
 export type A2AWorkModeConfidence = "high" | "medium" | "low";

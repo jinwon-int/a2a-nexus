@@ -154,8 +154,8 @@ import {
 } from "./execution/broker-knowledge-injection.js";
 import type { FinalizerVerdictEnforcement } from "./finalizer-verdict-admission.js";
 import type { FinalizerKeyring } from "a2a-attestation";
-import * as taskAdmission from "./broker-task-admission.js";
-import type { TaskAdmissionContext } from "./broker-task-admission.js";
+import * as taskAdmission from "./dispatch/broker-task-admission.js";
+import type { TaskAdmissionContext } from "./dispatch/broker-task-admission.js";
 import * as staleTaskRequeue from "./claim/broker-stale-task-requeue.js";
 import type { StaleTaskRequeueContext } from "./claim/broker-stale-task-requeue.js";
 import * as proposalWrite from "./broker-proposal-write.js";
@@ -186,7 +186,7 @@ import {
   type ParentRoundMintInput,
   type ParentRoundMintResult,
   type ParentRoundRegistryEntry,
-} from "./parent-round-registry.js";
+} from "./dispatch/parent-round-registry.js";
 import {
   TerminalTaskEventOutbox,
   type TerminalTaskOutboxAckInput,
@@ -196,8 +196,8 @@ import {
   type TerminalTaskRelayFallbackResult,
 } from "./terminal-event-outbox.js";
 import { ConferenceRoomManager } from "./conference-room.js";
-import { WavePlanStore, type StalledWavePlan } from "./wave-plan-store.js";
-import type { WavePlan, WaveStageEvidence } from "./wave-plan.js";
+import { WavePlanStore, type StalledWavePlan } from "./dispatch/wave-plan-store.js";
+import type { WavePlan, WaveStageEvidence } from "./dispatch/wave-plan.js";
 import { classifyWavePlanIntake } from "../wave-plan-dag-v2/dispatch-boundary.js";
 import {
   admitWavePlanDagManifestV2,
@@ -258,10 +258,10 @@ import {
   type CrossBrokerTerminalBriefProjectionRequest,
   type CrossBrokerTerminalBriefProjectionResult,
 } from "./cross-broker-terminal-brief.js";
-import { normalizeA2ARoundTaskRequest } from "./a2a-round-policy.js";
+import { normalizeA2ARoundTaskRequest } from "./dispatch/a2a-round-policy.js";
 import {
   assertWorkerRegistrationPayload,
-} from "./broker-payload-validators.js";
+} from "./dispatch/broker-payload-validators.js";
 import {
   assertTaskStatus,
   assertTaskCreationOwnership,

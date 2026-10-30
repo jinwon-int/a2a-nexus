@@ -142,7 +142,7 @@ import { loadInjectedKnowledgeFile } from "./core/execution/broker-knowledge-inj
 import { resolveFinalizerVerdictEnforcement } from "./core/finalizer-verdict-admission.js";
 import { loadFinalizerKeyringFile } from "a2a-attestation";
 import { resolveReviewLineageRolloutMode } from "./core/review-lineage-store.js";
-import { resolveWavePlanDagV2Mode } from "./core/wave-plan-dag-v2-mode.js";
+import { resolveWavePlanDagV2Mode } from "./core/dispatch/wave-plan-dag-v2-mode.js";
 import { normalizePersistenceBackend, normalizeSqliteLoadSource } from "./persistence-options.js";
 import {
   resolveBrokerId,

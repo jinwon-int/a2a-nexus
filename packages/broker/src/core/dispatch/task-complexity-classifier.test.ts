@@ -41,7 +41,7 @@ import {
 // ---------------------------------------------------------------------------
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
-const FIXTURE_DIR = join(__dirname, "../../fixtures/task-complexity-classifier");
+const FIXTURE_DIR = join(__dirname, "../../../fixtures/task-complexity-classifier");
 
 interface ClassificationFixture {
   kind: string;

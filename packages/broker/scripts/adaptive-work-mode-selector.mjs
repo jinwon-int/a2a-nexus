@@ -6,7 +6,7 @@ import {
   buildA2AAdaptiveSelectorRecord,
   extractA2AAdaptiveSelectorInput,
   renderA2AAdaptiveSelectorMarkdown,
-} from "../dist/core/adaptive-work-mode-selector.js";
+} from "../dist/core/dispatch/adaptive-work-mode-selector.js";
 
 function readOption(argv, name) {
   const inline = argv.find((arg) => arg.startsWith(name + "="));

@@ -20,12 +20,12 @@ import {
   createWorkerCapabilityCard,
   type CreateWorkerCapabilityCardOptions,
   type WorkerCapabilityCard,
-} from "./claim/worker-capability-card.js";
-import type { WorkerView } from "./types.js";
+} from "../claim/worker-capability-card.js";
+import type { WorkerView } from "../types.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-const READY_IMPLEMENTATION: NonNullable<import("./types.js").WorkerCapabilities["implementationCapability"]> = {
+const READY_IMPLEMENTATION: NonNullable<import("../types.js").WorkerCapabilities["implementationCapability"]> = {
   capable: true,
   runtime: "claude-native",
   providerId: "anthropic",
@@ -36,7 +36,7 @@ const READY_IMPLEMENTATION: NonNullable<import("./types.js").WorkerCapabilities[
 };
 
 /** Shared default capabilities to avoid inline makeWorkerView nesting. */
-const BASE_CAP: import("./types.js").WorkerCapabilities = {
+const BASE_CAP: import("../types.js").WorkerCapabilities = {
   canAnalyze: true,
   canBackfill: true,
   canPatchWorkspace: true,

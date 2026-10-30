@@ -822,7 +822,7 @@ test("Hermes A2A analysis bridge accepts embedded source evidence without repo-m
       "const args = process.argv.slice(2);",
       "const prompt = args[args.indexOf('-q') + 1];",
       "writeFileSync(process.env.CAPTURE_PROMPT_PATH, prompt);",
-      "if (!prompt.includes('packages/broker/src/core/a2a-round-policy.ts')) throw new Error('embedded source path missing');",
+      "if (!prompt.includes('packages/broker/src/core/dispatch/a2a-round-policy.ts')) throw new Error('embedded source path missing');",
       "if (!prompt.includes('embedded source marker for PR2')) throw new Error('embedded source content missing');",
       "console.log(JSON.stringify({",
       "  status: 'done',",
@@ -830,7 +830,7 @@ test("Hermes A2A analysis bridge accepts embedded source evidence without repo-m
       "  findings: ['embeddedSourceEvidence was included in the read-only source bundle'],",
       "  risks: [],",
       "  recommendations: [],",
-      "  evidenceRefs: ['jinwon-int/a2a-nexus:packages/broker/src/core/a2a-round-policy.ts']",
+      "  evidenceRefs: ['jinwon-int/a2a-nexus:packages/broker/src/core/dispatch/a2a-round-policy.ts']",
       "}));",
       "",
     ].join("\n"));
@@ -846,7 +846,7 @@ test("Hermes A2A analysis bridge accepts embedded source evidence without repo-m
         embeddedSourceEvidence: [
           {
             repo: "jinwon-int/a2a-nexus",
-            path: "packages/broker/src/core/a2a-round-policy.ts",
+            path: "packages/broker/src/core/dispatch/a2a-round-policy.ts",
             content: "export const embedded = 'embedded source marker for PR2';\n",
           },
         ],
@@ -866,7 +866,7 @@ test("Hermes A2A analysis bridge accepts embedded source evidence without repo-m
     assert.equal(result.status, 0, result.stderr);
     const prompt = readFileSync(promptPath, "utf8");
     assert.match(prompt, /Read-only source bundle \([1-9]\d* files\)/);
-    assert.match(prompt, /packages\/broker\/src\/core\/a2a-round-policy\.ts/);
+    assert.match(prompt, /packages\/broker\/src\/core\/dispatch\/a2a-round-policy\.ts/);
     assert.match(prompt, /embedded source marker for PR2/);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });

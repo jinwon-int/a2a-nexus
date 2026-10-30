@@ -20,6 +20,8 @@
 > [Claim move](#claim-move).
 > **Evidence move implemented** (split-order row 4): see
 > [Evidence move](#evidence-move).
+> **Dispatch move implemented** (split-order row 5): see
+> [Dispatch move](#dispatch-move).
 
 ## Summary
 
@@ -879,6 +881,47 @@ the nested path and passes: 98.67% against the 97% floor.
 `execution` 9, all assigned by directory), 147 map entries. Value violations
 stay at 0 and type-only at 23 = baseline. No evidence module is in the worker
 dist closure.
+
+## Dispatch move
+
+Split-order row 5, done with the Step 5 recipe and its two later additions.
+`broker-task-request-normalizers` stays at the root as kernel.
+
+**Moved:** 18 modules (16 after the sink, plus `runtime-safety-gates` and
+`broker-payload-validators`, which were reclassified) and 17 tests to
+`packages/broker/src/core/dispatch/`. The tests include
+`round-manifest-resource-policy` and `wave-plan-recovery`, whose names differ
+from the modules they test.
+
+**Changes:**
+
+- 70 specifiers rewritten.
+- 25 path strings updated in docs, wrappers, bridge tests and two broker npm
+  scripts (`test:work_mode_pre_dispatch_decision`,
+  `test:adaptive_work_mode_selector`).
+- 3 tests that build file-relative paths get one more `../`: 2 use
+  `join(__dirname, "../../fixtures/…")` and `a2a-dispatch-helper.test.ts` uses
+  `resolve(dirname(fileURLToPath(import.meta.url)), "../../scripts/…")`.
+  **Recipe correction:** sweep for every `import.meta.url`, `__dirname` and
+  `__filename` use in the moved files, not only for `new URL("../`. The
+  `fileURLToPath(import.meta.url)` form slipped past the narrower pattern and
+  failed 4 tests on the first run.
+- 18 map entries removed; 2 type-baseline entries re-keyed.
+- The three dispatch files that call `new URL()` parse URLs only and are
+  unaffected.
+
+**Results:** 175 core modules (`dispatch` 18, `evidence-retrieval` 8, `claim`
+11, `execution` 9, all assigned by directory), 129 map entries. Value
+violations stay at 0 and type-only at 23 = baseline.
+
+**Worker artifact — larger than the earlier moves:**
+`dist/core/runtime-safety-gates.js` is in the worker dist closure, and the
+worker handler entry `scripts/a2a-task-handler.mjs` imports it directly. The
+handler and its dist file must therefore ship together, in the same
+pack-built artifact. Per the 2026-10-30 owner decision this goes out with the
+next regular worker deploy, together with pack, the `--deployed` guard and
+`clean:dist`. Copying only the handler, without the new dist, breaks it with
+`ERR_MODULE_NOT_FOUND`.
 
 ## Appendix: survey script
 

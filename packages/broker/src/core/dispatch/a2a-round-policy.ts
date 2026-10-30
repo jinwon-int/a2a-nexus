@@ -1,5 +1,5 @@
-import { extractDispatchMetadata, validateTerminalBriefMetadata } from "./terminal-brief-metadata.js";
-import type { CreateTaskRequest } from "./types.js";
+import { extractDispatchMetadata, validateTerminalBriefMetadata } from "../terminal-brief-metadata.js";
+import type { CreateTaskRequest } from "../types.js";
 
 export const A2A_ROUND_TEAM1_WORKERS = ["workerbeta", "workeralpha", "workergamma", "mobilealpha", "workerdelta"] as const;
 export const A2A_ROUND_TEAM2_WORKERS = ["workerepsilon", "workerzeta", "workereta", "mobilebeta"] as const;
