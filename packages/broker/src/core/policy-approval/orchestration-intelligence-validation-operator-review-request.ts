@@ -4,7 +4,7 @@ import {
   type OIValidationFinalizerScenarioReview,
 } from "./orchestration-intelligence-validation-finalizer-review.js";
 import { buildOIValidationScorePacket } from "./orchestration-intelligence-validation-scorer.js";
-import { stableId } from "./value-guards.js";
+import { stableId } from "../value-guards.js";
 
 export type OIValidationOperatorReviewRequestState =
   | "operator_review_request_ready"

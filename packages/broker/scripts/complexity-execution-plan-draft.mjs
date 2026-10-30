@@ -19,7 +19,7 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { buildComplexityExecutionPlanDraft, renderComplexityExecutionPlanDraftMarkdown } from "../dist/core/complexity-execution-plan-draft.js";
+import { buildComplexityExecutionPlanDraft, renderComplexityExecutionPlanDraftMarkdown } from "../dist/core/policy-approval/complexity-execution-plan-draft.js";
 
 function usage() {
   return [

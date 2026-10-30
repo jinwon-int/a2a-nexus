@@ -26,9 +26,9 @@
 // Parent:    #971  Team2 — complexity orchestration recommendation packet.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { isRecord, stableStringify } from "./value-guards.js";
+import { isRecord, stableStringify } from "../value-guards.js";
 import { createHash } from "node:crypto";
-import type { ComplexityOrchestrationRecommendationPacket } from "./dispatch/complexity-orchestration-recommendation.js";
+import type { ComplexityOrchestrationRecommendationPacket } from "../dispatch/complexity-orchestration-recommendation.js";
 
 // ---------------------------------------------------------------------------
 // Types

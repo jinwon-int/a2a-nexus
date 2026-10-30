@@ -27,7 +27,7 @@
 //            recommendation packet.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { isRecord, stableStringify } from "./value-guards.js";
+import { isRecord, stableStringify } from "../value-guards.js";
 import { createHash } from "node:crypto";
 import type { FinalizerApprovalEnvelopeDraftPacket } from "./complexity-finalizer-approval-envelope-draft.js";
 

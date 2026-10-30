@@ -3,7 +3,7 @@ import {
   type OIRuntimeDesignReviewPacket,
 } from "./orchestration-intelligence-runtime-design-review.js";
 import type { OIRuntimeReadinessEvidence } from "./orchestration-intelligence-runtime-readiness-gate.js";
-import { stableId } from "./value-guards.js";
+import { stableId } from "../value-guards.js";
 
 export type OIRuntimeApprovalRequestState =
   | "approval_request_ready"

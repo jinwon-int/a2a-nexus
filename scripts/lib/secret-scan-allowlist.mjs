@@ -11,7 +11,7 @@
 /** file -> { RuleID: maximum allowed findings } */
 export const SYNTHETIC_FIXTURE_FINDINGS = new Map([
   ['packages/broker/scripts/round-coordinator-closeout-dry-run.test.mjs', { 'generic-api-key': 1 }],
-  ['packages/broker/src/core/orchestration-intelligence-worker-subagent-spawn-bridge.test.ts', { 'generic-api-key': 1 }],
+  ['packages/broker/src/core/policy-approval/orchestration-intelligence-worker-subagent-spawn-bridge.test.ts', { 'generic-api-key': 1 }],
   ['packages/broker/src/server-live-task-admission.test.ts', { 'generic-api-key': 2 }],
   ['packages/docker-runner/src/engine-contract.test.ts', { 'generic-api-key': 2 }],
   ['packages/docker-runner/src/github-evidence.test.ts', { 'generic-api-key': 1 }],

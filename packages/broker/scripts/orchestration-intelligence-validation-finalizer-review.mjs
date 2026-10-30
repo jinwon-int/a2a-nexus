@@ -2,11 +2,11 @@
 import { readFile } from "node:fs/promises";
 import process from "node:process";
 
-import { buildOIValidationScorePacket } from "../dist/core/orchestration-intelligence-validation-scorer.js";
+import { buildOIValidationScorePacket } from "../dist/core/policy-approval/orchestration-intelligence-validation-scorer.js";
 import {
   buildOIValidationFinalizerReviewPacket,
   renderOIValidationFinalizerReviewMarkdown,
-} from "../dist/core/orchestration-intelligence-validation-finalizer-review.js";
+} from "../dist/core/policy-approval/orchestration-intelligence-validation-finalizer-review.js";
 
 function readOption(argv, name) {
   const inline = argv.find((arg) => arg.startsWith(name + "="));

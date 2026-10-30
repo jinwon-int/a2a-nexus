@@ -5,7 +5,7 @@ import process from "node:process";
 import {
   buildOIValidationScorePacket,
   renderOIValidationScoreMarkdown,
-} from "../dist/core/orchestration-intelligence-validation-scorer.js";
+} from "../dist/core/policy-approval/orchestration-intelligence-validation-scorer.js";
 
 function readOption(argv, name) {
   const inline = argv.find((arg) => arg.startsWith(name + "="));

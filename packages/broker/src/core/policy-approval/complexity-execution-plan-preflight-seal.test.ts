@@ -13,7 +13,7 @@ import {
 import type { ComplexityExecutionPlanDraftPacket } from "./complexity-execution-plan-draft.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
-const FIXTURE_DIR = join(__dirname, "../../fixtures/complexity-execution-plan-preflight-seal");
+const FIXTURE_DIR = join(__dirname, "../../../fixtures/complexity-execution-plan-preflight-seal");
 
 const NOW = "2026-06-01T12:00:00.000Z";
 

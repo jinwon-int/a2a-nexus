@@ -2,17 +2,17 @@
 import { readFile } from "node:fs/promises";
 import process from "node:process";
 
-import { buildOIValidationScorePacket } from "../dist/core/orchestration-intelligence-validation-scorer.js";
-import { buildOIValidationFinalizerReviewPacket } from "../dist/core/orchestration-intelligence-validation-finalizer-review.js";
-import { buildOIValidationOperatorReviewRequestPacket } from "../dist/core/orchestration-intelligence-validation-operator-review-request.js";
-import { buildOIValidationOperatorDecisionEvidencePacket } from "../dist/core/orchestration-intelligence-validation-operator-decision-evidence.js";
-import { buildOIValidationFinalizerDecisionPacket } from "../dist/core/orchestration-intelligence-validation-finalizer-decision.js";
-import { buildOIRuntimeReadinessGatePacket } from "../dist/core/orchestration-intelligence-runtime-readiness-gate.js";
-import { buildOIRuntimeDesignReviewPacket } from "../dist/core/orchestration-intelligence-runtime-design-review.js";
+import { buildOIValidationScorePacket } from "../dist/core/policy-approval/orchestration-intelligence-validation-scorer.js";
+import { buildOIValidationFinalizerReviewPacket } from "../dist/core/policy-approval/orchestration-intelligence-validation-finalizer-review.js";
+import { buildOIValidationOperatorReviewRequestPacket } from "../dist/core/policy-approval/orchestration-intelligence-validation-operator-review-request.js";
+import { buildOIValidationOperatorDecisionEvidencePacket } from "../dist/core/policy-approval/orchestration-intelligence-validation-operator-decision-evidence.js";
+import { buildOIValidationFinalizerDecisionPacket } from "../dist/core/policy-approval/orchestration-intelligence-validation-finalizer-decision.js";
+import { buildOIRuntimeReadinessGatePacket } from "../dist/core/policy-approval/orchestration-intelligence-runtime-readiness-gate.js";
+import { buildOIRuntimeDesignReviewPacket } from "../dist/core/policy-approval/orchestration-intelligence-runtime-design-review.js";
 import {
   buildOIRuntimeApprovalRequestPacket,
   renderOIRuntimeApprovalRequestMarkdown,
-} from "../dist/core/orchestration-intelligence-runtime-approval-request.js";
+} from "../dist/core/policy-approval/orchestration-intelligence-runtime-approval-request.js";
 
 function readOption(argv, name) {
   const inline = argv.find((arg) => arg.startsWith(name + "="));

@@ -3,7 +3,7 @@ import {
   type OIWorkerSpawnApprovalRequestPacket,
 } from "./orchestration-intelligence-worker-spawn-approval-request.js";
 import type { OIRuntimeReadinessEvidence } from "./orchestration-intelligence-runtime-readiness-gate.js";
-import { approvalNotExpired, approvedAtValid, coversAll, stableId } from "./value-guards.js";
+import { approvalNotExpired, approvedAtValid, coversAll, stableId } from "../value-guards.js";
 
 export type OIWorkerSpawnApprovalDecisionEvidenceState =
   | "worker_spawn_approval_evidence_accepted"

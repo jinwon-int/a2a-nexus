@@ -2,15 +2,15 @@
 import { readFile } from "node:fs/promises";
 import process from "node:process";
 
-import { buildOIValidationScorePacket } from "../dist/core/orchestration-intelligence-validation-scorer.js";
-import { buildOIValidationFinalizerReviewPacket } from "../dist/core/orchestration-intelligence-validation-finalizer-review.js";
-import { buildOIValidationOperatorReviewRequestPacket } from "../dist/core/orchestration-intelligence-validation-operator-review-request.js";
-import { buildOIValidationOperatorDecisionEvidencePacket } from "../dist/core/orchestration-intelligence-validation-operator-decision-evidence.js";
-import { buildOIValidationFinalizerDecisionPacket } from "../dist/core/orchestration-intelligence-validation-finalizer-decision.js";
+import { buildOIValidationScorePacket } from "../dist/core/policy-approval/orchestration-intelligence-validation-scorer.js";
+import { buildOIValidationFinalizerReviewPacket } from "../dist/core/policy-approval/orchestration-intelligence-validation-finalizer-review.js";
+import { buildOIValidationOperatorReviewRequestPacket } from "../dist/core/policy-approval/orchestration-intelligence-validation-operator-review-request.js";
+import { buildOIValidationOperatorDecisionEvidencePacket } from "../dist/core/policy-approval/orchestration-intelligence-validation-operator-decision-evidence.js";
+import { buildOIValidationFinalizerDecisionPacket } from "../dist/core/policy-approval/orchestration-intelligence-validation-finalizer-decision.js";
 import {
   buildOIRuntimeReadinessGatePacket,
   renderOIRuntimeReadinessGateMarkdown,
-} from "../dist/core/orchestration-intelligence-runtime-readiness-gate.js";
+} from "../dist/core/policy-approval/orchestration-intelligence-runtime-readiness-gate.js";
 
 function readOption(argv, name) {
   const inline = argv.find((arg) => arg.startsWith(name + "="));

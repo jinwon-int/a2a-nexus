@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildFinalizerApprovalEnvelopeDraft } from "./core/complexity-finalizer-approval-envelope-draft.js";
+import { buildFinalizerApprovalEnvelopeDraft } from "./core/policy-approval/complexity-finalizer-approval-envelope-draft.js";
 import { startTestServer, jsonHeaders } from "./server-test-helpers.js";
 
 test("POST /workers/subagent-orchestration/plan returns read-only capacity planner packet", async () => {

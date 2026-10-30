@@ -3,7 +3,7 @@ import {
   type OIRuntimeApprovalDecisionEvidencePacket,
 } from "./orchestration-intelligence-runtime-approval-decision-evidence.js";
 import type { OIRuntimeReadinessEvidence } from "./orchestration-intelligence-runtime-readiness-gate.js";
-import { stableId } from "./value-guards.js";
+import { stableId } from "../value-guards.js";
 
 export type OIBrokerDispatchApprovalRequestState =
   | "dispatch_approval_request_ready"

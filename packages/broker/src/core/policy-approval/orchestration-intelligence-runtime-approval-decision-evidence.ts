@@ -3,7 +3,7 @@ import {
   type OIRuntimeApprovalRequestPacket,
 } from "./orchestration-intelligence-runtime-approval-request.js";
 import type { OIRuntimeReadinessEvidence } from "./orchestration-intelligence-runtime-readiness-gate.js";
-import { approvalNotExpired, approvedAtValid, coversAll, stableId } from "./value-guards.js";
+import { approvalNotExpired, approvedAtValid, coversAll, stableId } from "../value-guards.js";
 
 export type OIRuntimeApprovalDecisionEvidenceState =
   | "approval_evidence_accepted"

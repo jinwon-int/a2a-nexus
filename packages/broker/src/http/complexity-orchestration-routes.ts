@@ -18,11 +18,11 @@ import {
 import {
   buildFinalizerApprovalEnvelopeDraft,
   type FinalizerApprovalEnvelopeDraftPacket,
-} from "../core/complexity-finalizer-approval-envelope-draft.js";
+} from "../core/policy-approval/complexity-finalizer-approval-envelope-draft.js";
 import {
   buildComplexityExecutionPlanDraft,
   extractEnvelopeFromExecutionPlan,
-} from "../core/complexity-execution-plan-draft.js";
+} from "../core/policy-approval/complexity-execution-plan-draft.js";
 import { readJson } from "./body.js";
 import { sendJson } from "./response.js";
 
