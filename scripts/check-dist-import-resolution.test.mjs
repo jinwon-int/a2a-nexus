@@ -246,7 +246,6 @@ test('the live repository inventories every computed core-path consumer named in
   assert.deepEqual(problems, []);
   for (const file of [
     'packages/broker/scripts/export-sqlite-state.mjs',
-    'packages/broker/scripts/operator-approval-request.mjs',
     'test/conformance/check-three-component-e2e.mjs',
     'test/conformance/check-trace-propagation.mjs',
     'test/conformance/lib/ensure-built.mjs',

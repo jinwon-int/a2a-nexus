@@ -289,7 +289,9 @@ test("the committed domain map covers every core module and the real tree has no
   assert.deepEqual(result.missingFromMap, []);
   assert.deepEqual(result.unknownInMap, []);
   assert.deepEqual(result.valueViolations, []);
-  assert.ok(result.modules >= 181, `expected >= 181 core modules, got ${result.modules}`);
+  // Floor against silent module loss; lowered 181 -> 175 by the #2453 step 4
+  // CLI-only retirement (mirrored in check-script-budget BUDGETS.brokerCoreModules).
+  assert.ok(result.modules >= 175, `expected >= 175 core modules, got ${result.modules}`);
 });
 
 test("the committed type-only baseline matches the real tree exactly (no slack to absorb new edges)", () => {

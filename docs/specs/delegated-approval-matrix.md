@@ -37,7 +37,7 @@
 | 승인자 자격증명 바인딩 (#2322) | `tasks-decision-routes.ts:116` `readApproverDecisionBody`, `server.ts:349` | opt-in `A2A_APPROVER_ROLE_BINDING` = `off`(기본) \| `enforce`. `enforce` 시 서명 키 소유자 == requester, 키 레코드가 `roles` 를 명시적으로 선언해야 승인 가능 (`request-security.ts:1001`–`:1026` `a2a_signature_approver_*`) |
 | 서명 키 역할 제한 | `packages/broker/src/core/request-security.ts:514` | `a2a_signature_role_denied` — 키 레지스트리 `roles` 제한 |
 | 보류 상태의 의미 중첩 | `packages/broker/src/core/types.ts:43` `TaskStatus`, :52–:55 주석 | `blocked` 는 "operator 승인 대기로 parking" 이라는 단일 의미만 정의됨 — 실행 금지 자리표시자 보류와 구분하는 상태/플래그 없음 |
-| 실행 모드 초안 | `packages/broker/docs/operator-approval-request.md:59`–`:62` | `autonomous` / `operator_notify` / `operator_approval_gated` / `operator_review_gated` (source-only 초안) |
+| 실행 모드 초안 | [`operator-approval-request.md:59`–`:62` @ `d90a5ede`](https://github.com/jinwon-int/a2a-nexus/blob/d90a5edea11e39a2123fc169a8866c6521816cef/packages/broker/docs/operator-approval-request.md#L59-L62) (#2453 4단계에서 문서·CLI 폐기, 고정 커밋으로 인용) | `autonomous` / `operator_notify` / `operator_approval_gated` / `operator_review_gated` (source-only 초안) |
 | 승인 기록 스펙 | `docs/specs/approval-record.md`, `fixtures/approvals/approval-record.schema.json` | `approverRole: const "operator"`, `action` enum 19종 |
 | 역할 라벨 | `packages/broker/src/core/types.ts:2` `A2APartyRole` | `hub`·`operator`·`orchestrator` 등 8종. 브로커 내부 서비스 actor 도 `operator` 라벨을 쓴다(예: `broker-stale-task-requeue.ts:196`, `delegated-runtime.ts:264`, 둘 다 cancel 경로) — 라벨만으로 사람/에이전트를 구분할 수 없다는 관찰을 보강 |
 
@@ -255,7 +255,7 @@ T1 브로커 조사에서는 `requiresApproval` + `blocked` 가 실제 승인 �
 - jinwon-int/ccc-node#2137 (OPEN) — 개별 에이전트 집행: 브로커 결재 영수증 검증
 - #1480 (CLOSED) a2a-policy-referee, #1488 (CLOSED) a2a-escrow-proof
 - `docs/specs/approval-record.md`, `fixtures/approvals/approval-record.schema.json`
-- `packages/broker/docs/operator-approval-request.md`
+- [`packages/broker/docs/operator-approval-request.md` @ `d90a5ede`](https://github.com/jinwon-int/a2a-nexus/blob/d90a5edea11e39a2123fc169a8866c6521816cef/packages/broker/docs/operator-approval-request.md) — #2453 4단계에서 폐기됨
 - `docs/a2a-constitution.md` §5 Approval boundaries are explicit
 - 운영 위키 RB-35(A2A Broker Operating Rules §3), TM-2134(broker/Gateway 재시작
   영구 fresh-approval), TM-1306 — 비공개 운영 위키, 본문은 이 레포에 복제하지 않음

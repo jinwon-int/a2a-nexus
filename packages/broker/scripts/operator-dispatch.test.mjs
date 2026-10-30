@@ -26,7 +26,10 @@ const SURFACES = [
     // 59 -> 22 (#1665): the 37 terminal_brief_sidecar_* tools retired with the
     // ceremony modules they wrapped. The spot check moved off a sidecar tool for
     // the same reason — it now pins a surviving product-surface tool.
-    expectedTools: 22,
+    // 22 -> 18 (#2453 step 4): rehearsal_manifest, source_public_approval_rehearsal,
+    // source_public_execution_orchestrator and terminal_brief_auto_closeout_dryrun_runner
+    // retired with their CLI-only core modules.
+    expectedTools: 18,
     spotTool: "broker_terminal_receipt_parity",
     spotWrapper: "broker-terminal-receipt-parity.mjs",
   },
@@ -35,7 +38,10 @@ const SURFACES = [
     runner: join(HERE, "orchestration.mjs"),
     manifest: join(HERE, "orchestration-manifest.json"),
     npmEntry: "orchestration",
-    expectedTools: 21,
+    // 21 -> 19 (#2453 step 4): complexity_orchestration_recommendation (the
+    // dry-run CLI) and operator_approval_request retired with their CLI-only core
+    // modules. The runtime recommendation module behind the HTTP route stays.
+    expectedTools: 19,
     spotTool: "orchestration_intelligence_validation_scorer",
     spotWrapper: "orchestration-intelligence-validation-scorer.mjs",
   },

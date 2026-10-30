@@ -273,8 +273,10 @@ test('script surface manifest validates current root and broker package scripts'
   // aliases with zero repo/CI/Wiki-runbook references retired (scripts stay
   // runnable via `node scripts/<file>`); pr-review:healthcheck kept because
   // the Wiki runbook a2a-nexus-pr-review-guardrails invokes it by name.
+  // #2453 step 4: broker 57→56 — test:operator-approval-request retired with
+  // its CLI-only core module; mirrored in BUDGETS.brokerNpmScripts.
   assert.equal(byId.get('root')?.scriptCount, 45);
-  assert.equal(byId.get('broker')?.scriptCount, 57);
+  assert.equal(byId.get('broker')?.scriptCount, 56);
   assert.ok((byId.get('root')?.kindCounts['required-gate'] ?? 0) >= 7);
   assert.ok((byId.get('broker')?.kindCounts['required-gate'] ?? 0) >= 7);
 });

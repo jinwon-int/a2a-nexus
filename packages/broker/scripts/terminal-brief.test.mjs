@@ -48,7 +48,6 @@ test("build flags match the historical npm alias commands", () => {
   assert.deepEqual(noBuild, [
     "closeout_release_report",
     "command_center_closeout_checklist",
-    "rehearsal_manifest",
     "terminal_brief_activation_report",
     "terminal_receipt_closeout_report",
     "terminal_receipt_gap_matrix",

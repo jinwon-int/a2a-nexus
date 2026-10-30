@@ -14,14 +14,6 @@
       "script": "complexity-execution-plan-preflight-seal.mjs",
       "build": true
     },
-    "complexity_orchestration_recommendation": {
-      "script": "complexity-orchestration-recommendation.mjs",
-      "build": true
-    },
-    "operator_approval_request": {
-      "script": "operator-approval-request.mjs",
-      "build": true
-    },
     "orchestration_intelligence_broker_dispatch_approval_decision_evidence": {
       "script": "orchestration-intelligence-broker-dispatch-approval-decision-evidence.mjs",
       "build": true
