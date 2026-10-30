@@ -9,12 +9,12 @@ import { readFileSync } from "node:fs";
 import {
   buildA2ADispatchPlan,
   renderA2ADispatchPlanMarkdown,
-} from "../dist/core/a2a-dispatch-helper.js";
+} from "../dist/core/dispatch/a2a-dispatch-helper.js";
 import {
   buildA2AWorkModePreDispatchDecision,
   buildA2AWorkModeDecisionEvidence,
   extractA2AWorkModePreDispatchDecisionInput,
-} from "../dist/core/work-mode-pre-dispatch-decision.js";
+} from "../dist/core/dispatch/work-mode-pre-dispatch-decision.js";
 
 function readOption(argv, name) {
   const prefix = name + "=";

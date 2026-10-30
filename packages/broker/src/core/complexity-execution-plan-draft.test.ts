@@ -20,11 +20,11 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { classifyTaskComplexity } from "./task-complexity-classifier.js";
+import { classifyTaskComplexity } from "./dispatch/task-complexity-classifier.js";
 import {
   buildComplexityOrchestrationRecommendation,
   type ComplexityOrchestrationRecommendationPacket,
-} from "./complexity-orchestration-recommendation.js";
+} from "./dispatch/complexity-orchestration-recommendation.js";
 import {
   buildFinalizerApprovalEnvelopeDraft,
   type FinalizerApprovalEnvelopeDraftPacket,

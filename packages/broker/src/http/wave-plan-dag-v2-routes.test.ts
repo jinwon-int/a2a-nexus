@@ -4,7 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { InMemoryA2ABroker } from "../core/broker.js";
-import { resolveWavePlanDagV2Mode } from "../core/wave-plan-dag-v2-mode.js";
+import { resolveWavePlanDagV2Mode } from "../core/dispatch/wave-plan-dag-v2-mode.js";
 import {
   handleWavePlanDagV2RoutesIfMatched,
 } from "./wave-plan-dag-v2-routes.js";

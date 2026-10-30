@@ -10,11 +10,11 @@ import {
 import {
   classifyTaskComplexity,
   type TaskComplexityInput as ComplexityOrchestrationTaskComplexityInput,
-} from "../core/task-complexity-classifier.js";
+} from "../core/dispatch/task-complexity-classifier.js";
 import {
   buildComplexityOrchestrationRecommendation,
   type ComplexityOrchestrationRecommendationPacket,
-} from "../core/complexity-orchestration-recommendation.js";
+} from "../core/dispatch/complexity-orchestration-recommendation.js";
 import {
   buildFinalizerApprovalEnvelopeDraft,
   type FinalizerApprovalEnvelopeDraftPacket,

@@ -12,7 +12,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
 import type { BrokerStateStore } from "../core/store.js";
 import { assertRequesterHasRole, type RequesterIdentity } from "../core/request-security.js";
-import { ParentRoundRegistryError } from "../core/parent-round-registry.js";
+import { ParentRoundRegistryError } from "../core/dispatch/parent-round-registry.js";
 import { awaitDurablePersistenceAck } from "./error-mapping.js";
 import { readJson } from "./body.js";
 import { sendJson } from "./response.js";

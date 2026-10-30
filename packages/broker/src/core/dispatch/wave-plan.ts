@@ -1,4 +1,4 @@
-import { isRecord } from "./value-guards.js";
+import { isRecord } from "../value-guards.js";
 
 // Durable wave plan (#1357 G3) — pure state machine + gate evaluation.
 //

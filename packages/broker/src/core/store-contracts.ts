@@ -11,7 +11,7 @@ import type {
   WorkerRecord,
 } from "./types.js";
 import type { CrossBrokerTerminalBriefProjection } from "./cross-broker-terminal-brief.js";
-import type { PersistedWavePlan } from "./wave-plan-store.js";
+import type { PersistedWavePlan } from "./dispatch/wave-plan-store.js";
 import type {
   ReviewLineageRecord,
   ProjectedReviewLineageObservation,
@@ -60,7 +60,7 @@ export interface BrokerSnapshot {
   reviewLineages?: ReviewLineageRecord[];
   pushNotificationConfigs?: TaskPushNotificationConfig[];
   /** Parent round registry (#2339 PR-1a); snapshot-only sidecar, no hot table. */
-  parentRounds?: import("./parent-round-registry.js").ParentRoundRegistryEntry[];
+  parentRounds?: import("./dispatch/parent-round-registry.js").ParentRoundRegistryEntry[];
   /** NCLEX evaluation receipts (#1724); snapshot-extension field, passthrough schema. */
   nclexEvaluationReceipts?: Array<{
     receipt: import("a2a-nclex-evaluation").NclexSignedReceipt;

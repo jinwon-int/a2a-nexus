@@ -54,9 +54,9 @@ inspired by five practices:
 
 | Asset | Role in this evaluation |
 | --- | --- |
-| `packages/broker/src/core/work-mode-pre-dispatch-decision.ts` | Existing recommendation surface whose output vocabulary motivates the work-type/processing-method label axes; read as a reference, never modified or invoked by this slice |
-| `packages/broker/src/core/complexity-orchestration-recommendation.ts` | Existing complexity/orchestration recommendation logic; source of the existing-rule baseline to compare against (`existingRuleComparison` field), never modified |
-| `packages/broker/src/core/scheduler-dry-run.ts` | Existing dry-run readout; motivates the `dry_run_first` processing-method label and the readiness signals, never modified |
+| `packages/broker/src/core/dispatch/work-mode-pre-dispatch-decision.ts` | Existing recommendation surface whose output vocabulary motivates the work-type/processing-method label axes; read as a reference, never modified or invoked by this slice |
+| `packages/broker/src/core/dispatch/complexity-orchestration-recommendation.ts` | Existing complexity/orchestration recommendation logic; source of the existing-rule baseline to compare against (`existingRuleComparison` field), never modified |
+| `packages/broker/src/core/dispatch/scheduler-dry-run.ts` | Existing dry-run readout; motivates the `dry_run_first` processing-method label and the readiness signals, never modified |
 | `docs/worker-latency-advisory.md` | Prior art for latency advisory framing; motivates the strict separation between judgment latency and task outcome, never modified |
 | `packages/broker/src/core/orchestration-intelligence-validation-framework.ts` | Existing evidence-packet framework; the planned offline harness reuses its packet/metric shapes (unit, direction, required) rather than inventing a new one |
 | `packages/broker/src/core/orchestration-intelligence-validation-scorer.ts` | Existing scorer packet patterns (per-scenario decision statuses such as `blocked`/`waiting_for_paired_evidence`); planned comparison reports reuse these semantics |

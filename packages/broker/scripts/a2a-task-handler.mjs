@@ -19,7 +19,7 @@ import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snap
 import { normalizeAnalysisExecutionTelemetry } from "./lib/analysis-execution-telemetry.mjs";
 import { analysisHarnessPreflight } from "./lib/analysis-harness-fingerprint.mjs";
 import { normalizePromptViewTelemetry } from "./lib/analysis-source-bundle.mjs";
-import { evaluateDeclaredWriteSetGate } from "../dist/core/runtime-safety-gates.js";
+import { evaluateDeclaredWriteSetGate } from "../dist/core/dispatch/runtime-safety-gates.js";
 import { runLiveOperationTask } from "./lib/live-operation-adapter.mjs";
 import { classifyTypedWithJev, resolveJevConfig } from "./lib/jev-classifier.mjs";
 import { probeObservationQuestions, probeObservationState } from "./lib/jev-probe-observation.mjs";

@@ -68,11 +68,11 @@
       "to": "store.ts"
     },
     {
-      "from": "live-task-admission.ts",
+      "from": "dispatch/live-task-admission.ts",
       "to": "request-security.ts"
     },
     {
-      "from": "live-task-admission.ts",
+      "from": "dispatch/live-task-admission.ts",
       "to": "store-contracts.ts"
     },
     {

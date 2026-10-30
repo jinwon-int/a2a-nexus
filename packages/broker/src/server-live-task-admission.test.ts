@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildLiveApprovalTokenV2 } from "./core/live-task-admission.js";
+import { buildLiveApprovalTokenV2 } from "./core/dispatch/live-task-admission.js";
 import { createInMemoryStateStore, jsonHeaders, startTestServer } from "./server-test-helpers.js";
 
 const SIGNING_KEY = "test-live-admission-signing-key-with-32-bytes";

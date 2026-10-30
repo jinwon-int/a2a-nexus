@@ -15,7 +15,7 @@ import {
   assertAttachArtifactPayload,
   assertProposalPayload,
   assertSubmitValidationPayload,
-} from "./broker-payload-validators.js";
+} from "./dispatch/broker-payload-validators.js";
 import { assertTransition } from "./broker-transition-guards.js";
 import {
   assertProposalApplyAllowed,

@@ -4,8 +4,8 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { classifyWavePlanIntake } from "./dispatch-boundary.js";
-import { validateWavePlanSpec } from "../core/wave-plan.js";
-import type { WaveStageGate } from "../core/wave-plan.js";
+import { validateWavePlanSpec } from "../core/dispatch/wave-plan.js";
+import type { WaveStageGate } from "../core/dispatch/wave-plan.js";
 
 /**
  * #1800 slice 3 — v1/v2 versioned dispatch-boundary classifier.

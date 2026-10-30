@@ -17,7 +17,7 @@
 // Parent:    #969  Team2 A2A next implementation lane.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { A2AExchangeIntent, A2AWorkerEnvironment } from "./types.js";
+import type { A2AExchangeIntent, A2AWorkerEnvironment } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Complexity ordinal

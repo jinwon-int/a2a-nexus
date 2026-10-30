@@ -6,7 +6,7 @@ import {
   buildA2AWorkModePreDispatchDecision,
   extractA2AWorkModePreDispatchDecisionInput,
   renderA2AWorkModePreDispatchDecisionMarkdown,
-} from "../dist/core/work-mode-pre-dispatch-decision.js";
+} from "../dist/core/dispatch/work-mode-pre-dispatch-decision.js";
 
 function readOption(argv, name) {
   const inline = argv.find((arg) => arg.startsWith(name + "="));

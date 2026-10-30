@@ -3,14 +3,14 @@
 // request payload and throws BrokerError on rejection; none touches broker
 // state (the two task validators that consult the broker's own id take it as an
 // explicit `brokerId` argument), so they are unit-testable in isolation.
-import { BrokerError } from "./broker-error.js";
+import { BrokerError } from "../broker-error.js";
 import type {
   AttachArtifactRequest,
   CreateProposalRequest,
   CreateTaskRequest,
   RegisterWorkerRequest,
   SubmitValidationRequest,
-} from "./types.js";
+} from "../types.js";
 import {
   assertRequestPayload,
   attachArtifactRequestSchema,
@@ -18,15 +18,15 @@ import {
   createTaskRequestSchema,
   registerWorkerRequestSchema,
   submitValidationRequestSchema,
-} from "./store-schemas.js";
-import { isPlainRecord } from "./broker-task-record-normalizers.js";
-import { readString, normalizeOwnershipString } from "./broker-task-request-normalizers.js";
+} from "../store-schemas.js";
+import { isPlainRecord } from "../broker-task-record-normalizers.js";
+import { readString, normalizeOwnershipString } from "../broker-task-request-normalizers.js";
 import { validateA2ARoundTaskPolicy } from "./a2a-round-policy.js";
 import {
   extractDispatchMetadata,
   hasTerminalBriefMetadata,
   validateTerminalBriefMetadata,
-} from "./terminal-brief-metadata.js";
+} from "../terminal-brief-metadata.js";
 
 /**
  * Reject a worker registration that is missing required identity/capability

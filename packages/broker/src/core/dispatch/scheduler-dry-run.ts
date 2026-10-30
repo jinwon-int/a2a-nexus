@@ -4,11 +4,11 @@ import type {
   A2AWorkerEnvironment,
   WorkerImplementationRuntime,
   WorkerView,
-} from "./types.js";
+} from "../types.js";
 import {
   type WorkerAssignmentRole,
   type WorkerCapabilityCard,
-} from "./claim/worker-capability-card.js";
+} from "../claim/worker-capability-card.js";
 
 // ── Scheduling intent ───────────────────────────────────────────────────────
 

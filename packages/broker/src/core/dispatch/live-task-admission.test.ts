@@ -7,8 +7,8 @@ import {
   buildLiveApprovalTokenV2,
   type LiveTaskOperation,
 } from "./live-task-admission.js";
-import type { BrokerStateStore } from "./store-contracts.js";
-import type { CreateTaskRequest, WorkerView } from "./types.js";
+import type { BrokerStateStore } from "../store-contracts.js";
+import type { CreateTaskRequest, WorkerView } from "../types.js";
 
 const SIGNING_KEY = "test-live-approval-authority-key";
 const NOW = "2026-07-10T20:30:00.000Z";

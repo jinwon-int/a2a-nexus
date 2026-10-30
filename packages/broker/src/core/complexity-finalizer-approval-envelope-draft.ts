@@ -28,7 +28,7 @@
 
 import { isRecord, stableStringify } from "./value-guards.js";
 import { createHash } from "node:crypto";
-import type { ComplexityOrchestrationRecommendationPacket } from "./complexity-orchestration-recommendation.js";
+import type { ComplexityOrchestrationRecommendationPacket } from "./dispatch/complexity-orchestration-recommendation.js";
 
 // ---------------------------------------------------------------------------
 // Types

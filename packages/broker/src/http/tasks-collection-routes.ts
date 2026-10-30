@@ -30,7 +30,7 @@ import { readJson } from "./body.js";
 import { DEFAULT_TASK_LIST_LIMIT, numberQueryParam, taskFiltersFromUrl } from "./read-path-filters.js";
 import { sendJson } from "./response.js";
 import { parseTaskAcceptance } from "../worker-acceptance.js";
-import { LIVE_TASK_MODE, admitLiveTaskSubmission } from "../core/live-task-admission.js";
+import { LIVE_TASK_MODE, admitLiveTaskSubmission } from "../core/dispatch/live-task-admission.js";
 
 export interface TasksCollectionRouteContext {
   method: string | undefined;

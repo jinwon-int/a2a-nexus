@@ -11,7 +11,7 @@ import {
   isSubstantiveEvidenceClass,
   summarizeWaveStageEvidence,
 } from "./wave-evidence.js";
-import { WavePlanError } from "../wave-plan.js";
+import { WavePlanError } from "../dispatch/wave-plan.js";
 
 test("only 'substantive' counts toward quorum — every other known class does not", () => {
   assert.ok(WAVE_LANE_EVIDENCE_CLASSES.includes("substantive"));

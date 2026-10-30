@@ -33,7 +33,7 @@ import {
   validateResourceAwareWorkerPolicy,
   type ResourceAwareWorkerPolicy,
   type WorkerOnboardingKind,
-} from "./claim/resource-aware-worker-policy.js";
+} from "../claim/resource-aware-worker-policy.js";
 
 import {
   buildRoundManifest,
@@ -44,16 +44,16 @@ import {
 import {
   collectRoundResults,
   type RoundManifest as CollectorManifest,
-} from "./round-result-collector.js";
+} from "../round-result-collector.js";
 
-import type { TaskRecord, TaskResult, TaskStatus } from "./types.js";
+import type { TaskRecord, TaskResult, TaskStatus } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Fixture directory
 // ---------------------------------------------------------------------------
 
 const __dirname = new URL(".", import.meta.url).pathname;
-const FIXTURE_DIR = join(__dirname, "../../fixtures/round-manifest-resource-policy");
+const FIXTURE_DIR = join(__dirname, "../../../fixtures/round-manifest-resource-policy");
 
 // ---------------------------------------------------------------------------
 // Helpers

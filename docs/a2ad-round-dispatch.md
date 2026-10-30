@@ -653,7 +653,7 @@ The manual wave rhythm — dispatch → readback → quorum/gate → implement �
 multi-stage campaign survives broker restarts and advances by gate decision
 instead of operator memory. v1 is linear stages only (no DAG/branching/cron).
 
-State machine (`packages/broker/src/core/wave-plan.ts`, explicit transition
+State machine (`packages/broker/src/core/dispatch/wave-plan.ts`, explicit transition
 table, illegal transitions fail closed):
 
 ```

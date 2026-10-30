@@ -12,12 +12,12 @@ import { readFileSync } from "node:fs";
 import {
   buildTeam1DispatchPlan,
   renderTeam1DispatchPlanMarkdown,
-} from "../dist/core/team1-dispatch-wrapper.js";
+} from "../dist/core/dispatch/team1-dispatch-wrapper.js";
 import {
   buildA2AWorkModePreDispatchDecision,
   buildA2AWorkModeDecisionEvidence,
   extractA2AWorkModePreDispatchDecisionInput,
-} from "../dist/core/work-mode-pre-dispatch-decision.js";
+} from "../dist/core/dispatch/work-mode-pre-dispatch-decision.js";
 
 function parseArgs(argv) {
   const readOption = (name) => {
