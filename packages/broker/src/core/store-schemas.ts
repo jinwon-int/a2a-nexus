@@ -1,8 +1,14 @@
 import { z } from "zod";
 
 import { BrokerError } from "./broker-error.js";
-import { CURRENT_BROKER_STATE_VERSION } from "./store-contracts.js";
 import { SETTLED_TASK_STATUSES } from "./types.js";
+
+/**
+ * Persisted broker state version. Defined here, beside the snapshot schema that
+ * defaults to it, so this kernel module does not value-import the store layer
+ * (#2453 Step 0); store-contracts re-exports it for existing importers.
+ */
+export const CURRENT_BROKER_STATE_VERSION = 8;
 
 const TASK_ORIGIN_VALUES = ["github", "api", "sessions_send", "operator", "unknown"] as const;
 

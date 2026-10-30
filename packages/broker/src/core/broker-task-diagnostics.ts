@@ -22,6 +22,11 @@ import type {
 import type { TaskDiagnosticsOptions } from "./broker.js";
 import { classifySameSourceRedispatch } from "../worker-review.js";
 
+// The requeue-reason rule belongs to the claim domain and lives beside the
+// stale-task requeue engine (#2453 Step 0); re-exported here so existing
+// importers keep their specifier.
+export { getTaskRequeueReason } from "./broker-stale-task-requeue.js";
+
 export function collectThreadMessageIds(
   messages: A2AExchangeMessageRecord[],
   parentMessageId: string,
@@ -38,41 +43,6 @@ export function collectThreadMessageIds(
     }
   }
   return allowedIds;
-}
-
-export function getTaskRequeueReason(
-  task: TaskRecord,
-  olderThanMs: number,
-  staleWorkerIds: Set<string>,
-  nowMs: number,
-): string | null {
-  if (task.status !== "claimed" && task.status !== "running") {
-    return null;
-  }
-
-  if (task.completedAt) {
-    return null;
-  }
-
-  // A checkpointed task is deliberately suspended (paused/awaiting_operator),
-  // not stale: requeueing it would strip the public input-required projection
-  // while the checkpoint remains. Checkpoint expiry is handled separately by
-  // the timeout sweep (contract: cancelled on timeout), not by requeue.
-  if (task.checkpoint) {
-    return null;
-  }
-
-  if (task.claimedBy && staleWorkerIds.has(task.claimedBy)) {
-    return `worker ${task.claimedBy} is stale`;
-  }
-
-  const lastActivityAt = resolveTaskStalenessSignalMs(task, nowMs);
-
-  if (nowMs - lastActivityAt >= olderThanMs) {
-    return `task exceeded stale threshold ${olderThanMs}ms`;
-  }
-
-  return null;
 }
 
 export function findLatestTaskAuditEvent(

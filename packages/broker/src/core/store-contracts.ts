@@ -31,7 +31,9 @@ import type {
 import type { A2AConversationState } from "./broker-conversation.js";
 
 
-export const CURRENT_BROKER_STATE_VERSION = 8;
+// Defined in store-schemas (kernel, #2453 Step 0); re-exported so existing
+// importers keep their specifier.
+export { CURRENT_BROKER_STATE_VERSION } from "./store-schemas.js";
 export const DEFAULT_BROKER_STATE_MAX_BYTES = 50 * 1024 * 1024;
 
 export interface BrokerSnapshot {

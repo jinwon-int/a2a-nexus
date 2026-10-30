@@ -1,3 +1,4 @@
+import { HOT_READ_HARD_MAX_LIMIT } from "./broker-list-filters.js";
 import { normalizeFailureClass } from "./task-error-details.js";
 import type { TaskRecord } from "./types.js";
 import type {
@@ -78,7 +79,9 @@ export function normalizeOptionalSqliteLimit(value: number | undefined): number 
  * table into an unbounded read+zod-parse.
  */
 export const HOT_READ_DEFAULT_LIMIT = 1_000;
-export const HOT_READ_HARD_MAX_LIMIT = 25_000;
+// Defined in the kernel (broker-list-filters, #2453 Step 0); re-exported here so
+// existing importers keep their specifier.
+export { HOT_READ_HARD_MAX_LIMIT };
 
 export function normalizeBoundedSqliteLimit(value: number | undefined): number {
   const parsed = normalizeNonNegativeSqliteLimit(value, HOT_READ_DEFAULT_LIMIT);

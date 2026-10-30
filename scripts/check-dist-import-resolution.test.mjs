@@ -10,6 +10,9 @@ import {
   isWorkspaceDistPath,
   resolveSpecifier,
   collectUnresolved,
+  extractCorePathReferences,
+  checkCorePathConsumers,
+  CORE_PATH_CONSUMERS,
 } from './check-dist-import-resolution.mjs';
 
 // #2386: remove every temp dir this file creates.
@@ -168,4 +171,89 @@ test('the live repository resolves every compiled-output specifier', () => {
     unresolved.map((u) => `${u.script} -> ${u.specifier}`),
     [],
   );
+});
+
+// ---------------------------------------------------------------------------
+// Computed broker-core path consumers (#2453 PR-0, analyze.md Risks 4).
+
+test('extractCorePathReferences sees computed and source core paths but not literal compiled imports or comments', () => {
+  const dist = `..${path.posix.sep}dist/core`;
+  const source = [
+    'const m = await import(`${rootDir}/dist/core/store.js`);',
+    'const p = join(ROOT, "dist/core/operator-approval-request.js");',
+    "import { R } from '../packages/broker/src/core/requester-role-contract.mjs';",
+    `import { x } from "${dist}/covered.js";`,
+    ' * see dist/core/commented.js',
+    '// dist/core/also-commented.js',
+    "const floors = { 'dist/core/release-evidence.js': 97 };",
+  ].join('\n');
+  assert.deepEqual(extractCorePathReferences(source), [
+    'dist/core/operator-approval-request.js',
+    'dist/core/release-evidence.js',
+    'dist/core/store.js',
+    'src/core/requester-role-contract.mjs',
+  ]);
+});
+
+function corePathFixture() {
+  const root = trackTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'core-path-consumers-')));
+  fs.mkdirSync(path.join(root, 'packages', 'broker', 'src', 'core'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'tools'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'packages', 'broker', 'src', 'core', 'store.ts'), '');
+  fs.writeFileSync(path.join(root, 'tools', 'export.mjs'), 'await import(`${root}/dist/core/store.js`);\n');
+  fs.writeFileSync(path.join(root, 'tools', 'export.test.mjs'), 'await import(`${root}/dist/core/ignored.js`);\n');
+  return root;
+}
+
+test('checkCorePathConsumers passes an inventoried computed consumer whose module exists', () => {
+  const root = corePathFixture();
+  const result = checkCorePathConsumers(root, { scanDirs: ['tools'], inventory: { 'tools/export.mjs': ['dist/core/store.js'] } });
+  assert.deepEqual(result.problems, []);
+  assert.equal(result.checked, 1);
+});
+
+test('checkCorePathConsumers fails on an uninventoried computed consumer', () => {
+  const root = corePathFixture();
+  const result = checkCorePathConsumers(root, { scanDirs: ['tools'], inventory: {} });
+  assert.equal(result.problems.length, 1);
+  assert.match(result.problems[0], /tools\/export\.mjs references 'dist\/core\/store\.js'/);
+});
+
+test('checkCorePathConsumers fails when the core module moves (the computed path no longer resolves)', () => {
+  const root = corePathFixture();
+  fs.mkdirSync(path.join(root, 'packages', 'broker', 'src', 'core', 'store'), { recursive: true });
+  fs.renameSync(
+    path.join(root, 'packages', 'broker', 'src', 'core', 'store.ts'),
+    path.join(root, 'packages', 'broker', 'src', 'core', 'store', 'store.ts'),
+  );
+  const result = checkCorePathConsumers(root, { scanDirs: ['tools'], inventory: { 'tools/export.mjs': ['dist/core/store.js'] } });
+  assert.equal(result.problems.length, 1);
+  assert.match(result.problems[0], /no longer resolves/);
+});
+
+test('checkCorePathConsumers fails on a stale inventory entry', () => {
+  const root = corePathFixture();
+  const result = checkCorePathConsumers(root, {
+    scanDirs: ['tools'],
+    inventory: { 'tools/export.mjs': ['dist/core/store.js'], 'tools/gone.mjs': ['dist/core/store.js'] },
+  });
+  assert.equal(result.problems.length, 1);
+  assert.match(result.problems[0], /stale: tools\/gone\.mjs/);
+});
+
+test('the live repository inventories every computed core-path consumer named in #2453 Risks 4', () => {
+  const { checked, problems } = checkCorePathConsumers(process.cwd());
+  assert.deepEqual(problems, []);
+  for (const file of [
+    'packages/broker/scripts/export-sqlite-state.mjs',
+    'packages/broker/scripts/operator-approval-request.mjs',
+    'test/conformance/check-three-component-e2e.mjs',
+    'test/conformance/check-trace-propagation.mjs',
+    'test/conformance/lib/ensure-built.mjs',
+    'scripts/a2a-dispatch-round.mjs',
+    'scripts/lib/task-assign-entrypoint.mjs',
+  ]) {
+    assert.ok(CORE_PATH_CONSUMERS[file], `${file} must stay inventoried`);
+  }
+  assert.ok(checked >= 9);
 });

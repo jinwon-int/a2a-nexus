@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "issue": "a2a-nexus#2453",
+  "description": "Ratchet baseline of TYPE-only import edges between broker core modules that violate the allow-matrix in broker-core-domain-map.json (owner decision #5: ratchet now, strict per domain when a domain is extracted). scripts/check-broker-core-dependency-isolation.mjs fails on any type-only violation not listed here; entries that no longer occur are reported, and `node scripts/check-broker-core-dependency-isolation.mjs --lower-baseline` rewrites this file only when that removes entries. Never add an entry by hand: re-point the import to the defining module or declare a narrow port instead.",
+  "typeOnlyViolations": [
+    {
+      "from": "broker-compact-diagnostics.ts",
+      "to": "broker.ts"
+    },
+    {
+      "from": "broker-contracts.ts",
+      "to": "broker-knowledge-injection.ts"
+    },
+    {
+      "from": "broker-contracts.ts",
+      "to": "finalizer-verdict-admission.ts"
+    },
+    {
+      "from": "broker-contracts.ts",
+      "to": "review-lineage-store.ts"
+    },
+    {
+      "from": "broker-contracts.ts",
+      "to": "store.ts"
+    },
+    {
+      "from": "broker-contracts.ts",
+      "to": "terminal-brief-routing.ts"
+    },
+    {
+      "from": "broker-contracts.ts",
+      "to": "worker-capability-card.ts"
+    },
+    {
+      "from": "broker-listener-registry.ts",
+      "to": "broker.ts"
+    },
+    {
+      "from": "broker-record-helpers.ts",
+      "to": "broker.ts"
+    },
+    {
+      "from": "broker-record-helpers.ts",
+      "to": "store.ts"
+    },
+    {
+      "from": "broker-retention-policy.ts",
+      "to": "broker.ts"
+    },
+    {
+      "from": "broker-retention-reachability.ts",
+      "to": "broker.ts"
+    },
+    {
+      "from": "broker-task-diagnostics.ts",
+      "to": "broker.ts"
+    },
+    {
+      "from": "broker-terminal-receipt-parity.ts",
+      "to": "receipt-gate-canary.ts"
+    },
+    {
+      "from": "broker-wake-normalizers.ts",
+      "to": "broker.ts"
+    },
+    {
+      "from": "hot-table-growth.ts",
+      "to": "store.ts"
+    },
+    {
+      "from": "live-task-admission.ts",
+      "to": "request-security.ts"
+    },
+    {
+      "from": "live-task-admission.ts",
+      "to": "store-contracts.ts"
+    },
+    {
+      "from": "store-contracts.ts",
+      "to": "broker-conversation-relay.ts"
+    },
+    {
+      "from": "store-contracts.ts",
+      "to": "broker-conversation.ts"
+    },
+    {
+      "from": "task-event-dispatcher.ts",
+      "to": "broker.ts"
+    },
+    {
+      "from": "terminal-event-outbox.ts",
+      "to": "task-events.ts"
+    },
+    {
+      "from": "types.ts",
+      "to": "delegated-runtime.ts"
+    }
+  ]
+}
