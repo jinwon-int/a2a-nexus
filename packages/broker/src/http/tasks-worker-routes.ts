@@ -10,7 +10,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
 import { normalizeTaskResult } from "../core/broker-task-record-normalizers.js";
-import type { BrokerStateStore } from "../core/store.js";
+import type { BrokerStateStore } from "../core/store/store.js";
 import {
   assertRequesterMatchesParty,
   type A2AWorkerRouteScope,

@@ -14,7 +14,7 @@ import {
   type BrokerSnapshot,
   type BrokerStateSaveHints,
   type BrokerStateStore,
-} from "./store.js";
+} from "./store/store.js";
 import type { WorkerRecord } from "./types.js";
 import { registerWorker, createWorkerTask } from "./broker-test-helpers.js";
 import { BROKER_POLICY_SCHEMA, validateBrokerPolicyDocument } from "a2a-policy-referee";

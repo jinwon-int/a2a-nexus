@@ -2088,7 +2088,7 @@ worker-writer proof lane that decision C left closed. This decision records the
 lane only. It adds no worker source and checks neither 488 nor 489.
 
 The existing
-`packages/broker/src/core/sqlite-worker-thread-persistence.ts` is not the V1
+`packages/broker/src/core/store/sqlite-worker-thread-persistence.ts` is not the V1
 worker. It owns the legacy `SqliteBrokerStateStore` file and schema, keeps
 main-thread read connections, and preserves void-typed call sites that may use
 fire-and-forget writes. Importing that proxy, sharing its connection, or
@@ -2194,7 +2194,7 @@ is never serialized and never transferred.
 file in worker mode. It owns the `DatabaseSync` connection, the
 `SharedStateSqliteAdapterV1` instance, the lifecycle epoch, and the ownership
 token. It does not import, extend, or share a connection with
-`core/sqlite-worker-thread-persistence.ts`; it does not touch the legacy
+`core/store/sqlite-worker-thread-persistence.ts`; it does not touch the legacy
 `SqliteBrokerStateStore` file, schema, protocol, or runtime flag; and the main
 thread holds no read connection of its own. The trusted time observation that
 `transact` requires is taken inside this thread, immediately before execution,

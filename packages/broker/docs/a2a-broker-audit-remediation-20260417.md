@@ -14,7 +14,7 @@
 
 ### 3. Standalone broker retention + snapshot validation
 - `a2a-broker/src/core/broker.ts`
-- `a2a-broker/src/core/store.ts`
+- `a2a-broker/src/core/store/store.ts`
 - Added bounded retention for terminal exchanges, tasks, proposals, audit events, and stale workers
 - Retention preserves the newest referenced graph so task, exchange, proposal, artifact, validation, worker, and audit links do not break mid-prune
 - Added snapshot max-size guard and schema validation on load

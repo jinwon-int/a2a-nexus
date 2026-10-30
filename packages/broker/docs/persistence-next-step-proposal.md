@@ -126,7 +126,7 @@ Current retention knobs can remain conceptually unchanged, but enforcement moves
 
 ### Step 1. Freeze the JSON snapshot contract as the migration source
 
-Treat the current snapshot structure in `src/core/store.ts` as the source schema for import.
+Treat the current snapshot structure in `src/core/store/store.ts` as the source schema for import.
 
 ### Step 2. Add one-shot importer
 

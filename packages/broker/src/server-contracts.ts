@@ -12,8 +12,8 @@ import type { WavePlanDagV2RecordStore } from "./wave-plan-dag-v2/record-store.j
 import type { Alert, AlertScanResult } from "./core/observability/alert-projection.js";
 import type { BrokerError, BrokerRetentionPolicy, InMemoryA2ABroker } from "./core/broker.js";
 import type { A2AHttpSignatureKeyRegistry } from "./core/transport/request-security.js";
-import type { BrokerStateStore, SqliteBrokerLoadSource } from "./core/store.js";
-import type { ReviewLineageRolloutMode } from "./core/review-lineage-store.js";
+import type { BrokerStateStore, SqliteBrokerLoadSource } from "./core/store/store.js";
+import type { ReviewLineageRolloutMode } from "./core/store/review-lineage-store.js";
 import type { OperatorSummary } from "./http/dashboard-response.js";
 import type { TaskReadinessMode } from "./task-readiness.js";
 import type { SharedStateServingFenceProbeV1 } from "./shared-state-serving-fence-v1.js";

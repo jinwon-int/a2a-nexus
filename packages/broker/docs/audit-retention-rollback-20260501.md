@@ -23,7 +23,7 @@ Rollback is file-level restore: stop the broker, move the current DB files aside
 Focused regression gate:
 
 ```bash
-npm run build && node --test dist/core/broker.test.js dist/core/store.test.js
+npm run build && node --test dist/core/broker.test.js dist/core/store/store.test.js
 ```
 
 The regression tests assert both the in-memory broker retention path and the SQLite hot-table planner cap recent `worker.heartbeat` audit rows while preserving `worker.registered` proof.

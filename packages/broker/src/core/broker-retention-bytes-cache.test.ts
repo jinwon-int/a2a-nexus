@@ -18,11 +18,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { estimateRetentionRecordBytes } from "./broker-retention-selectors.js";
-import { planTaskRetentionFromRecords } from "./store-hot-retention-planning.js";
+import { planTaskRetentionFromRecords } from "./store/store-hot-retention-planning.js";
 import {
   SqliteBrokerStateStore,
   emptySnapshot,
-} from "./store.js";
+} from "./store/store.js";
 import { makeTask, withTempFile } from "./store-test-helpers.js";
 import type { TaskRecord } from "./types.js";
 

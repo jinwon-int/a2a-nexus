@@ -169,7 +169,7 @@ Based on the spike doc requirements and current gaps, these approvals are needed
 | `src/server.ts` | 7019–7055 | `buildDashboardResponse()` |
 | `src/server.ts` | 7188–7192 | Queue error → 503 mapping |
 | `src/core/sqlite-worker-thread-spike.test.ts` | 1–500+ | Bounded test-only worker-thread prototype |
-| `src/core/store.ts` | 917–1260 | `SqliteBrokerStateStore` (synchronous, no worker queue) |
+| `src/core/store/store.ts` | 917–1260 | `SqliteBrokerStateStore` (synchronous, no worker queue) |
 | `src/server.test.ts` | 880–920 | Diagnostics surface test |
 | `src/server.test.ts` | 1505–1540 | 503 queue error mapping test |
 | `src/server.test.ts` | 4231–4280 | Dashboard default state test (includes disabled persistenceQueue) |

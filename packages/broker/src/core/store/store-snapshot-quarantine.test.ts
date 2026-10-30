@@ -9,7 +9,7 @@ import { mkdtempSync, readFileSync, readdirSync, writeFileSync, rmSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { InMemoryA2ABroker } from "./broker.js";
+import { InMemoryA2ABroker } from "../broker.js";
 import {
   JsonFileBrokerStateStore,
   describeSnapshotQuarantineWarning,

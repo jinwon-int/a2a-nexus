@@ -12,7 +12,7 @@ import type { ServerResponse } from "node:http";
 import { BrokerError, type InMemoryA2ABroker } from "../core/broker.js";
 import { assertRequesterHasRole, type RequesterIdentity } from "../core/transport/request-security.js";
 import { aggregateWorkerLatencyProfiles } from "../core/observability/task-stats.js";
-import type { BrokerStateStore } from "../core/store.js";
+import type { BrokerStateStore } from "../core/store/store.js";
 import { listAllTasksForReadPath, listAuditEventsForReadPath } from "../task-read-paths.js";
 import { sendJson } from "./response.js";
 import { parseTaskStatsWindow } from "./task-stats-routes.js";

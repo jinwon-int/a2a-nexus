@@ -17,11 +17,11 @@
     },
     {
       "from": "broker-contracts.ts",
-      "to": "review-lineage-store.ts"
+      "to": "store/review-lineage-store.ts"
     },
     {
       "from": "broker-contracts.ts",
-      "to": "store.ts"
+      "to": "store/store.ts"
     },
     {
       "from": "broker-contracts.ts",
@@ -41,14 +41,14 @@
     },
     {
       "from": "broker-record-helpers.ts",
-      "to": "store.ts"
+      "to": "store/store.ts"
     },
     {
-      "from": "broker-retention-policy.ts",
+      "from": "store/broker-retention-policy.ts",
       "to": "broker.ts"
     },
     {
-      "from": "broker-retention-reachability.ts",
+      "from": "store/broker-retention-reachability.ts",
       "to": "broker.ts"
     },
     {
@@ -65,7 +65,7 @@
     },
     {
       "from": "observability/hot-table-growth.ts",
-      "to": "store.ts"
+      "to": "store/store.ts"
     },
     {
       "from": "dispatch/live-task-admission.ts",
@@ -73,14 +73,14 @@
     },
     {
       "from": "dispatch/live-task-admission.ts",
-      "to": "store-contracts.ts"
+      "to": "store/store-contracts.ts"
     },
     {
-      "from": "store-contracts.ts",
+      "from": "store/store-contracts.ts",
       "to": "transport/broker-conversation-relay.ts"
     },
     {
-      "from": "store-contracts.ts",
+      "from": "store/store-contracts.ts",
       "to": "transport/broker-conversation.ts"
     },
     {

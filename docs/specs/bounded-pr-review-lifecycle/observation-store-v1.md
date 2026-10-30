@@ -6,7 +6,7 @@ and exact-subject compare-and-set behavior before any producer or broker
 runtime call site exists.
 
 The implementation is
-`packages/broker/src/core/review-lineage-observation-store.ts`.
+`packages/broker/src/core/store/review-lineage-observation-store.ts`.
 
 ## Atomic apply contract
 

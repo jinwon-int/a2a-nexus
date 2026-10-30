@@ -11,7 +11,7 @@ import {
   emptySnapshot,
   type BrokerSnapshot,
   type BrokerStateStore,
-} from "./store.js";
+} from "./store/store.js";
 import { registerWorker, createWorkerTask } from "./broker-test-helpers.js";
 
 test("snapshot roundtrip preserves lateEvidenceAfterCancel", () => {

@@ -25,13 +25,13 @@ const root = path.resolve(here, '../..');
 // spawns.
 ensureBuilt(root, 'broker', [
   'packages/broker/dist/server.js',
-  'packages/broker/dist/core/store.js',
+  'packages/broker/dist/core/store/store.js',
   'packages/broker/dist/worker.js',
   'packages/broker/dist/client/broker-client.js',
 ]);
 
 const { createBrokerServer } = await import(path.join(root, 'packages/broker/dist/server.js'));
-const { emptySnapshot } = await import(path.join(root, 'packages/broker/dist/core/store.js'));
+const { emptySnapshot } = await import(path.join(root, 'packages/broker/dist/core/store/store.js'));
 const { A2ABrokerWorker, createBuiltinWorkerHandler } = await import(path.join(root, 'packages/broker/dist/worker.js'));
 const { createA2ABrokerClient } = await import(
   path.join(root, 'packages/broker/dist/client/broker-client.js')

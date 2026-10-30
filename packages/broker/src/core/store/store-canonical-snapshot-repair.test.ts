@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import { SqliteBrokerStateStore, type BrokerSnapshot } from "./store.js";
 import { buildBrokerCleanupPlan, executeBrokerCleanupPlan } from "./broker-cleanup.js";
-import { withTempFile, makeTask, makeWorker, makeAuditEvent } from "./store-test-helpers.js";
+import { withTempFile, makeTask, makeWorker, makeAuditEvent } from "../store-test-helpers.js";
 
 const OLD = "2026-01-01T00:00:00.000Z";
 

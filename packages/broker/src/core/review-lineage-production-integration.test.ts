@@ -21,10 +21,10 @@ import {
   REVIEW_LINEAGE_AUTHORIZED_SOURCE_EVENT_TABLE,
   REVIEW_LINEAGE_OBSERVATION_LEDGER_TABLE,
   type ReviewLineageObservationApplicationResult,
-} from "./review-lineage-observation-store.js";
-import { ReviewLineageStore } from "./review-lineage-store.js";
-import { emptySnapshot, SqliteBrokerStateStore } from "./store.js";
-import { createWorkerThreadPersistence } from "./sqlite-worker-thread-persistence.js";
+} from "./store/review-lineage-observation-store.js";
+import { ReviewLineageStore } from "./store/review-lineage-store.js";
+import { emptySnapshot, SqliteBrokerStateStore } from "./store/store.js";
+import { createWorkerThreadPersistence } from "./store/sqlite-worker-thread-persistence.js";
 
 const BASE_SHA = "2".repeat(40);
 const HEAD_SHA = "3".repeat(40);

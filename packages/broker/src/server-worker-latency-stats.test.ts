@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { SqliteBrokerStateStore } from "./core/store.js";
+import { SqliteBrokerStateStore } from "./core/store/store.js";
 import { startTestServer, jsonHeaders, registerTestWorker } from "./server-test-helpers.js";
 
 const RECEIPT_TELEMETRY_SCHEMA_VERSION = "a2a.analysis-execution-telemetry.v1";

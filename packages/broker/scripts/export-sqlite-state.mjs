@@ -65,7 +65,7 @@ if (maxBytesValue && (!Number.isFinite(maxBytes) || maxBytes <= 0)) {
 let storeModule;
 let persistenceOptionsModule;
 try {
-  storeModule = await import(`${rootDir}/dist/core/store.js`);
+  storeModule = await import(`${rootDir}/dist/core/store/store.js`);
   persistenceOptionsModule = await import(`${rootDir}/dist/persistence-options.js`);
 } catch (error) {
   process.stderr.write(`Failed to load dist modules. Run npm run build before exporting.\n${error instanceof Error ? error.message : String(error)}\n`);

@@ -8,7 +8,7 @@ import {
   DEFAULT_AUDIT_RUNTIME_LIMIT_WARNING_RATIO,
   DEFAULT_HEAP_BUDGET_REDUCTION_FACTOR,
 } from "./hot-table-growth.js";
-import type { BrokerHotTableLoadMetrics, BrokerHotTableRuntimeLoadLimits } from "../store.js";
+import type { BrokerHotTableLoadMetrics, BrokerHotTableRuntimeLoadLimits } from "../store/store.js";
 
 const smallMetrics: BrokerHotTableLoadMetrics = {
   tables: {

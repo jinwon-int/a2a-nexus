@@ -7,7 +7,7 @@ import {
 import test from "node:test";
 
 import { buildA2AHttpSignatureBase } from "./core/transport/request-security.js";
-import { SqliteBrokerStateStore } from "./core/store.js";
+import { SqliteBrokerStateStore } from "./core/store/store.js";
 import { intentHash } from "a2a-review-lifecycle";
 import {
   jsonHeaders,

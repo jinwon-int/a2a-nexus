@@ -8,7 +8,7 @@
  * query.
  *
  * It is not, and does not import, the legacy
- * `core/sqlite-worker-thread-persistence.ts` proxy. It does not touch the
+ * `core/store/sqlite-worker-thread-persistence.ts` proxy. It does not touch the
  * legacy `SqliteBrokerStateStore` file, schema, protocol, or runtime flag, and
  * it holds no main-thread read connection.
  *

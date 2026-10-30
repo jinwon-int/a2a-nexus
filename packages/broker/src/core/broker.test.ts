@@ -21,7 +21,7 @@ import {
   type BrokerSnapshot,
   type BrokerStateSaveHints,
   type BrokerStateStore,
-} from "./store.js";
+} from "./store/store.js";
 import type { ArtifactRecord, AuditEvent, ChangeProposal, TaskTombstone, ValidationResult, WorkerRecord } from "./types.js";
 import { registerWorker, createWorkerTask, createGithubPatchTask, createOwnedTask } from "./broker-test-helpers.js";
 

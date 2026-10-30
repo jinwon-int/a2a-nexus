@@ -16,7 +16,7 @@ import {
   JsonFileBrokerStateStore,
   SqliteBrokerStateStore,
   emptySnapshot,
-} from "./core/store.js";
+} from "./core/store/store.js";
 import { RETIRED_TASK_LANE_REASON_CODES, taskLaneAssignmentSchema } from "./core/store-schemas.js";
 import type {
   CreateTaskRequest,

@@ -45,5 +45,5 @@ Migration guidance:
 
 Relevant gates:
 
-- `packages/broker/src/core/store.test.ts` covers canonical JSON writes and corrupt-primary recovery via `.bak`.
+- `packages/broker/src/core/store/store.test.ts` covers canonical JSON writes and corrupt-primary recovery via `.bak`.
 - `packages/broker/src/core/store-hot-table-cleanup.test.ts` and SQLite read-path tests cover SQLite snapshot/hot-table behavior.

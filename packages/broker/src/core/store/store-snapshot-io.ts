@@ -10,7 +10,7 @@ import {
   type BrokerStateStore,
   type JsonFileBrokerStateStoreOptions,
 } from "./store-contracts.js";
-import { SNAPSHOT_RECORD_SCHEMAS, brokerSnapshotSchema } from "./store-schemas.js";
+import { SNAPSHOT_RECORD_SCHEMAS, brokerSnapshotSchema } from "../store-schemas.js";
 
 export class JsonFileBrokerStateStore implements BrokerStateStore {
   private readonly maxBytes: number;

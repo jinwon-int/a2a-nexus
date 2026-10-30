@@ -16,7 +16,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { BrokerSnapshot } from "../core/store.js";
+import type { BrokerSnapshot } from "../core/store/store.js";
 import type {
   A2APartyRef,
   A2AExchangeState,

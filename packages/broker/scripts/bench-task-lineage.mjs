@@ -11,7 +11,7 @@
 //            per request, then the same query (endpoint minus rpc framing).
 // The PR records both.
 import { InMemoryA2ABroker } from "../dist/core/broker.js";
-import { emptySnapshot } from "../dist/core/store.js";
+import { emptySnapshot } from "../dist/core/store/store.js";
 import {
   buildTaskLineageReadProjection,
   parseTaskLineageChildrenRequestV1,
@@ -218,7 +218,7 @@ const { join } = await import("node:path");
 const {
   SqliteBrokerStateStore,
   SqliteTaskRuntimeRepository,
-} = await import("../dist/core/store.js");
+} = await import("../dist/core/store/store.js");
 const dir = mkdtempSync(join(tmpdir(), "a2a-lineage-bench-"));
 try {
   const store = new SqliteBrokerStateStore(join(dir, "state.sqlite"));

@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 import { BROKER_POLICY_SCHEMA, type BrokerPolicyDocument } from "a2a-policy-referee";
 
-import { SqliteBrokerStateStore } from "./core/store.js";
+import { SqliteBrokerStateStore } from "./core/store/store.js";
 import { startTestServer, jsonHeaders, registerTestWorker } from "./server-test-helpers.js";
 
 function headers(extra: Record<string, string> = {}): Record<string, string> {

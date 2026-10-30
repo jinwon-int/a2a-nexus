@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 
-import { SqliteBrokerStateStore, emptySnapshot } from "../dist/core/store.js";
+import { SqliteBrokerStateStore, emptySnapshot } from "../dist/core/store/store.js";
 import { makeTask } from "../dist/core/store-test-helpers.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));

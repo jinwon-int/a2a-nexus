@@ -1,4 +1,4 @@
-import type { SqliteBrokerLoadSource } from "./core/store.js";
+import type { SqliteBrokerLoadSource } from "./core/store/store.js";
 
 export type BrokerPersistenceBackend = "json-file" | "sqlite";
 

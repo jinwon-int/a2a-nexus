@@ -28,6 +28,8 @@
 > domains): see [Observability move](#observability-move).
 > **Transport move implemented** (split-order row 7, second of three):
 > see [Transport move](#transport-move).
+> **Store move implemented** (split-order row 7, third of three): see
+> [Store move](#store-move).
 
 ## Summary
 
@@ -1025,6 +1027,55 @@ violations stay at 0 and type-only at 23 = baseline.
 closure and moves to `dist/core/transport/`. Like the dispatch and completion
 moves, it ships in one pack-built artifact with the next regular worker
 deploy.
+
+## Store move
+
+The last of row 7's three domains.
+
+**Moved:** 20 modules and 14 tests to `packages/broker/src/core/store/`.
+
+- `sqlite-worker-thread-persistence` resolves `sqlite-worker.js` (or `.ts`
+  under tsx) from its own directory with
+  `join(dirname(fileURLToPath(import.meta.url)), …)`. The two modules
+  therefore move together.
+- The test helpers' `new URL("./store.js", import.meta.url)` and
+  `new URL("./review-lineage-observation-store.js", import.meta.url)` are
+  same-directory references and keep working.
+- `store.test.ts` runs `scripts/export-sqlite-state.mjs` with
+  `cwd: join(import.meta.dirname, "..", "..")`, which needs one more `..`.
+  **Recipe correction:** include `import.meta.dirname` in the file-relative
+  sweep. Also leave the synthetic fixtures in
+  `check-dist-import-resolution.test.mjs` alone: they build fake trees whose
+  paths are independent of the real layout.
+
+**Changes:**
+
+- 204 specifiers rewritten.
+- 90 path strings updated. They include the shared-state registries and
+  golden fixture, `release-gate.mjs`, `broker-cleanup-safe-prune.mjs`,
+  `export-sqlite-state.mjs`, the conformance harness (`ensure-built.mjs`,
+  `check-three-component-e2e.mjs`), the `CORE_PATH_CONSUMERS` inventory, and
+  docs. Two bare `core/…` comments were updated by hand.
+- 20 map entries removed; 9 type-baseline entries re-keyed.
+
+**Left unchanged on purpose:**
+
+- The `pathsChanged: ["packages/broker/src/core/store.ts"]` intent data in
+  `packages/review-lifecycle/src/correction-generation-source.test.ts` and
+  `correction-generation-source-integration.test.ts`, following the #2477
+  decision.
+- The historical text in `round-quality-scorecard.json`.
+
+**Results:** 175 core modules. What remains at the root: kernel 27,
+policy-approval 29 (split rows 2a/2b, held behind the #2350 A7 hold), facade 1 and
+test-support 2, i.e. 59 map entries. Value violations stay at 0 and
+type-only at 23 = baseline. No store module is in the worker dist closure.
+
+**Open: the root flip.** Row 7's rule says root modules other than
+`broker.ts` may not import any domain directory. The kernel modules already
+cannot, because `kernel.mayImport` is empty. The 29 policy-approval modules
+still at the root do import domains, so a literal flip would fail at once. It
+needs an owner decision, recorded in #2453.
 
 ## Appendix: survey script
 

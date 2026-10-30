@@ -23,7 +23,7 @@ import {
   normalizeFailureClass,
   normalizeFailureReadbackDetails,
 } from "./task-error-details.js";
-import { parseHotTaskListItemProjection } from "./store-hot-select-projections.js";
+import { parseHotTaskListItemProjection } from "./store/store-hot-select-projections.js";
 import { classifyHandlerFailure } from "../worker.js";
 
 // ---------------------------------------------------------------------------

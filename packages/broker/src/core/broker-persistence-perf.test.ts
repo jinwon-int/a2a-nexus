@@ -20,7 +20,7 @@ import {
   SqliteAuditRuntimeRepository,
   SqliteTaskRuntimeRepository,
   SqliteWorkerRuntimeRepository,
-} from "./store.js";
+} from "./store/store.js";
 import type { TaskRecord } from "./types.js";
 
 function tempDir(tag: string): string {

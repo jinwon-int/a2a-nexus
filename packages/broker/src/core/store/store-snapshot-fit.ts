@@ -1,4 +1,4 @@
-import { isTerminalTaskStatus } from "./broker-status-predicates.js";
+import { isTerminalTaskStatus } from "../broker-status-predicates.js";
 import { serializeBrokerSnapshot } from "./store-snapshot-io.js";
 import { CURRENT_BROKER_STATE_VERSION, type BrokerSnapshot } from "./store-contracts.js";
 

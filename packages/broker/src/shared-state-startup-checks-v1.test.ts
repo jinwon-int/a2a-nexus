@@ -17,8 +17,8 @@ import { DatabaseSync } from "node:sqlite";
 
 import { createBrokerServer } from "./server.js";
 import { withEnv } from "./server-test-helpers.js";
-import { CURRENT_BROKER_STATE_VERSION, JsonFileBrokerStateStore, SqliteBrokerStateStore } from "./core/store.js";
-import { emptySnapshot } from "./core/store-snapshot-io.js";
+import { CURRENT_BROKER_STATE_VERSION, JsonFileBrokerStateStore, SqliteBrokerStateStore } from "./core/store/store.js";
+import { emptySnapshot } from "./core/store/store-snapshot-io.js";
 import {
   STARTUP_CLOCK_BACKWARD_TOLERANCE_MS,
   evaluateGradeBackendCapabilityV1,

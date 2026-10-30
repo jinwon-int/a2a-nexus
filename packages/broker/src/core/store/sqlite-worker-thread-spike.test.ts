@@ -12,8 +12,8 @@ import {
   SqliteTaskRuntimeRepository,
   SqliteWorkerRuntimeRepository,
 } from "./store.js";
-import type { AuditEvent, TaskRecord, TaskStatus, WorkerRecord } from "./types.js";
-import type { TerminalTaskOutboxEvent } from "./completion/terminal-event-outbox.js";
+import type { AuditEvent, TaskRecord, TaskStatus, WorkerRecord } from "../types.js";
+import type { TerminalTaskOutboxEvent } from "../completion/terminal-event-outbox.js";
 
 type QueuedWrite = {
   label: string;

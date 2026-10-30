@@ -24,7 +24,7 @@ import type {
   ReviewLineageRecord,
   ReviewLineageState,
 } from "a2a-review-lifecycle";
-import { reviewLineageRecordSchema } from "./store-schemas.js";
+import { reviewLineageRecordSchema } from "../store-schemas.js";
 
 export const REVIEW_LINEAGE_OBSERVATION_LINEAGE_TABLE =
   "broker_review_lineage_observation_lineages_v1";

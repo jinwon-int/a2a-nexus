@@ -10,7 +10,7 @@ import {
   type BrokerHotTableLoadMetrics,
   type BrokerPersistenceInfo,
   type BrokerStateStore,
-} from "./core/store.js";
+} from "./core/store/store.js";
 
 const DEFAULT_HEALTH_DIAGNOSTICS_TTL_MS = 5_000;
 

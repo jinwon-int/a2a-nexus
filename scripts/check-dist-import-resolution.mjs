@@ -82,7 +82,7 @@ export function distPathToSourcePath(distPath) {
  *
  * This is what separates a genuine compiled-output import from code that merely
  * looks like one. `packages/broker/scripts/release-gate.mjs` embeds
- * `import ... from './dist/core/store.js'` inside a template literal that is
+ * `import ... from './dist/core/store/store.js'` inside a template literal that is
  * executed inside a container, where the working directory is the package root
  * — not the scripts directory. Resolving it here would yield
  * `packages/broker/scripts/dist/...`, which is not any workspace's output, so
@@ -181,12 +181,12 @@ const SELF = fileURLToPath(import.meta.url);
 export const CORE_PATH_SCAN_DIRS = ['scripts', 'scripts/lib', 'packages/broker/scripts', 'packages/broker/scripts/lib', 'test/conformance', 'test/conformance/lib'];
 
 export const CORE_PATH_CONSUMERS = {
-  // DB recovery tool: template literal `${rootDir}/dist/core/store.js` in import().
-  'packages/broker/scripts/export-sqlite-state.mjs': ['dist/core/store.js'],
+  // DB recovery tool: template literal `${rootDir}/dist/core/store/store.js` in import().
+  'packages/broker/scripts/export-sqlite-state.mjs': ['dist/core/store/store.js'],
   // Conformance harness: path.join(root, 'packages/broker/dist/core/...').
-  'test/conformance/check-three-component-e2e.mjs': ['dist/core/store.js'],
+  'test/conformance/check-three-component-e2e.mjs': ['dist/core/store/store.js'],
   'test/conformance/check-trace-propagation.mjs': ['dist/core/broker.js'],
-  'test/conformance/lib/ensure-built.mjs': ['dist/core/broker.js', 'dist/core/store.js'],
+  'test/conformance/lib/ensure-built.mjs': ['dist/core/broker.js', 'dist/core/store/store.js'],
   // Source imports of the requester-role contract (not compiled output).
   'scripts/a2a-dispatch-round.mjs': ['src/core/transport/requester-role-contract.mjs'],
   'scripts/lib/task-assign-entrypoint.mjs': ['src/core/transport/requester-role-contract.mjs'],

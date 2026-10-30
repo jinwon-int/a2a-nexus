@@ -30,7 +30,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { SqliteBrokerStateStore } from "./store.js";
-import type { BrokerPersistenceQueueDiagnostics, BrokerPersistenceQueueState } from "../server.js";
+import type { BrokerPersistenceQueueDiagnostics, BrokerPersistenceQueueState } from "../../server.js";
 import type {
   BrokerSnapshot,
   BrokerStateSaveHints,
@@ -216,10 +216,10 @@ export class SqliteWorkerThread {
   /** Resolve the worker script path, handling both compiled (.js) and tsx (.ts) runners. */
   private static resolveWorkerPath(): string {
     const dir = dirname(fileURLToPath(import.meta.url));
-    // compiled: dist/core/sqlite-worker.js
+    // compiled: dist/core/store/sqlite-worker.js
     const jsPath = join(dir, "sqlite-worker.js");
     if (existsSync(jsPath)) return jsPath;
-    // tsx dev: src/core/sqlite-worker.ts
+    // tsx dev: src/core/store/sqlite-worker.ts
     const tsPath = join(dir, "sqlite-worker.ts");
     if (existsSync(tsPath)) return tsPath;
     // fallback — return .js and let Worker throw a useful error

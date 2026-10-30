@@ -144,7 +144,7 @@ When `discoverCleanupCandidates` emits risk notes, they map to actions:
 
 - `src/core/types.ts` — `CleanupCandidate`, `CleanupDryRunPlan` type definitions
 - `src/core/broker.ts` — `discoverCleanupCandidates()` implementation
-- `src/core/broker-cleanup.ts` — `buildBrokerCleanupPlan()`, `executeBrokerCleanupPlan()`
-- `src/core/store.ts` — `planHot*Retention()` methods
+- `src/core/store/broker-cleanup.ts` — `buildBrokerCleanupPlan()`, `executeBrokerCleanupPlan()`
+- `src/core/store/store.ts` — `planHot*Retention()` methods
 - `docs/api-spec-draft.md` — API route documentation
 - `docs/hot-table-retention-prune-runbook.md` — Retention and execution runbook

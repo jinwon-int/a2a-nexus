@@ -141,7 +141,7 @@ import { loadBrokerPolicyFile } from "a2a-policy-referee";
 import { loadInjectedKnowledgeFile } from "./core/execution/broker-knowledge-injection.js";
 import { resolveFinalizerVerdictEnforcement } from "./core/completion/finalizer-verdict-admission.js";
 import { loadFinalizerKeyringFile } from "a2a-attestation";
-import { resolveReviewLineageRolloutMode } from "./core/review-lineage-store.js";
+import { resolveReviewLineageRolloutMode } from "./core/store/review-lineage-store.js";
 import { resolveWavePlanDagV2Mode } from "./core/dispatch/wave-plan-dag-v2-mode.js";
 import { normalizePersistenceBackend, normalizeSqliteLoadSource } from "./persistence-options.js";
 import {
@@ -203,7 +203,7 @@ import {
   SqliteValidationRuntimeRepository,
   SqliteWorkerRuntimeRepository,
   type BrokerStateStore,
-} from "./core/store.js";
+} from "./core/store/store.js";
 import {
   type HotTableGrowthProjection,
 } from "./core/observability/hot-table-growth.js";
@@ -217,8 +217,8 @@ import {
 } from "./worker-phase-timing.js";
 import {
   createWorkerThreadPersistence,
-} from "./core/sqlite-worker-thread-persistence.js";
-import type { WorkerThreadPersistenceHandle } from "./core/sqlite-worker-thread-persistence.js";
+} from "./core/store/sqlite-worker-thread-persistence.js";
+import type { WorkerThreadPersistenceHandle } from "./core/store/sqlite-worker-thread-persistence.js";
 import type { AlertScanResult } from "./core/observability/alert-projection.js";
 import { GitHubIngestionService } from "./github/ingestion.js";
 import { BoundedPoller, type BoundedPollerOptions } from "./github/bounded-poller.js";

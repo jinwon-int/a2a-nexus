@@ -11,7 +11,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { InMemoryA2ABroker } from "./broker.js";
-import { emptySnapshot, SqliteBrokerStateStore, SqliteWorkerRuntimeRepository } from "./store.js";
+import { emptySnapshot, SqliteBrokerStateStore, SqliteWorkerRuntimeRepository } from "./store/store.js";
 import { createWorkerTask, registerWorker } from "./broker-test-helpers.js";
 
 class CountingWorkerRepository {

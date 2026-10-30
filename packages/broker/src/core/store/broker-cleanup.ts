@@ -1,15 +1,15 @@
 import { createHash } from "node:crypto";
 
 import { DEFAULT_BROKER_RETENTION_POLICY } from "./broker-retention-policy.js";
-import { DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION } from "./completion/terminal-event-outbox.js";
+import { DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION } from "../completion/terminal-event-outbox.js";
 import type {
   SqliteBrokerStateStore,
   SqliteCanonicalSnapshotRetentionSyncResult,
   SqliteHotRetentionApplyResult,
   SqliteHotRetentionPlan,
 } from "./store.js";
-import type { AuditEvent } from "./types.js";
-import { isTerminalTaskStatus } from "./broker-status-predicates.js";
+import type { AuditEvent } from "../types.js";
+import { isTerminalTaskStatus } from "../broker-status-predicates.js";
 
 export type BrokerCleanupRiskClass = "low" | "medium" | "high";
 

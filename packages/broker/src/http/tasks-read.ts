@@ -7,7 +7,7 @@
 import type { ServerResponse } from "node:http";
 
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
-import type { BrokerStateStore } from "../core/store.js";
+import type { BrokerStateStore } from "../core/store/store.js";
 import {
   getTaskDiagnosticsForReadPath,
   getTaskForReadPath,

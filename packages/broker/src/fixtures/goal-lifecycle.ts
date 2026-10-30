@@ -1,4 +1,4 @@
-import type { BrokerSnapshot } from "../core/store.js";
+import type { BrokerSnapshot } from "../core/store/store.js";
 import type { GoalRecord, TaskRecord } from "../core/types.js";
 
 const BASE_TIME = "2026-05-04T00:00:00.000Z";

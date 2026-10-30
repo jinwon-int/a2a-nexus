@@ -4,7 +4,7 @@
 import type { ServerResponse } from "node:http";
 
 import { InMemoryA2ABroker } from "../core/broker.js";
-import type { BrokerStateStore } from "../core/store.js";
+import type { BrokerStateStore } from "../core/store/store.js";
 import { listAuditEventsForReadPath } from "../task-read-paths.js";
 import { auditFiltersFromUrl } from "./read-path-filters.js";
 import { sendJson } from "./response.js";

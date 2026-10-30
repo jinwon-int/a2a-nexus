@@ -4,7 +4,7 @@ import type { ServerResponse } from "node:http";
 import test from "node:test";
 
 import { InMemoryA2ABroker } from "../core/broker.js";
-import type { BrokerStateStore } from "../core/store.js";
+import type { BrokerStateStore } from "../core/store/store.js";
 import type { WorkerRecord } from "../core/types.js";
 import { handleWorkersReadRouteIfMatched } from "./workers-read.js";
 

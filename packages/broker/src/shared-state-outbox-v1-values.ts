@@ -290,7 +290,7 @@ export const SHARED_STATE_OUTBOX_V1_VALUES = deepFreeze({
             ],
           },
           {
-            path: "packages/broker/src/core/store.ts",
+            path: "packages/broker/src/core/store/store.ts",
             symbol: "CREATE TABLE IF NOT EXISTS broker_terminal_outbox",
             proves: [
               "durable-row-authority",
@@ -298,7 +298,7 @@ export const SHARED_STATE_OUTBOX_V1_VALUES = deepFreeze({
             ],
           },
           {
-            path: "packages/broker/src/core/store.ts",
+            path: "packages/broker/src/core/store/store.ts",
             symbol:
               "SELECT payload FROM broker_terminal_outbox ORDER BY created_at ASC, id ASC",
             proves: [
@@ -308,7 +308,7 @@ export const SHARED_STATE_OUTBOX_V1_VALUES = deepFreeze({
           },
           {
             path:
-              "packages/broker/src/core/store-hot-retention-planning.ts",
+              "packages/broker/src/core/store/store-hot-retention-planning.ts",
             symbol:
               "export function planTerminalOutboxRetentionFromRecords(",
             proves: [

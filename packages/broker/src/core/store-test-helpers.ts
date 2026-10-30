@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import {
   type BrokerSnapshot,
-} from "./store.js";
+} from "./store/store.js";
 import type { TerminalTaskOutboxEvent } from "./completion/terminal-event-outbox.js";
 
 export function withTempFile(name: string): {

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { TaskEventDispatcher } from "./transport/task-event-dispatcher.js";
 import { BrokerListenerRegistry } from "./transport/broker-listener-registry.js";
 import { WorkerIdentityChurnTracker } from "./claim/worker-identity-churn-tracker.js";
-import { SnapshotExtensionRegistry } from "./snapshot-extension-registry.js";
+import { SnapshotExtensionRegistry } from "./store/snapshot-extension-registry.js";
 import {
   recordBrokerTerminalAttempt,
   type TaskAttemptStoreSurface,
@@ -13,8 +13,8 @@ import {
   type TaskAttemptHistoryPreflightResponseV1,
 } from "../task-attempt/views.js";
 import { HeartbeatPersistThrottle } from "./claim/heartbeat-persist-throttle.js";
-import { PendingHotStateBuffer } from "./pending-hot-state-buffer.js";
-import { computeRetainedRecordIds } from "./broker-retention-reachability.js";
+import { PendingHotStateBuffer } from "./store/pending-hot-state-buffer.js";
+import { computeRetainedRecordIds } from "./store/broker-retention-reachability.js";
 import {
   countStateSaveHints,
 } from "./broker-record-helpers.js";
@@ -38,7 +38,7 @@ import {
 import {
   normalizeBrokerRetentionPolicy,
   normalizeMaxRequeueAttempts,
-} from "./broker-retention-policy.js";
+} from "./store/broker-retention-policy.js";
 // Re-exported to preserve the public surface; the retention/requeue defaults now
 // live in broker-retention-policy.js alongside the normalizers that use them.
 export {
@@ -46,7 +46,7 @@ export {
   DEFAULT_MAX_REQUEUE_ATTEMPTS,
   DEFAULT_MAX_TERMINAL_TASK_BYTES,
   DEFAULT_HEARTBEAT_AUDIT_SAMPLE_INTERVAL_MS,
-} from "./broker-retention-policy.js";
+} from "./store/broker-retention-policy.js";
 import {
   normalizeExchangeState,
   normalizeExchangeMessageRecord,
@@ -122,7 +122,7 @@ import {
 } from "./transport/broker-conversation-task-bridge.js";
 import type { WorkerSignatureGateOptions } from "./transport/broker-conversation.js";
 import { getBrokerRoundStatus, listBrokerTasks, readBrokerTask } from "./evidence-retrieval/broker-task-read.js";
-import { HOT_READ_HARD_MAX_LIMIT } from "./store-hot-select-projections.js";
+import { HOT_READ_HARD_MAX_LIMIT } from "./store/store-hot-select-projections.js";
 import { TaskLineageIndex } from "./evidence-retrieval/task-lineage-index.js";
 import type { TaskLineageReadProjectionV1 } from "./evidence-retrieval/task-lineage-read.js";
 import { readBrokerProposal, listBrokerProposals } from "./broker-proposal-read.js";
@@ -132,7 +132,7 @@ import {
   listBrokerValidationsForProposal,
   readBrokerArtifact,
 } from "./evidence-retrieval/broker-evidence-read.js";
-import { buildCleanupDryRunPlan } from "./broker-cleanup-discovery.js";
+import { buildCleanupDryRunPlan } from "./store/broker-cleanup-discovery.js";
 import { buildWorkerCapacitySummary } from "./claim/broker-worker-capacity.js";
 import { buildCompactDiagnostics } from "./observability/broker-compact-diagnostics.js";
 import {
@@ -172,7 +172,7 @@ import {
   CURRENT_BROKER_STATE_VERSION,
   type BrokerSnapshot,
   type BrokerStateStore,
-} from "./store.js";
+} from "./store/store.js";
 import {
   normalizeTaskReadinessMode,
   type TaskReadinessMode,
@@ -227,10 +227,10 @@ import {
   ReviewLineageStore,
   type CreateRecordedReviewLineageInput,
   type ReviewLineageRolloutMode,
-} from "./review-lineage-store.js";
+} from "./store/review-lineage-store.js";
 import {
   admitReviewLineageProducerFact as admitProducerFact,
-} from "./review-lineage-producer-admission.js";
+} from "./store/review-lineage-producer-admission.js";
 import {
   authorizeOperatorReviewLineageCreate,
   authorizeOperatorReviewLineageCancel,
@@ -250,7 +250,7 @@ import type {
 import type {
   AuthorizedReviewLineageSourceAdmissionV1,
   ReviewLineageObservationApplicationResult,
-} from "./review-lineage-observation-store.js";
+} from "./store/review-lineage-observation-store.js";
 import {
   CrossBrokerTerminalBriefProjectionStore,
   type CrossBrokerTerminalBriefProjection,

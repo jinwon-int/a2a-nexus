@@ -8,8 +8,8 @@
 //
 // This module imports only leaf helpers and types, never broker.ts, so there is
 // no import cycle.
-import { formatAgeMs } from "./broker-helpers.js";
-import type { TerminalTaskOutboxEvent } from "./completion/terminal-event-outbox.js";
+import { formatAgeMs } from "../broker-helpers.js";
+import type { TerminalTaskOutboxEvent } from "../completion/terminal-event-outbox.js";
 import type {
   CleanupCandidate,
   CleanupCandidateActionability,
@@ -17,8 +17,8 @@ import type {
   TaskRecord,
   TaskTombstone,
   WorkerRecord,
-} from "./types.js";
-import { resolveTaskStalenessSignalMs } from "./broker-status-predicates.js";
+} from "../types.js";
+import { resolveTaskStalenessSignalMs } from "../broker-status-predicates.js";
 
 /** Read-only view of the broker collections cleanup discovery scans. */
 export interface CleanupDiscoveryState {

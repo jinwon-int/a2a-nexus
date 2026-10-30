@@ -16,7 +16,7 @@ The SQLite broker persistence layer supports two load modes via `SqliteBrokerSta
 
 ### 1.2 Memory Pressure Vector
 
-Historically, the `readHotRuntimeSnapshot()` method (in `src/core/store.ts`) performed unbounded `SELECT payload FROM ...` queries across the hot tables. The current runtime load path keeps active state hydrated and caps the largest historical streams:
+Historically, the `readHotRuntimeSnapshot()` method (in `src/core/store/store.ts`) performed unbounded `SELECT payload FROM ...` queries across the hot tables. The current runtime load path keeps active state hydrated and caps the largest historical streams:
 
 | Table | Observed Count (brokeralpha) | Approx. per-row payload |
 |---|---|---|

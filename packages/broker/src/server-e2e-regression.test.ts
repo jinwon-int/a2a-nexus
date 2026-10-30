@@ -14,7 +14,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createBrokerServer, type BrokerServerOptions } from "./server.js";
-import { emptySnapshot, type BrokerStateStore } from "./core/store.js";
+import { emptySnapshot, type BrokerStateStore } from "./core/store/store.js";
 import {
   ALL_RUNTIME_STATES,
 } from "./fixtures/delegated-runtime.js";

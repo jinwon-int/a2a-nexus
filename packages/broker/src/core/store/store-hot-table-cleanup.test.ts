@@ -13,7 +13,7 @@ import {
   withTempFile, makeWorker, makeExchange, makeExchangeMessage,
   makeProposal, makeTask, makeTombstone,
   makeAuditEvent, makeTerminalOutboxEvent, makeOutboxEvent,
-} from "./store-test-helpers.js";
+} from "../store-test-helpers.js";
 
 test("SqliteBrokerStateStore.readHotTableLoadMetrics returns per-table counts and max payload sizes", () => {
   const temp = withTempFile("hot-metrics.db");

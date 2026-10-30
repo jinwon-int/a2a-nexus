@@ -3,7 +3,7 @@ import type { ServerResponse } from "node:http";
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
 import { deriveTaskWorkerClass } from "a2a-policy-referee";
 import { aggregateTaskStats } from "../core/observability/task-stats.js";
-import type { BrokerStateStore } from "../core/store.js";
+import type { BrokerStateStore } from "../core/store/store.js";
 import type { TaskRecord } from "../core/types.js";
 import { listAllTasksForReadPath, listAuditEventsForReadPath } from "../task-read-paths.js";
 import { sendJson } from "./response.js";

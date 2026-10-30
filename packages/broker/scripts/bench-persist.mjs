@@ -20,7 +20,7 @@ import {
   SqliteTombstoneRuntimeRepository,
   SqliteValidationRuntimeRepository,
   SqliteWorkerRuntimeRepository,
-} from "../dist/core/store.js";
+} from "../dist/core/store/store.js";
 
 const TOTAL = 2_000;
 const recordBytesFlag = process.argv.find((arg) => arg.startsWith("--record-bytes="));

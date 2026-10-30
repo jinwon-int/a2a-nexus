@@ -5,7 +5,7 @@ import { Readable } from "node:stream";
 import test from "node:test";
 
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
-import type { BrokerStateStore } from "../core/store.js";
+import type { BrokerStateStore } from "../core/store/store.js";
 import { handleWavePlanRoutesIfMatched } from "./wave-plan-routes.js";
 
 class CapturingResponse extends EventEmitter {

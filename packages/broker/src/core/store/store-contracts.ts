@@ -9,9 +9,9 @@ import type {
   TaskTombstone,
   ValidationResult,
   WorkerRecord,
-} from "./types.js";
-import type { CrossBrokerTerminalBriefProjection } from "./completion/cross-broker-terminal-brief.js";
-import type { PersistedWavePlan } from "./dispatch/wave-plan-store.js";
+} from "../types.js";
+import type { CrossBrokerTerminalBriefProjection } from "../completion/cross-broker-terminal-brief.js";
+import type { PersistedWavePlan } from "../dispatch/wave-plan-store.js";
 import type {
   ReviewLineageRecord,
   ProjectedReviewLineageObservation,
@@ -20,20 +20,20 @@ import type {
   AuthorizedReviewLineageSourceAdmissionV1,
   ReviewLineageObservationApplicationResult,
 } from "./review-lineage-observation-store.js";
-import type { TerminalTaskOutboxEvent } from "./completion/terminal-event-outbox.js";
-import type { TaskPushNotificationConfig } from "../a2a/push-notification-config.js";
+import type { TerminalTaskOutboxEvent } from "../completion/terminal-event-outbox.js";
+import type { TaskPushNotificationConfig } from "../../a2a/push-notification-config.js";
 import type {
   BrokerHotEntityDiagnostics,
   BrokerHotEntityHintCoverage,
   BrokerHotEntityMirrorStatus,
   BrokerHotHintCounts,
-} from "./observability/hot-diagnostics.js";
-import type { A2AConversationState } from "./transport/broker-conversation.js";
+} from "../observability/hot-diagnostics.js";
+import type { A2AConversationState } from "../transport/broker-conversation.js";
 
 
 // Defined in store-schemas (kernel, #2453 Step 0); re-exported so existing
 // importers keep their specifier.
-export { CURRENT_BROKER_STATE_VERSION } from "./store-schemas.js";
+export { CURRENT_BROKER_STATE_VERSION } from "../store-schemas.js";
 export const DEFAULT_BROKER_STATE_MAX_BYTES = 50 * 1024 * 1024;
 
 export interface BrokerSnapshot {
@@ -45,7 +45,7 @@ export interface BrokerSnapshot {
   /** Receiving-broker mirrors of cross-broker conversations (#1864 relay). */
   conversationRelayMirrors?: A2AConversationState[];
   /** Outbound conversation relay log (#1864 relay). */
-  conversationRelayOutbox?: import("./transport/broker-conversation-relay.js").ConversationRelayOutboxEntry[];
+  conversationRelayOutbox?: import("../transport/broker-conversation-relay.js").ConversationRelayOutboxEntry[];
   proposals: ChangeProposal[];
   artifacts: ArtifactRecord[];
   validations: ValidationResult[];
@@ -60,7 +60,7 @@ export interface BrokerSnapshot {
   reviewLineages?: ReviewLineageRecord[];
   pushNotificationConfigs?: TaskPushNotificationConfig[];
   /** Parent round registry (#2339 PR-1a); snapshot-only sidecar, no hot table. */
-  parentRounds?: import("./dispatch/parent-round-registry.js").ParentRoundRegistryEntry[];
+  parentRounds?: import("../dispatch/parent-round-registry.js").ParentRoundRegistryEntry[];
   /** NCLEX evaluation receipts (#1724); snapshot-extension field, passthrough schema. */
   nclexEvaluationReceipts?: Array<{
     receipt: import("a2a-nclex-evaluation").NclexSignedReceipt;

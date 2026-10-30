@@ -155,8 +155,8 @@ is restored before resuming normal operation.
 - [audit-retention-rollback-20260501.md](./audit-retention-rollback-20260501.md) —
   Audit retention hotfix & rollback proof
 - `src/core/observability/hot-table-growth.ts` — Projection logic
-- `src/core/broker-cleanup.ts` — Dry-run planning & execution
-- `src/core/store.ts` — SQLite hot-table retention planners
+- `src/core/store/broker-cleanup.ts` — Dry-run planning & execution
+- `src/core/store/store.ts` — SQLite hot-table retention planners
 - `src/core/broker.ts` — `BrokerRetentionPolicy` defaults
 - `scripts/broker-cleanup-safe-prune.mjs` — CLI entry point
 - `scripts/broker-live-readiness-canary.mjs` — Pre/post prune canary

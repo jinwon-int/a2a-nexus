@@ -25,7 +25,7 @@
  * worker-backed read consistency beyond the single-lane barrier asserted here.
  * It adds no broker runtime, HTTP, configuration flag, default, serving-store
  * selection, retention, migration, or performance claim, and it neither
- * imports nor modifies the legacy `core/sqlite-worker-thread-persistence.ts`
+ * imports nor modifies the legacy `core/store/sqlite-worker-thread-persistence.ts`
  * lane.
  */
 import assert from "node:assert/strict";

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { InMemoryA2ABroker } from "../core/broker.js";
-import { emptySnapshot } from "../core/store.js";
+import { emptySnapshot } from "../core/store/store.js";
 import {
   buildTaskLineageReadProjection,
   parseTaskLineageChildrenRequestV1,

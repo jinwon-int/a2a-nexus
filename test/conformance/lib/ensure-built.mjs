@@ -26,7 +26,7 @@ export const CONFORMANCE_DIST_PREREQS = [
       'packages/broker/dist/a2a/task-projection.js',
       'packages/broker/dist/worker.js',
       'packages/broker/dist/server.js',
-      'packages/broker/dist/core/store.js',
+      'packages/broker/dist/core/store/store.js',
       'packages/broker/dist/client/broker-client.js',
     ],
   },

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { once } from "node:events";
 
-import { emptySnapshot, type BrokerStateStore } from "./core/store.js";
+import { emptySnapshot, type BrokerStateStore } from "./core/store/store.js";
 import { createBrokerServer, type BrokerServerOptions } from "./server.js";
 import { A2ABrokerWorker, buildDynamicSubagentRuntime, resolveActiveFanoutFlagKey, FANOUT_FLAG_ENV_KEYS, createExternalWorkerHandler, createWorkerConfigFromEnv, type BrokerWorkerConfig } from "./worker.js";
 import { verifyA2AHttpSignature, type A2AHttpSignatureKeyRegistry } from "./core/transport/request-security.js";

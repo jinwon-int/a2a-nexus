@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { createBrokerServer } from "./server.js";
-import { emptySnapshot, SqliteBrokerStateStore, type BrokerSnapshot } from "./core/store.js";
+import { emptySnapshot, SqliteBrokerStateStore, type BrokerSnapshot } from "./core/store/store.js";
 import { WorkerRegistrationResponse } from "./core/types.js";
 import { startTestServer, jsonHeaders, registerTestWorker } from "./server-test-helpers.js";
 

@@ -5,7 +5,7 @@ import { DEFAULT_REQUEST_TIMEOUT_MS, resolveRequestTimeoutMs } from "./server-li
 import {
   parseSnapshotPayload,
   resetSnapshotQuarantineStats,
-} from "./core/store-snapshot-io.js";
+} from "./core/store/store-snapshot-io.js";
 
 test("server warns when SQLite worker heartbeat persistence is configured to persist every heartbeat", async () => {
   const server = await startTestServer({
