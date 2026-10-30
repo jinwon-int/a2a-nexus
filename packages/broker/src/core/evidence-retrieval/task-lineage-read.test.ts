@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { BrokerError } from "./broker-error.js";
+import { BrokerError } from "../broker-error.js";
 import {
   TASK_LINEAGE_ANOMALY_KIND,
   TASK_LINEAGE_CHILD_KIND,
@@ -63,7 +63,7 @@ import {
   type TaskLineagePaginationV1,
   type TaskLineageRoundCompletenessHintV1,
 } from "./task-lineage-read.js";
-import type { TaskRecord } from "./types.js";
+import type { TaskRecord } from "../types.js";
 
 const T0 = "2026-07-28T00:00:00.000Z";
 
@@ -589,7 +589,7 @@ function recordedRoundFixture(name: string): RecordedRoundFixture {
   return JSON.parse(
     readFileSync(
       new URL(
-        `../../fixtures/round-coordinator-closeout/${name}.json`,
+        `../../../fixtures/round-coordinator-closeout/${name}.json`,
         import.meta.url,
       ),
       "utf8",

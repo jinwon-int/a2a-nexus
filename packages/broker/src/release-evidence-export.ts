@@ -6,7 +6,7 @@ import {
   buildReleaseEvidenceExport,
   renderReleaseEvidenceMarkdown,
   type ReleaseEvidenceExportOptions,
-} from "./core/release-evidence.js";
+} from "./core/evidence-retrieval/release-evidence.js";
 import type { TaskRecord } from "./core/types.js";
 
 interface InputEnvelope {

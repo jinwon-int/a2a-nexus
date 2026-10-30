@@ -35,13 +35,13 @@ const packageName = path.basename(pkgRoot);
 // and provenance.js to packages/attestation (#1601 P2, floor 98) — each keeps
 // its floor in that package's own coverage:baseline gate.
 export const CORE_SOURCE_FLOORS = Object.freeze({
-  'dist/core/release-evidence.js': 97,
+  'dist/core/evidence-retrieval/release-evidence.js': 97,
 });
 
 // Deliberately avoid the broad broker test aggregate: these direct built tests
 // are deterministic and exercise exactly the bounded modules above.
 export const COVERAGE_TEST_FILES = Object.freeze([
-  'dist/core/release-evidence.test.js',
+  'dist/core/evidence-retrieval/release-evidence.test.js',
 ]);
 
 // ── Pure classifier (unit-tested; IDENTICAL to docker-runner / openclaw) ─────

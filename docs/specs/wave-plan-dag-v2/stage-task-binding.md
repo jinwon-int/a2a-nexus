@@ -21,7 +21,7 @@ anchors, not work items:
 | Slice 3 — versioned dispatch boundary | #1994 / `4d354191` | `dispatch-boundary.ts`: `classifyWavePlanIntake` action-free closed record (`v1_wave_plan_spec` identity pass-through, `v2_rehearsal_candidate`, `v2_rejected`); v1 non-interference pin. |
 | Slice 4 — rehearsal-evidence store | #1995 / `58c4564f` | `record-store.ts`: closed `WavePlanDagV2StoreEntryV1` union, semantic idempotency keys, all-or-nothing batches (cap 64), timestamp-free determinism, fail-closed `restore()`. |
 | Slice 5 — broker wiring (default off) | #1996 / `608fdb7a` | `core/wave-plan-dag-v2-mode.ts` (`A2A_WAVE_PLAN_DAG_V2_MODE` = `off` or `record`, default `off`), single explicit write entry `broker.recordWavePlanDagV2Intake()` (never auto-invoked), read-only `GET /wave-plan-dag-v2/admissions` and `GET /wave-plan-dag-v2/rehearsals`. |
-| Task-lineage read model | #1638 / #1690 / #1693 | `docs/specs/task-lineage-read-model/spec.md`, `packages/broker/src/core/task-lineage-read.ts`: read-only `tasks/children`, `tasks/lineage`, `tasks/leaves`; `parentTaskId`-only canonical ancestry, structural cycle guard, semantic duplicate detection explicitly out of scope. |
+| Task-lineage read model | #1638 / #1690 / #1693 | `docs/specs/task-lineage-read-model/spec.md`, `packages/broker/src/core/evidence-retrieval/task-lineage-read.ts`: read-only `tasks/children`, `tasks/lineage`, `tasks/leaves`; `parentTaskId`-only canonical ancestry, structural cycle guard, semantic duplicate detection explicitly out of scope. |
 
 ## 1. Problem
 

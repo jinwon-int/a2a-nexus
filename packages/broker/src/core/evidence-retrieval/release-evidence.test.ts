@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { buildReleaseEvidenceExport, renderReleaseEvidenceMarkdown } from "./release-evidence.js";
-import type { TaskRecord, TaskStatus } from "./types.js";
+import type { TaskRecord, TaskStatus } from "../types.js";
 
 function task(overrides: Partial<TaskRecord> = {}): TaskRecord {
   return {

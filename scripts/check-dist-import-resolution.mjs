@@ -191,8 +191,8 @@ export const CORE_PATH_CONSUMERS = {
   'scripts/a2a-dispatch-round.mjs': ['src/core/requester-role-contract.mjs'],
   'scripts/lib/task-assign-entrypoint.mjs': ['src/core/requester-role-contract.mjs'],
   // Coverage floors keyed by compiled path (data).
-  'scripts/check-promotion-capstone-conformance.mjs': ['dist/core/release-evidence.js'],
-  'packages/broker/scripts/coverage-baseline-report.mjs': ['dist/core/release-evidence.js', 'dist/core/release-evidence.test.js'],
+  'scripts/check-promotion-capstone-conformance.mjs': ['dist/core/evidence-retrieval/release-evidence.js'],
+  'packages/broker/scripts/coverage-baseline-report.mjs': ['dist/core/evidence-retrieval/release-evidence.js', 'dist/core/evidence-retrieval/release-evidence.test.js'],
 };
 
 const CORE_PATH_REFERENCE = /(?:packages\/broker\/)?((?:dist|src)\/core\/[\w.-]+(?:\/[\w.-]+)*\.m?js)\b/g;

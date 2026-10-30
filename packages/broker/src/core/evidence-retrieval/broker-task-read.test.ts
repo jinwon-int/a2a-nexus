@@ -7,12 +7,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { listBrokerTasks } from "./broker-task-read.js";
-import { normalizeTaskRecord } from "./broker-task-record-normalizers.js";
-import { emptySnapshot } from "./store.js";
-import { InMemoryA2ABroker } from "./broker.js";
-import type { BrokerStateStore } from "./store.js";
-import type { TaskRecord } from "./types.js";
-import type { TaskRuntimeRepository } from "./task-repository.js";
+import { normalizeTaskRecord } from "../broker-task-record-normalizers.js";
+import { emptySnapshot } from "../store.js";
+import { InMemoryA2ABroker } from "../broker.js";
+import type { BrokerStateStore } from "../store.js";
+import type { TaskRecord } from "../types.js";
+import type { TaskRuntimeRepository } from "../task-repository.js";
 
 test("listBrokerTasks overlays repository rows without writing back into the live map (#2078 C)", () => {
   const live: Map<string, TaskRecord> = new Map();

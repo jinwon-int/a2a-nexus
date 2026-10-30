@@ -22,7 +22,7 @@ import {
   parseTaskLineageChildrenRequestV1,
   parseTaskLineageLeavesRequestV1,
   parseTaskLineageLineageRequestV1,
-} from "../core/task-lineage-read.js";
+} from "../core/evidence-retrieval/task-lineage-read.js";
 
 export type JsonRpcId = string | number | null;
 

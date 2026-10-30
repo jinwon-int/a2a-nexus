@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { InMemoryA2ABroker } from "./broker.js";
-import { readBrokerTask } from "./broker-task-read.js";
+import { readBrokerTask } from "./evidence-retrieval/broker-task-read.js";
 import {
   SqliteBrokerStateStore,
   SqliteAuditRuntimeRepository,

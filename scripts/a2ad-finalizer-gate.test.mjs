@@ -1131,7 +1131,7 @@ test('missing required flags fail loudly', () => {
 
 // ─── Broker conformance pin (#1357 G3-c classifier single-source) ────────────
 // The broker's wave quorum derives substantiveCount via
-// packages/broker/src/core/wave-evidence.ts. The gate stays deliberately
+// packages/broker/src/core/evidence-retrieval/wave-evidence.ts. The gate stays deliberately
 // broker-independent (offline publication guard), so the single-source
 // contract is enforced here instead: the broker taxonomy must equal the
 // gate's EVIDENCE_CLASSES exactly, and both sides must count exactly the
@@ -1140,7 +1140,7 @@ test('missing required flags fail loudly', () => {
 test('conformance: broker wave-evidence taxonomy and quorum predicate match the gate', async (t) => {
   let mod;
   try {
-    mod = await import('../packages/broker/dist/core/wave-evidence.js');
+    mod = await import('../packages/broker/dist/core/evidence-retrieval/wave-evidence.js');
   } catch {
     return t.skip('broker dist not built — run `npm --workspace packages/broker run build` for the conformance pin');
   }

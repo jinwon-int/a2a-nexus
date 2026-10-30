@@ -121,17 +121,17 @@ import {
   taskReferencesOf,
 } from "./broker-conversation-task-bridge.js";
 import type { WorkerSignatureGateOptions } from "./broker-conversation.js";
-import { getBrokerRoundStatus, listBrokerTasks, readBrokerTask } from "./broker-task-read.js";
+import { getBrokerRoundStatus, listBrokerTasks, readBrokerTask } from "./evidence-retrieval/broker-task-read.js";
 import { HOT_READ_HARD_MAX_LIMIT } from "./store-hot-select-projections.js";
-import { TaskLineageIndex } from "./task-lineage-index.js";
-import type { TaskLineageReadProjectionV1 } from "./task-lineage-read.js";
+import { TaskLineageIndex } from "./evidence-retrieval/task-lineage-index.js";
+import type { TaskLineageReadProjectionV1 } from "./evidence-retrieval/task-lineage-read.js";
 import { readBrokerProposal, listBrokerProposals } from "./broker-proposal-read.js";
 import {
   listBrokerArtifactsForProposal,
   listBrokerAuditEvents,
   listBrokerValidationsForProposal,
   readBrokerArtifact,
-} from "./broker-evidence-read.js";
+} from "./evidence-retrieval/broker-evidence-read.js";
 import { buildCleanupDryRunPlan } from "./broker-cleanup-discovery.js";
 import { buildWorkerCapacitySummary } from "./claim/broker-worker-capacity.js";
 import { buildCompactDiagnostics } from "./broker-compact-diagnostics.js";
@@ -141,7 +141,7 @@ import {
   readBrokerWorker,
   readBrokerWorkerCachedFirst,
   readBrokerWorkerView,
-} from "./broker-worker-read.js";
+} from "./evidence-retrieval/broker-worker-read.js";
 
 import type { RoundStatusSummary } from "./round-status.js";
 
@@ -222,7 +222,7 @@ import {
   type WavePlanDagV2ReceiptEvidenceV1,
   type WavePlanDagV2StageBindingWriteResult,
 } from "../wave-plan-dag-v2/stage-task-binding.js";
-import { summarizeWaveStageEvidence, type WaveLaneEvidence } from "./wave-evidence.js";
+import { summarizeWaveStageEvidence, type WaveLaneEvidence } from "./evidence-retrieval/wave-evidence.js";
 import {
   ReviewLineageStore,
   type CreateRecordedReviewLineageInput,

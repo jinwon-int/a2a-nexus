@@ -15,9 +15,9 @@ import type {
   AuditEvent,
   TaskRecord,
   TaskStatus,
-} from "../core/types.js";
-import type { AssignmentMode } from "../fixtures/team-assignment.js";
-import { isTerminalTaskStatus } from "./broker-status-predicates.js";
+} from "../types.js";
+import type { AssignmentMode } from "../../fixtures/team-assignment.js";
+import { isTerminalTaskStatus } from "../broker-status-predicates.js";
 
 export interface BrokerSnapshot {
   tasks: TaskRecord[];

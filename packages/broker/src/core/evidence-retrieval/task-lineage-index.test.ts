@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { BrokerError } from "./broker-error.js";
+import { BrokerError } from "../broker-error.js";
 import { TaskLineageIndex } from "./task-lineage-index.js";
 import {
   buildTaskLineageReadProjection,
@@ -10,7 +10,7 @@ import {
   parseTaskLineageLineageRequestV1,
   TaskLineageCycleError,
 } from "./task-lineage-read.js";
-import type { TaskRecord } from "./types.js";
+import type { TaskRecord } from "../types.js";
 
 const T0 = Date.parse("2026-07-28T00:00:00.000Z");
 

@@ -9,7 +9,7 @@ import { SqliteBrokerStateStore, type BrokerStateStore } from "../core/store.js"
 import { assertRequesterHasRole, type RequesterIdentity } from "../core/request-security.js";
 import type { TaskRecord } from "../core/types.js";
 import { queryTerminalBriefInbox } from "../core/terminal-brief-query-api.js";
-import { buildReleaseEvidenceExport } from "../core/release-evidence.js";
+import { buildReleaseEvidenceExport } from "../core/evidence-retrieval/release-evidence.js";
 import { buildOperatorTaskReport } from "../core/operator-task-report.js";
 import { getTaskForReadPath, listAllTasksForReadPath, listTasksForReadPath, mapBrokerDiagnosticsToSnapshot } from "../task-read-paths.js";
 import { optionalString } from "../request-parsers.js";

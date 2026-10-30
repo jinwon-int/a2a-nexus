@@ -8,7 +8,7 @@ import {
   parseTaskLineageChildrenRequestV1,
   parseTaskLineageLeavesRequestV1,
   parseTaskLineageLineageRequestV1,
-} from "../core/task-lineage-read.js";
+} from "../core/evidence-retrieval/task-lineage-read.js";
 import type { TaskRuntimeRepository } from "../core/task-repository.js";
 import type { TaskRecord } from "../core/types.js";
 import { createBrokerAgentCard } from "./agent-card.js";

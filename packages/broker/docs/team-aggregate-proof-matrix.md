@@ -82,8 +82,8 @@ Validates that `fanout`, `split`, `review`, `swarm` assignment modes produce cor
 
 ## Implementation
 
-- **Proof matrix**: `src/core/proof-matrix.ts`
-- **Tests**: `src/core/proof-matrix.test.ts` (37 tests)
+- **Proof matrix**: `src/core/evidence-retrieval/proof-matrix.ts`
+- **Tests**: `src/core/evidence-retrieval/proof-matrix.test.ts` (37 tests)
 - **Fixtures**: `src/fixtures/team-assignment.ts`
 
 ## Test Results

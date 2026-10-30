@@ -9,8 +9,8 @@
 
 import { createHash } from "node:crypto";
 
-import { BrokerError } from "./broker-error.js";
-import type { TaskKind, TaskRecord, TaskStatus } from "./types.js";
+import { BrokerError } from "../broker-error.js";
+import type { TaskKind, TaskRecord, TaskStatus } from "../types.js";
 
 export const TASK_LINEAGE_DEFAULT_LIMIT = 200;
 export const TASK_LINEAGE_MAX_LIMIT = 1_000;
