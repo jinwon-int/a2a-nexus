@@ -35,7 +35,7 @@ if (run.status !== 0) {
 const lines = output.split('\n');
 const failures = [];
 for (const [file, floor] of FLOORS) {
-  const escaped = file.replace(/[.]/g, '\\.');
+  const escaped = file.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
   const pattern = new RegExp(`(?:^|\\s)${escaped}\\s+\\|\\s+([\\d.]+)`);
   const match = lines.map((entry) => entry.match(pattern)).find(Boolean);
   const pct = Number(match?.[1]);
