@@ -9,7 +9,7 @@ import {
   DEFAULT_HOT_RUNTIME_MAX_NON_TERMINAL_TASKS,
   DEFAULT_HOT_RUNTIME_MAX_TERMINAL_OUTBOX_EVENTS,
   DEFAULT_HOT_RUNTIME_MAX_TERMINAL_TASKS,
-} from "./core/store.js";
+} from "./core/store/store.js";
 
 export interface BrokerHotRuntimeLimits {
   maxNonTerminalTasks: number;

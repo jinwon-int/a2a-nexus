@@ -149,7 +149,7 @@ export const SHARED_STATE_IDEMPOTENCY_V1_VALUES = deepFreeze({
             ],
           },
           {
-            path: "packages/broker/src/core/store.ts",
+            path: "packages/broker/src/core/store/store.ts",
             symbol: "CREATE TABLE IF NOT EXISTS broker_tasks",
             proves: [
               "restart-continuity",
@@ -180,7 +180,7 @@ export const SHARED_STATE_IDEMPOTENCY_V1_VALUES = deepFreeze({
             ],
           },
           {
-            path: "packages/broker/src/core/store.ts",
+            path: "packages/broker/src/core/store/store.ts",
             symbol: "CREATE TABLE IF NOT EXISTS broker_tasks",
             proves: [
               "durable-key-or-state",
@@ -226,7 +226,7 @@ export const SHARED_STATE_IDEMPOTENCY_V1_VALUES = deepFreeze({
             ],
           },
           {
-            path: "packages/broker/src/core/store.ts",
+            path: "packages/broker/src/core/store/store.ts",
             symbol: "CREATE TABLE IF NOT EXISTS broker_terminal_outbox",
             proves: [
               "restart-continuity",
@@ -240,7 +240,7 @@ export const SHARED_STATE_IDEMPOTENCY_V1_VALUES = deepFreeze({
         plannedNamespace: "broker.live-approval.consume",
         sourceRefs: [
           {
-            path: "packages/broker/src/core/store.ts",
+            path: "packages/broker/src/core/store/store.ts",
             symbol: "consumeLiveApprovalKey(key: string, consumedAt: string): boolean",
             proves: [
               "durable-key-or-state",
@@ -250,7 +250,7 @@ export const SHARED_STATE_IDEMPOTENCY_V1_VALUES = deepFreeze({
             ],
           },
           {
-            path: "packages/broker/src/core/store.ts",
+            path: "packages/broker/src/core/store/store.ts",
             symbol: "CREATE TABLE IF NOT EXISTS broker_live_approval_consumptions",
             proves: [
               "domain-mutation",
@@ -264,14 +264,14 @@ export const SHARED_STATE_IDEMPOTENCY_V1_VALUES = deepFreeze({
         plannedNamespace: "broker.review-lineage.source",
         sourceRefs: [
           {
-            path: "packages/broker/src/core/review-lineage-observation-store.ts",
+            path: "packages/broker/src/core/store/review-lineage-observation-store.ts",
             symbol: "payloadFingerprint: string",
             proves: [
               "payload-fingerprint",
             ],
           },
           {
-            path: "packages/broker/src/core/review-lineage-observation-store.ts",
+            path: "packages/broker/src/core/store/review-lineage-observation-store.ts",
             symbol: "idempotency_key TEXT PRIMARY KEY",
             proves: [
               "durable-key-or-state",

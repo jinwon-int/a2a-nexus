@@ -13,7 +13,7 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createBrokerServer, type BrokerServerOptions } from "./server.js";
-import { emptySnapshot, type BrokerStateStore } from "./core/store.js";
+import { emptySnapshot, type BrokerStateStore } from "./core/store/store.js";
 import { CreateTaskRequest } from "./core/types.js";
 
 export function createInMemoryStateStore(): BrokerStateStore {

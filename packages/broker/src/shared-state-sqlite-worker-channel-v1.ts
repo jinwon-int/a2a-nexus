@@ -4,7 +4,7 @@
  * This is the only module in the lane that touches worker threads, so the lane
  * itself can be exercised against a substitute channel without spawning a
  * thread. It spawns a purpose-built entry — never the legacy
- * `core/sqlite-worker-thread-persistence.ts` proxy, its protocol, its database,
+ * `core/store/sqlite-worker-thread-persistence.ts` proxy, its protocol, its database,
  * or its runtime flag — and it holds no SQLite handle of its own: the worker is
  * the single V1 authority for the file.
  *

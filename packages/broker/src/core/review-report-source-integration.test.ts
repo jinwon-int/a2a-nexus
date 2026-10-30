@@ -24,7 +24,7 @@ import {
   REVIEW_LINEAGE_OBSERVATION_LEDGER_TABLE,
   SqliteReviewLineageObservationStore,
   type AuthorizedReviewLineageSourceAdmissionV1,
-} from "./review-lineage-observation-store.js";
+} from "./store/review-lineage-observation-store.js";
 
 const BASE_SHA = "0".repeat(40);
 const HEAD_SHA = "1".repeat(40);

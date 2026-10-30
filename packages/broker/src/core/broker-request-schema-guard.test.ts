@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { InMemoryA2ABroker } from "./broker.js";
 import { BrokerError } from "./broker-error.js";
 import { proposalSchema, taskSchema, workerSchema } from "./store-schemas.js";
-import { serializeBrokerSnapshot, parseSnapshotPayload } from "./store-snapshot-io.js";
+import { serializeBrokerSnapshot, parseSnapshotPayload } from "./store/store-snapshot-io.js";
 import {
   createProposalRequestSchema,
   createTaskRequestSchema,

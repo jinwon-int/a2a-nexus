@@ -3,7 +3,7 @@
 // contribute extra fields to full broker snapshots (e.g. server-side state that
 // lives outside the broker), and merges their output. BrokerSnapshot is imported
 // type-only, so there is no runtime import cycle.
-import type { BrokerSnapshot } from "./evidence-retrieval/proof-matrix.js";
+import type { BrokerSnapshot } from "../evidence-retrieval/proof-matrix.js";
 
 export class SnapshotExtensionRegistry {
   private readonly providers = new Set<() => Partial<BrokerSnapshot>>();

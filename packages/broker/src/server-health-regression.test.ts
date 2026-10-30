@@ -25,7 +25,7 @@ import {
   emptySnapshot,
   SqliteBrokerStateStore,
   type BrokerSnapshot,
-} from "./core/store.js";
+} from "./core/store/store.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

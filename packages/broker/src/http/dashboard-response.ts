@@ -5,7 +5,7 @@ import { projectAlerts, type AlertScanResult } from "../core/observability/alert
 import { computeTaskDiagnosticStatus } from "../core/broker-status-predicates.js";
 import type { TaskDiagnosticReport } from "../core/types.js";
 import type { SharedTaskDiagnostics } from "../core/observability/operator-dashboard-snapshot.js";
-import type { BrokerHotEntityDiagnostics } from "../core/store.js";
+import type { BrokerHotEntityDiagnostics } from "../core/store/store.js";
 import type { HotTableGrowthProjection } from "../core/observability/hot-table-growth.js";
 import {
   buildOperatorDashboardSnapshot,

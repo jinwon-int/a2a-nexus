@@ -1,6 +1,6 @@
-import { HOT_READ_HARD_MAX_LIMIT } from "./broker-list-filters.js";
-import { normalizeFailureClass } from "./task-error-details.js";
-import type { TaskRecord } from "./types.js";
+import { HOT_READ_HARD_MAX_LIMIT } from "../broker-list-filters.js";
+import { normalizeFailureClass } from "../task-error-details.js";
+import type { TaskRecord } from "../types.js";
 import type {
   SqliteTaskHotTableFilters,
   SqliteTaskListItemProjection,

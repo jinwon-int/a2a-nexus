@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type BrokerPersistenceQueueDiagnostics } from "./server.js";
 import { BrokerError, InMemoryA2ABroker } from "./core/broker.js";
-import { emptySnapshot, SqliteBrokerStateStore, type BrokerStateStore } from "./core/store.js";
-import { WorkerThreadProxyStore, WriteQueue, type SqliteWorkerThread } from "./core/sqlite-worker-thread-persistence.js";
+import { emptySnapshot, SqliteBrokerStateStore, type BrokerStateStore } from "./core/store/store.js";
+import { WorkerThreadProxyStore, WriteQueue, type SqliteWorkerThread } from "./core/store/sqlite-worker-thread-persistence.js";
 import { WorkerRegistrationResponse } from "./core/types.js";
 import { createInMemoryStateStore, createDeferred, waitFor, startTestServer, createTaskRequest, jsonHeaders, withEnv, registerTestWorker } from "./server-test-helpers.js";
 

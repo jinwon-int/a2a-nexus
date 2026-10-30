@@ -23,7 +23,7 @@ import {
   verifyCrossBrokerSenderProof,
   type CrossBrokerTrustAnchors,
 } from "../a2a/cross-broker-sender-proof.js";
-import type { BrokerStateStore } from "../core/store.js";
+import type { BrokerStateStore } from "../core/store/store.js";
 import { awaitDurablePersistenceAck } from "./error-mapping.js";
 import { readJson } from "./body.js";
 import { sendJson } from "./response.js";

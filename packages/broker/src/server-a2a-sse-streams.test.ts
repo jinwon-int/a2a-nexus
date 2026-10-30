@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SqliteBrokerStateStore } from "./core/store.js";
+import { SqliteBrokerStateStore } from "./core/store/store.js";
 import { startTestServer, jsonHeaders, registerTestWorker, readAllSseEvents, readSseEventsUntil } from "./server-test-helpers.js";
 
 test("GET/POST /a2a/tasks/terminal-outbox replays and acknowledges compact records", async () => {

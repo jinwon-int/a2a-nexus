@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 
 import { createBrokerServer } from "./server.js";
-import { emptySnapshot, type BrokerStateStore } from "./core/store.js";
+import { emptySnapshot, type BrokerStateStore } from "./core/store/store.js";
 import {
   evaluateTaskReadiness,
   DEFAULT_TASK_READINESS_MODE,

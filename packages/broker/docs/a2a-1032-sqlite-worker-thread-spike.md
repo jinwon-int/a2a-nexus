@@ -13,7 +13,7 @@ in tracked source. Recording it here so the ADR is not read as a standing "do
 not build" decision:
 
 - The test-only queue semantics model graduated into a real implementation:
-  `src/core/sqlite-worker-thread-persistence.ts` (+ its 571-line
+  `src/core/store/sqlite-worker-thread-persistence.ts` (+ its 571-line
   `*.test.ts`), wired into the server behind
   `BROKER_PERSISTENCE_QUEUE_WORKER_THREAD=1` (off by default).
 - Every "required design proof before implementation" listed below is met by

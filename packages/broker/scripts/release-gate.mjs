@@ -449,7 +449,7 @@ async function verifySqliteRuntimeRepositoryProof({ compose, composeArgs, sqlite
       SqliteTaskRuntimeRepository,
       SqliteTombstoneRuntimeRepository,
       SqliteWorkerRuntimeRepository,
-    } from './dist/core/store.js';
+    } from './dist/core/store/store.js';
 
     const sqliteFile = process.argv[1];
     const proofId = process.argv[2];
@@ -684,7 +684,7 @@ async function verifySqliteExport({ compose, composeArgs, sqliteFile, expectedTa
 
 async function verifySqliteTombstoneHotRead({ compose, composeArgs, sqliteFile, expectedTaskId }) {
   const code = `
-    import { SqliteBrokerStateStore } from './dist/core/store.js';
+    import { SqliteBrokerStateStore } from './dist/core/store/store.js';
     const store = new SqliteBrokerStateStore(process.argv[1]);
     try {
       const expectedTaskId = process.argv[2];
@@ -732,7 +732,7 @@ async function verifySqliteDiagnosticsReadPath({ compose, composeArgs, sqliteFil
   const latestRequeueAt = '2026-04-27T00:02:00.000Z';
   const latestRequeueReason = 'release-gate sqlite diagnostics hot audit proof';
   const code = `
-    import { SqliteBrokerStateStore } from './dist/core/store.js';
+    import { SqliteBrokerStateStore } from './dist/core/store/store.js';
     const store = new SqliteBrokerStateStore(process.argv[1]);
     try {
       const taskId = process.argv[2];
@@ -858,7 +858,7 @@ function assertSqliteDiagnosticsReport(report, expected) {
 async function verifySqliteRetentionPlans({ compose, composeArgs, sqliteFile, expectedTaskIds, expectedWorkerIds }) {
   const staleWorkerId = `release-gate-stale-worker-${Date.now()}`;
   const code = `
-    import { SqliteBrokerStateStore } from './dist/core/store.js';
+    import { SqliteBrokerStateStore } from './dist/core/store/store.js';
     const store = new SqliteBrokerStateStore(process.argv[1]);
     try {
       const nowMs = Date.now() + 1000;

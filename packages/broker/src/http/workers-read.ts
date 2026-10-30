@@ -9,7 +9,7 @@ import type { ServerResponse } from "node:http";
 
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
 import { isWorkerSubstantiveAnalysisReady, workerAnalysisAdapterMismatch } from "../core/broker-worker-status.js";
-import { SqliteBrokerStateStore, type BrokerStateStore } from "../core/store.js";
+import { SqliteBrokerStateStore, type BrokerStateStore } from "../core/store/store.js";
 import type { WorkerListFilters, WorkerRecord, WorkerView } from "../core/types.js";
 import { sendJson } from "./response.js";
 import { numberQueryParam, workerFiltersFromUrl } from "./read-path-filters.js";

@@ -12,7 +12,7 @@ import {
 } from "./worker-acceptance.js";
 import { A2ABrokerWorker, createBuiltinWorkerHandler, validateTaskCompletionEvidence } from "./worker.js";
 import { createBrokerServer } from "./server.js";
-import { emptySnapshot, type BrokerStateStore } from "./core/store.js";
+import { emptySnapshot, type BrokerStateStore } from "./core/store/store.js";
 import type { TaskRecord, TaskResult } from "./core/types.js";
 
 const EDGE_SECRET = "acceptance-test-edge-secret";

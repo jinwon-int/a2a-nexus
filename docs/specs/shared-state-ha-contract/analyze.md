@@ -15,7 +15,7 @@
 - `packages/broker/src/a2a-http-signature-replay-cache.ts`.
 - `packages/broker/src/core/transport/request-security.ts`.
 - `packages/broker/src/core/broker.ts`.
-- `packages/broker/src/core/store.ts` and
+- `packages/broker/src/core/store/store.ts` and
   `sqlite-worker-thread-persistence.ts`.
 - `packages/broker/src/core/completion/terminal-event-outbox.ts`.
 - `packages/broker/src/core/artifact-repository.ts` and

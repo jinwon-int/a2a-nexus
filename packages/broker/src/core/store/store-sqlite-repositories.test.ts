@@ -17,7 +17,7 @@ import {
   withTempFile, makeWorker, makeExchange, makeExchangeMessage,
   makeProposal, makeArtifact, makeValidation, makeTask, makeTombstone,
   makeAuditEvent, makeTerminalOutboxEvent, makeOutboxEvent,
-} from "./store-test-helpers.js";
+} from "../store-test-helpers.js";
 
 test("SqliteBrokerStateStore reports hot table mirror count drift", () => {
   const temp = withTempFile("state.sqlite");

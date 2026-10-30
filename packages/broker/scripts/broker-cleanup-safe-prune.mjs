@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { SqliteBrokerStateStore } from '../dist/core/store.js';
+import { SqliteBrokerStateStore } from '../dist/core/store/store.js';
 import {
   BROKER_CLEANUP_CONFIRMATION,
   buildBrokerCleanupPlan,
   executeBrokerCleanupPlan,
   validateCleanupExecution,
-} from '../dist/core/broker-cleanup.js';
+} from '../dist/core/store/broker-cleanup.js';
 
 const args = parseArgs(process.argv.slice(2));
 const sqliteFile = args['sqlite-file'] ?? process.env.SQLITE_STATE_FILE ?? process.env.BROKER_SQLITE_FILE;

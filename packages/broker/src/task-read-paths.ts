@@ -4,11 +4,11 @@
 // http/) so the inline import("./core/...") specifiers in the moved code remain
 // valid unchanged.
 import { BrokerError } from "./core/broker-error.js";
-import { SqliteBrokerStateStore } from "./core/store.js";
-import { HOT_READ_HARD_MAX_LIMIT } from "./core/store-hot-select-projections.js";
+import { SqliteBrokerStateStore } from "./core/store/store.js";
+import { HOT_READ_HARD_MAX_LIMIT } from "./core/store/store-hot-select-projections.js";
 import { failureReadbackFromError } from "./core/task-error-details.js";
 import type { InMemoryA2ABroker, TaskDiagnosticsOptions } from "./core/broker.js";
-import type { BrokerStateStore, SqliteTaskListItemProjection } from "./core/store.js";
+import type { BrokerStateStore, SqliteTaskListItemProjection } from "./core/store/store.js";
 import type {
   AuditEvent,
   AuditListFilters,
@@ -347,7 +347,7 @@ export function canUseSqliteTaskHotRead(filters: TaskListFilters): boolean {
 }
 
 export function mapBrokerDiagnosticsToSnapshot(
-  diagnostics: import("./core/store.js").BrokerHotTerminalOutboxDiagnostics,
+  diagnostics: import("./core/store/store.js").BrokerHotTerminalOutboxDiagnostics,
 ): NonNullable<import("./core/evidence-retrieval/release-evidence.js").ReleaseEvidenceExportOptions["terminalOutboxDiagnostics"]> {
   return {
     total: diagnostics.total,

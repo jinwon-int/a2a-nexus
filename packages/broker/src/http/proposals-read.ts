@@ -6,7 +6,7 @@
 import type { ServerResponse } from "node:http";
 
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
-import { SqliteBrokerStateStore, type BrokerStateStore } from "../core/store.js";
+import { SqliteBrokerStateStore, type BrokerStateStore } from "../core/store/store.js";
 import type { ChangeProposal, ProposalDetails, ProposalListFilters } from "../core/types.js";
 import { sendJson } from "./response.js";
 import { proposalFiltersFromUrl } from "./read-path-filters.js";

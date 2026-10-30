@@ -21,9 +21,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { InMemoryA2ABroker } from "./broker.js";
+import { InMemoryA2ABroker } from "../broker.js";
 import { emptySnapshot, SqliteBrokerStateStore } from "./store.js";
-import { makeTask } from "./store-test-helpers.js";
+import { makeTask } from "../store-test-helpers.js";
 import { createWorkerThreadPersistence, WriteQueue } from "./sqlite-worker-thread-persistence.js";
 import type { WriteQueueStats } from "./sqlite-worker-thread-persistence.js";
 

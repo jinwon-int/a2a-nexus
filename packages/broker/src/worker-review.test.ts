@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 
 import { InMemoryA2ABroker } from "./core/broker.js";
-import { emptySnapshot, type BrokerStateStore } from "./core/store.js";
+import { emptySnapshot, type BrokerStateStore } from "./core/store/store.js";
 import { createBrokerServer } from "./server.js";
 import { validateTaskCompletionEvidence } from "./worker.js";
 import { validateReviewEvidence } from "./worker-review.js";

@@ -1545,7 +1545,7 @@ process.stdout.write(JSON.stringify({
   status: "pr_opened",
   prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/9997",
   branch: "h2-no-flag-compat",
-  filesChanged: ["packages/broker/src/core/store.ts"],
+  filesChanged: ["packages/broker/src/core/store/store.ts"],
   tests: ["legacy path still accepts runner evidence"]
 }) + "\\n");
 `);
@@ -1566,7 +1566,7 @@ process.stdout.write(JSON.stringify({
 
     assert.equal(result.error, undefined);
     assert.equal(result.result?.output?.prUrl, "https://github.com/jinwon-int/a2a-nexus/pull/9997");
-    assert.deepEqual(result.result?.output?.filesChanged, ["packages/broker/src/core/store.ts"]);
+    assert.deepEqual(result.result?.output?.filesChanged, ["packages/broker/src/core/store/store.ts"]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1723,7 +1723,7 @@ process.stdout.write(JSON.stringify({
   status: "pr_opened",
   prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/9998",
   branch: "h2-scope-drift",
-  filesChanged: ["packages/broker/src/core/store.ts"],
+  filesChanged: ["packages/broker/src/core/store/store.ts"],
   tests: ["npx tsx --test packages/broker/src/core/lifecycle.test.ts -> pass"]
 }) + "\\n");
 `);
@@ -1747,7 +1747,7 @@ process.stdout.write(JSON.stringify({
 
     assert.equal(result.result, undefined);
     assert.equal(result.error?.code, "hybrid_declared_scope_violation");
-    assert.deepEqual(result.error?.details?.outsideDeclaredScope, ["packages/broker/src/core/store.ts"]);
+    assert.deepEqual(result.error?.details?.outsideDeclaredScope, ["packages/broker/src/core/store/store.ts"]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1850,7 +1850,7 @@ import { join, dirname } from "node:path";
 import { spawnSync } from "node:child_process";
 const wd = mkdtempSync(join(tmpdir(), "h2-runner-worktree-"));
 spawnSync("git", ["-C", wd, "init", "-q"], { encoding: "utf8" });
-const evil = join(wd, "packages/broker/src/core/store.ts");
+const evil = join(wd, "packages/broker/src/core/store/store.ts");
 mkdirSync(dirname(evil), { recursive: true });
 writeFileSync(evil, "// out-of-scope write the runner hid\\n");
 process.stdout.write(JSON.stringify({
@@ -1883,7 +1883,7 @@ process.stdout.write(JSON.stringify({
 
     assert.equal(result.result, undefined, "under-reporting runner must not produce accepted evidence");
     assert.equal(result.error?.code, "hybrid_declared_scope_writepoint_violation");
-    assert.deepEqual(result.error?.details?.outsideDeclaredScope, ["packages/broker/src/core/store.ts"]);
+    assert.deepEqual(result.error?.details?.outsideDeclaredScope, ["packages/broker/src/core/store/store.ts"]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

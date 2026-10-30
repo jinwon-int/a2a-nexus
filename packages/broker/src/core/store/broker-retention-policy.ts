@@ -3,7 +3,7 @@
 // BrokerRetentionPolicy type is imported back (type-only, erased at runtime, so
 // no runtime import cycle through broker.js). broker.ts re-exports the constants
 // to preserve the existing public surface.
-import type { BrokerRetentionPolicy } from "./broker.js";
+import type { BrokerRetentionPolicy } from "../broker.js";
 
 /**
  * Default cap on automatic requeues for a single task. Chosen to tolerate a short burst of

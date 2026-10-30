@@ -19,7 +19,7 @@ import { once } from "node:events";
 import test, { after as afterAll } from "node:test";
 
 import { createBrokerServer, type BrokerServerRuntime } from "./server.js";
-import { JsonFileBrokerStateStore } from "./core/store.js";
+import { JsonFileBrokerStateStore } from "./core/store/store.js";
 import { sha256Hex } from "./core/transport/request-security.js";
 
 // #2386: remove every temp dir this file creates.

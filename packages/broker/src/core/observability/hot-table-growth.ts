@@ -13,7 +13,7 @@
  * Used by: health endpoint (via store), migration-health-gate, canary gates.
  * Reference: #533 Team1/workergamma diagnostics for #497/#294 stability gates.
  */
-import type { BrokerHotTableLoadMetrics, BrokerHotTableRuntimeLoadLimits } from "../store.js";
+import type { BrokerHotTableLoadMetrics, BrokerHotTableRuntimeLoadLimits } from "../store/store.js";
 
 // ---------------------------------------------------------------------------
 // Types

@@ -415,7 +415,7 @@ Medium to high change.
 ### New modules recommended
 
 - `src/core/policy.ts`
-- `src/core/store.ts`
+- `src/core/store/store.ts`
 - `src/core/proposals.ts`
 - `src/core/artifacts.ts`
 - `src/core/audit.ts`

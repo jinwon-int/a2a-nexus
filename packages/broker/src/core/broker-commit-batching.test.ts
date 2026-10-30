@@ -21,7 +21,7 @@ import {
   SqliteTombstoneRuntimeRepository,
   SqliteValidationRuntimeRepository,
   SqliteWorkerRuntimeRepository,
-} from "./store.js";
+} from "./store/store.js";
 import { createWorkerTask, registerWorker } from "./broker-test-helpers.js";
 
 interface Wired {

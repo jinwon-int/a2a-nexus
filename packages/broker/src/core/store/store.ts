@@ -14,9 +14,9 @@ import type {
   TaskTombstone,
   ValidationResult,
   WorkerRecord,
-} from "./types.js";
-import { estimateRetentionRecordBytes, isHeartbeatAuditEvent } from "./broker-retention-selectors.js";
-import type { FailureClass } from "./task-error-details.js";
+} from "../types.js";
+import { estimateRetentionRecordBytes, isHeartbeatAuditEvent } from "../broker-retention-selectors.js";
+import type { FailureClass } from "../task-error-details.js";
 import {
   buildHotEntityHintCoverage,
   planAuditRetentionFromRecords,
@@ -53,7 +53,7 @@ import {
 import {
   DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION,
   type TerminalTaskOutboxEvent,
-} from "./completion/terminal-event-outbox.js";
+} from "../completion/terminal-event-outbox.js";
 import {
   CURRENT_BROKER_STATE_VERSION as CURRENT_BROKER_STATE_VERSION_VALUE,
   DEFAULT_BROKER_STATE_MAX_BYTES as DEFAULT_BROKER_STATE_MAX_BYTES_VALUE,
@@ -62,7 +62,7 @@ import {
   evaluatePersistedClockV1,
   evaluatePersistedSchemaVersionV1,
   evaluatePersistedStateVersionV1,
-} from "../shared-state-startup-checks-v1.js";
+} from "../../shared-state-startup-checks-v1.js";
 import type {
   BrokerHotTableLoadMetrics,
   BrokerHotTableRuntimeLoadLimits,
@@ -98,7 +98,7 @@ import type {
   BrokerHotEntityMirrorStatus,
   BrokerHotHintCounts,
   BrokerHotTerminalOutboxDiagnostics,
-} from "./observability/hot-diagnostics.js";
+} from "../observability/hot-diagnostics.js";
 import {
   exchangeStateSchema,
   exchangeMessageSchema,
@@ -110,7 +110,7 @@ import {
   workerSchema,
   tombstoneSchema,
   terminalOutboxEventSchema,
-} from "./store-schemas.js";
+} from "../store-schemas.js";
 import type {
   ProjectedReviewLineageObservation,
   ReviewLineageRecord,
@@ -151,7 +151,7 @@ export type {
   BrokerHotHintCounts,
   BrokerHotTerminalOutboxDiagnostics,
   BrokerInvalidHotEntityRow,
-} from "./observability/hot-diagnostics.js";
+} from "../observability/hot-diagnostics.js";
 
 export interface SqliteTaskHotTableFilters {
   id?: string;

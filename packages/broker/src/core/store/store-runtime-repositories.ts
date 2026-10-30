@@ -5,17 +5,17 @@
 // Pure move: store.ts re-exports every symbol here, so existing
 // `from "./store.js"` imports are preserved. The only back-reference to
 // store.js is type-only (erased at runtime — the L-store-1/2 no-cycle shape).
-import { isHeartbeatAuditEvent, getHeartbeatAuditEventId } from "./broker-retention-selectors.js";
+import { isHeartbeatAuditEvent, getHeartbeatAuditEventId } from "../broker-retention-selectors.js";
 import { normalizeRuntimeTaskListLimit } from "./store-hot-select-projections.js";
 import { taskMatchesRuntimeFilters, workerMatchesRuntimeFilters } from "./store-runtime-filters.js";
-import type { ArtifactRuntimeRepository } from "./artifact-repository.js";
-import type { AuditRuntimeRepository } from "./audit-repository.js";
-import type { ExchangeMessageRuntimeRepository, ExchangeRuntimeRepository } from "./exchange-repository.js";
-import type { ProposalRuntimeRepository } from "./proposal-repository.js";
-import type { TaskRuntimeRepository } from "./task-repository.js";
-import type { TombstoneRuntimeRepository } from "./tombstone-repository.js";
-import type { ValidationRuntimeRepository } from "./validation-repository.js";
-import type { WorkerRuntimeRepository } from "./worker-repository.js";
+import type { ArtifactRuntimeRepository } from "../artifact-repository.js";
+import type { AuditRuntimeRepository } from "../audit-repository.js";
+import type { ExchangeMessageRuntimeRepository, ExchangeRuntimeRepository } from "../exchange-repository.js";
+import type { ProposalRuntimeRepository } from "../proposal-repository.js";
+import type { TaskRuntimeRepository } from "../task-repository.js";
+import type { TombstoneRuntimeRepository } from "../tombstone-repository.js";
+import type { ValidationRuntimeRepository } from "../validation-repository.js";
+import type { WorkerRuntimeRepository } from "../worker-repository.js";
 import type { SqliteAuditRuntimeRepositoryOptions } from "./store-contracts.js";
 import type { SqliteBrokerStateStore } from "./store.js";
 import type {
@@ -33,7 +33,7 @@ import type {
   ValidationResult,
   WorkerListFilters,
   WorkerRecord,
-} from "./types.js";
+} from "../types.js";
 
 export const DEFAULT_HOT_RUNTIME_MAX_HEARTBEAT_AUDIT_EVENTS = 500;
 

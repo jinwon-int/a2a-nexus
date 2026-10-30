@@ -5,7 +5,7 @@ import { Readable } from "node:stream";
 import test from "node:test";
 
 import { InMemoryA2ABroker } from "../core/broker.js";
-import type { BrokerStateStore } from "../core/store.js";
+import type { BrokerStateStore } from "../core/store/store.js";
 import { handleExchangeRoutesIfMatched } from "./exchanges-read.js";
 
 class CapturingResponse extends EventEmitter {

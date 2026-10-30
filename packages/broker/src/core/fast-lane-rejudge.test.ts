@@ -28,7 +28,7 @@ import {
   SqliteValidationRuntimeRepository,
   SqliteWorkerRuntimeRepository,
   type BrokerSnapshot,
-} from "./store.js";
+} from "./store/store.js";
 import type { TaskLaneRejudgeRequest } from "./types.js";
 
 const REJUDGE_NOTE = "payload carried a fanout marker; not a single-worker analysis";

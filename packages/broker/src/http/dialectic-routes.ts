@@ -14,7 +14,7 @@ import {
   assertRequesterMatchesParty,
   type RequesterIdentity,
 } from "../core/transport/request-security.js";
-import type { BrokerStateStore } from "../core/store.js";
+import type { BrokerStateStore } from "../core/store/store.js";
 import type { DecisionDialecticPatchV1, DecisionDialecticPhase } from "../decision-dialectic/types.js";
 import {
   applyDecisionDialecticPatch,

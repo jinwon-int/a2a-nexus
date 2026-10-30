@@ -5,7 +5,7 @@
 // These functions hold no module state: they validate and normalize raw URL or
 // body input and throw BrokerError("bad_request", ...) on malformed values.
 import { BrokerError } from "../core/broker.js";
-import type { BrokerCleanupPlanOptions } from "../core/broker-cleanup.js";
+import type { BrokerCleanupPlanOptions } from "../core/store/broker-cleanup.js";
 
 export function numberQueryParam(url: URL, name: string): number | undefined {
   const value = url.searchParams.get(name);

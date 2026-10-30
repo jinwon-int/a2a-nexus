@@ -8,8 +8,8 @@ import { createHmac } from "node:crypto";
 import { once } from "node:events";
 
 import { createBrokerServer, firstNonEmpty, type BrokerServerOptions } from "../server.js";
-import { emptySnapshot } from "../core/store.js";
-import type { BrokerStateStore } from "../core/store.js";
+import { emptySnapshot } from "../core/store/store.js";
+import type { BrokerStateStore } from "../core/store/store.js";
 
 function createInMemoryStateStore(): BrokerStateStore {
   let snapshot = emptySnapshot();

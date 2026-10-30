@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 
 import { InMemoryA2ABroker } from "../core/broker.js";
-import { emptySnapshot, type BrokerStateStore } from "../core/store.js";
+import { emptySnapshot, type BrokerStateStore } from "../core/store/store.js";
 import { createBrokerServer, type BrokerServerOptions } from "../server.js";
 import { A2ABrokerWorker, type WorkerTaskHandler } from "../worker.js";
 import { createIntentRouter } from "./intent-router.js";

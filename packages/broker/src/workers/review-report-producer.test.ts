@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { SqliteBrokerStateStore } from "../core/store.js";
+import { SqliteBrokerStateStore } from "../core/store/store.js";
 import type { TaskRecord, TaskResult } from "../core/types.js";
 import {
   findingSignature,

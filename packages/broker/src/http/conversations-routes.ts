@@ -14,7 +14,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
 import { assertRequesterMatchesParty, type RequesterIdentity } from "../core/transport/request-security.js";
-import type { BrokerStateStore } from "../core/store.js";
+import type { BrokerStateStore } from "../core/store/store.js";
 import { awaitDurablePersistenceAck } from "./error-mapping.js";
 import { readJson } from "./body.js";
 import { sendJson } from "./response.js";

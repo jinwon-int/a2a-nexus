@@ -13,7 +13,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { InMemoryA2ABroker } from "./broker.js";
+import { InMemoryA2ABroker } from "../broker.js";
 import {
   buildHotTableSelect,
   HOT_READ_DEFAULT_LIMIT,
@@ -24,9 +24,9 @@ import {
   SqliteBrokerStateStore,
   emptySnapshot,
 } from "./store.js";
-import { listAllTasksForReadPath } from "../task-read-paths.js";
-import { makeTask, makeWorker, withTempFile } from "./store-test-helpers.js";
-import type { TaskRecord } from "./types.js";
+import { listAllTasksForReadPath } from "../../task-read-paths.js";
+import { makeTask, makeWorker, withTempFile } from "../store-test-helpers.js";
+import type { TaskRecord } from "../types.js";
 
 function seededTasks(count: number, prefix = "bounded"): TaskRecord[] {
   const base = Date.parse("2026-08-08T00:00:00.000Z");

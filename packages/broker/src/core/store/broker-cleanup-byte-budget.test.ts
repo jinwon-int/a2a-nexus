@@ -17,9 +17,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { planTaskRetentionFromRecords } from "./store-hot-retention-planning.js";
-import { estimateRetentionRecordBytes } from "./broker-retention-selectors.js";
-import { makeTask } from "./store-test-helpers.js";
-import type { TaskRecord } from "./types.js";
+import { estimateRetentionRecordBytes } from "../broker-retention-selectors.js";
+import { makeTask } from "../store-test-helpers.js";
+import type { TaskRecord } from "../types.js";
 
 const NOW_MS = Date.parse("2026-08-08T00:00:00.000Z");
 const DAY_MS = 86_400_000;

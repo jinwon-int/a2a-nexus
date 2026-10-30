@@ -14,7 +14,7 @@ import type {
   ReviewLineageBudgetV1,
 } from "a2a-review-lifecycle";
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
-import { SqliteBrokerStateStore } from "../core/store.js";
+import { SqliteBrokerStateStore } from "../core/store/store.js";
 import { handleReviewLineageRoutesIfMatched } from "./review-lineage-routes.js";
 
 class CapturingResponse extends EventEmitter {

@@ -13,7 +13,7 @@ import type {
   IntentContractV1,
   ReviewLineageBudgetV1,
 } from "a2a-review-lifecycle";
-import { InMemoryA2ABroker } from "./broker.js";
+import { InMemoryA2ABroker } from "../broker.js";
 import {
   admitReviewLineageProducerFact,
   type ReviewLineageProducerAdmissionContext,
@@ -21,7 +21,7 @@ import {
 import {
   createWorkerTask,
   registerWorker,
-} from "./broker-test-helpers.js";
+} from "../broker-test-helpers.js";
 import {
   emptySnapshot,
   SqliteBrokerStateStore,

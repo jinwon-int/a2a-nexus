@@ -15,8 +15,8 @@ import { fileURLToPath } from 'node:url';
 export const DEFAULT_RELIABILITY_SOURCE_PATHS = [
   'docs/release-gate.md',
   'docs/ops/release-gate-step-inventory.json',
-  'packages/broker/src/core/store.ts',
-  'packages/broker/src/core/sqlite-worker-thread-persistence.ts',
+  'packages/broker/src/core/store/store.ts',
+  'packages/broker/src/core/store/sqlite-worker-thread-persistence.ts',
   'packages/broker/src/server-persistence-ack.test.ts',
   'packages/broker/src/core/completion/round-result-collector.ts',
   'scripts/a2a-dispatch-round.mjs',

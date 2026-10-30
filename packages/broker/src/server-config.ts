@@ -2,8 +2,8 @@
 // state-store factory (JSON-file or SQLite backend), PUBLIC_BASE_URL validation,
 // and the firstNonEmpty value picker. createDefaultStateStore constructs the
 // store classes; the rest are pure.
-import { JsonFileBrokerStateStore, SqliteBrokerStateStore } from "./core/store.js";
-import type { BrokerStateStore, SqliteBrokerLoadSource } from "./core/store.js";
+import { JsonFileBrokerStateStore, SqliteBrokerStateStore } from "./core/store/store.js";
+import type { BrokerStateStore, SqliteBrokerLoadSource } from "./core/store/store.js";
 import type { BrokerHotRuntimeLimits } from "./broker-runtime-config.js";
 
 export function createDefaultStateStore(params: {

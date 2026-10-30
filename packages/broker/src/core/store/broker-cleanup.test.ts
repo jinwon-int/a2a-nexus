@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   buildBrokerCleanupPlan,
 } from "./broker-cleanup.js";
-import type { AuditEvent } from "./types.js";
+import type { AuditEvent } from "../types.js";
 import { SqliteBrokerStateStore, emptySnapshot } from "./store.js";
 import {
   mkdtempSync,

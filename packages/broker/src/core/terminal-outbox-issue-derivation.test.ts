@@ -14,10 +14,10 @@ import test from "node:test";
 
 import { InMemoryA2ABroker } from "./broker.js";
 import { createOwnedTask, registerWorker } from "./broker-test-helpers.js";
-import { emptySnapshot } from "./store-snapshot-io.js";
+import { emptySnapshot } from "./store/store-snapshot-io.js";
 import { buildTerminalTaskPayload } from "./completion/terminal-event-outbox.js";
 import { brokerSnapshotSchema, terminalOutboxPayloadIssueSchema } from "./store-schemas.js";
-import type { BrokerStateStore } from "./store.js";
+import type { BrokerStateStore } from "./store/store.js";
 import type { TaskRecord } from "./types.js";
 
 function taskWith(issue: unknown): TaskRecord {

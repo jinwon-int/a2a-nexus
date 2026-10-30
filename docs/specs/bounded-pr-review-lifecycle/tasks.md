@@ -13,7 +13,7 @@
       lineage-state placement).
       (`diffHash` semantics — diff-content hashing where metadata-only HEAD changes keep the
       hash — are pinned in `clarify.md`; lineage state lives in
-      `packages/broker/src/core/review-lineage-store.ts`, merged.)
+      `packages/broker/src/core/store/review-lineage-store.ts`, merged.)
 
 ## Phase 1: Machine-readable contracts + fixtures
 

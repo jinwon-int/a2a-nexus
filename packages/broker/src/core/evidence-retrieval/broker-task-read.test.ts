@@ -8,9 +8,9 @@ import test from "node:test";
 
 import { listBrokerTasks } from "./broker-task-read.js";
 import { normalizeTaskRecord } from "../broker-task-record-normalizers.js";
-import { emptySnapshot } from "../store.js";
+import { emptySnapshot } from "../store/store.js";
 import { InMemoryA2ABroker } from "../broker.js";
-import type { BrokerStateStore } from "../store.js";
+import type { BrokerStateStore } from "../store/store.js";
 import type { TaskRecord } from "../types.js";
 import type { TaskRuntimeRepository } from "../task-repository.js";
 

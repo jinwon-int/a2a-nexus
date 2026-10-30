@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 import { InMemoryA2ABroker } from "./broker.js";
 import { selectRetainedTerminalRecordIds } from "./broker-retention-selectors.js";
-import { JsonFileBrokerStateStore } from "./store.js";
+import { JsonFileBrokerStateStore } from "./store/store.js";
 import { registerWorker } from "./broker-test-helpers.js";
 
 interface FakeRecord {

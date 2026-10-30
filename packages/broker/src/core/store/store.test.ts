@@ -28,7 +28,7 @@ import {
   withTempFile, readSqliteCount, makeWorker, makeExchange, makeExchangeMessage,
   makeProposal, makeArtifact, makeValidation, makeTask, makeTombstone,
   makeAuditEvent, makeTerminalOutboxEvent,
-} from "./store-test-helpers.js";
+} from "../store-test-helpers.js";
 
 test("JsonFileBrokerStateStore loads backward-compatible empty objects", () => {
   const temp = withTempFile("state.json");
@@ -524,7 +524,7 @@ test("SQLite export script writes canonical JSON snapshots", () => {
       "--out",
       exportFile,
     ], {
-      cwd: join(import.meta.dirname, "..", ".."),
+      cwd: join(import.meta.dirname, "..", "..", ".."),
       stdio: ["ignore", "pipe", "pipe"],
     });
 

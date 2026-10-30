@@ -4,7 +4,7 @@
 // free of runtime dependencies.
 import type { A2AExchangeMessageRecord, TaskRecord, WorkerRecord } from "./types.js";
 import type { BrokerProfilingSample } from "./broker.js";
-import type { BrokerStateSaveHints } from "./store.js";
+import type { BrokerStateSaveHints } from "./store/store.js";
 
 export function taskStatusSinceAt(task: Pick<TaskRecord, "status" | "createdAt" | "updatedAt" | "claimedAt">): string {
   if (task.status === "claimed") {

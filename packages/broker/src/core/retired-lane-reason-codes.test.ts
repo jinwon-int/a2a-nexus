@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { InMemoryA2ABroker } from "./broker.js";
 import { RETIRED_TASK_LANE_REASON_CODES, taskLaneRejudgmentSchema, taskSchema } from "./store-schemas.js";
-import { parseSnapshotPayload, serializeBrokerSnapshot } from "./store-snapshot-io.js";
+import { parseSnapshotPayload, serializeBrokerSnapshot } from "./store/store-snapshot-io.js";
 import { TASK_LANE_REASON_CODES } from "../task-lane-classifier.js";
 import { validateLaneAssignmentForStats } from "./observability/task-stats.js";
 import type { CreateTaskRequest, RegisterWorkerRequest } from "./types.js";
