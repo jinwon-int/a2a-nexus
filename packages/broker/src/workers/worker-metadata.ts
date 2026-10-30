@@ -124,6 +124,12 @@ export interface AnalysisArtifactProbe {
   handlerPath?: string;
   /** #2401: harness pin preflight (bridge sha256 / skills tree) run against the resolved bridge. */
   harnessPreflight?: AnalysisHarnessPreflightResult;
+  /**
+   * #2493: sha256 of the script bridge the handler will run, read when the
+   * probe runs (worker start). Published whether or not the pin preflight
+   * passes, because bridges are synced separately from the worker's dist build.
+   */
+  bridgeSha256?: string;
 }
 
 const SHA256_RE = /^[0-9a-f]{64}$/;
@@ -399,9 +405,10 @@ export function probeAnalysisArtifactReadiness(
     // #2401: pin preflight on the bridge the handler will run. A failing pin
     // withdraws canAnalyze instead of letting the handler refuse after claim.
     const harnessPreflight = probeAnalysisHarnessPreflight(env, resolved);
+    const bridgeSha256 = fileSha256(resolved) ?? undefined;
     return harnessPreflight.ok
-      ? { probed: true, ready: true, adapterClass, handlerPath: resolved, harnessPreflight }
-      : { probed: true, ready: false, reason: "harness_preflight_failed", adapterClass, handlerPath: resolved, harnessPreflight };
+      ? { probed: true, ready: true, adapterClass, handlerPath: resolved, harnessPreflight, bridgeSha256 }
+      : { probed: true, ready: false, reason: "harness_preflight_failed", adapterClass, handlerPath: resolved, harnessPreflight, bridgeSha256 };
   }
 
   if (hasPathSeparator) {
@@ -427,6 +434,8 @@ export function withAnalysisProbeMetadata(
   out.analysisReady = probe.ready ? "true" : "false";
   if (probe.adapterClass) out.analysisAdapterClass = probe.adapterClass;
   if (probe.handlerPath) out.analysisHandlerPath = probe.handlerPath;
+  // #2493: the bridge actually loaded, independent of analysisBuildSha below.
+  if (probe.bridgeSha256 && SHA256_RE.test(probe.bridgeSha256)) out.analysisBridgeSha256 = probe.bridgeSha256;
   if (probe.harnessPreflight && !probe.harnessPreflight.ok) {
     // #2401: bounded, secret-free (checks, digests, remedies only).
     out.analysisHarnessPreflight = JSON.stringify({
@@ -446,6 +455,9 @@ export function withAnalysisProbeMetadata(
     // declared" without diffing env.
     out.analysisDeclaredCanAnalyze = "true";
   }
+  // analysisBuildSha is the worker's dist build revision (A2A_WORKER_BUILD_SHA
+  // or the generated build-info), NOT the analysis bridge: a script-only bridge
+  // sync leaves it unchanged. Read analysisBridgeSha256 for the bridge (#2493).
   const buildRevision = probeWorkerBuildRevision(env);
   if (buildRevision) out.analysisBuildSha = buildRevision;
   return out;
