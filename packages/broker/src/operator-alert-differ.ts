@@ -3,7 +3,7 @@
 // scan, computes which alerts newly opened and which resolved so the server can
 // emit operator-alert-opened / operator-alert-resolved SSE events. Holds only
 // the open-alert map; emitting the events stays with the server's event stream.
-import type { Alert } from "./core/alert-projection.js";
+import type { Alert } from "./core/observability/alert-projection.js";
 
 export class OperatorAlertDiffer {
   private alertsById: Map<string, Alert>;

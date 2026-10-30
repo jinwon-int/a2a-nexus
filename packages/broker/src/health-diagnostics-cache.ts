@@ -2,7 +2,7 @@
 // hot-audit / hot-table-growth diagnostics read behind a short TTL so repeated
 // /healthz probes do not re-query the state store every time. Holds the prior
 // hot-table metrics snapshot to compute growth rate across refreshes.
-import { projectHotTableGrowth, type HotTableGrowthProjection } from "./core/hot-table-growth.js";
+import { projectHotTableGrowth, type HotTableGrowthProjection } from "./core/observability/hot-table-growth.js";
 import {
   CURRENT_BROKER_STATE_VERSION,
   SqliteBrokerStateStore,

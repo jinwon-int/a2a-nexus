@@ -24,7 +24,7 @@ operator event stream to track open/resolve transitions.
 
 ## 3. Thresholds
 
-Thresholds are defined in `src/core/hot-table-growth.ts` and project to alerts
+Thresholds are defined in `src/core/observability/hot-table-growth.ts` and project to alerts
 via `projectHotTableGrowthAlerts()`:
 
 | Condition | Alert Severity | Alert Id |
@@ -85,12 +85,12 @@ The `/health` endpoint already:
 ## 5. Audit Table Persistence Note
 
 The `broker_audit_events` warning uses an **audit-specific 80%-of-cap threshold**
-(see `DEFAULT_AUDIT_RUNTIME_LIMIT_WARNING_RATIO` in `src/core/hot-table-growth.ts`), not
+(see `DEFAULT_AUDIT_RUNTIME_LIMIT_WARNING_RATIO` in `src/core/observability/hot-table-growth.ts`), not
 the generic 1,000-row single-table threshold. The table is self-pruning at its
 runtime cap (`maxAuditEvents`, default 5,000) — the warning band is expected to
 be **persistent** once the table reaches steady-state operation.
 
-The severity classifier (`computeTableSeverity` in `src/core/hot-table-growth.ts`)
+The severity classifier (`computeTableSeverity` in `src/core/observability/hot-table-growth.ts`)
 applies a more nuanced check for `broker_audit_events`: reaching the generic
 single-table critical threshold (5,000 rows) is **not** sufficient for
 `critical` severity when the table is in steady state. An actual pressure
@@ -137,7 +137,7 @@ No additional change to the health API was needed for this issue.
 
 ## 7. Test Coverage
 
-New tests in `src/core/alert-projection.test.ts`:
+New tests in `src/core/observability/alert-projection.test.ts`:
 
 | Test | What it verifies |
 |---|---|
@@ -151,8 +151,8 @@ New tests in `src/core/alert-projection.test.ts`:
 
 ## 8. References
 
-- `src/core/alert-projection.ts` — `projectHotTableGrowthAlerts()` function, `AlertKind` type
-- `src/core/hot-table-growth.ts` — `projectHotTableGrowth()` and thresholds
+- `src/core/observability/alert-projection.ts` — `projectHotTableGrowthAlerts()` function, `AlertKind` type
+- `src/core/observability/hot-table-growth.ts` — `projectHotTableGrowth()` and thresholds
 - `src/server.ts` — `buildAlertScan()`, `currentOperatorSnapshot()`, `/alerts` endpoint
 - `docs/hot-table-health.md` — RCA, mitigation, alert thresholds
 - `docs/hot-table-retention-prune-runbook.md` — Retention policy and safe prune

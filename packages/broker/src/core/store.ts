@@ -98,7 +98,7 @@ import type {
   BrokerHotEntityMirrorStatus,
   BrokerHotHintCounts,
   BrokerHotTerminalOutboxDiagnostics,
-} from "./hot-diagnostics.js";
+} from "./observability/hot-diagnostics.js";
 import {
   exchangeStateSchema,
   exchangeMessageSchema,
@@ -151,7 +151,7 @@ export type {
   BrokerHotHintCounts,
   BrokerHotTerminalOutboxDiagnostics,
   BrokerInvalidHotEntityRow,
-} from "./hot-diagnostics.js";
+} from "./observability/hot-diagnostics.js";
 
 export interface SqliteTaskHotTableFilters {
   id?: string;

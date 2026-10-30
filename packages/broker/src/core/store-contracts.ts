@@ -27,7 +27,7 @@ import type {
   BrokerHotEntityHintCoverage,
   BrokerHotEntityMirrorStatus,
   BrokerHotHintCounts,
-} from "./hot-diagnostics.js";
+} from "./observability/hot-diagnostics.js";
 import type { A2AConversationState } from "./broker-conversation.js";
 
 

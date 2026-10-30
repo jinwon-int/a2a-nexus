@@ -8,11 +8,11 @@
 //
 // This module imports only leaf helpers and types, never broker.ts, so there is
 // no import cycle.
-import { ageSecFromIso, countBy, sortedCopy } from "./broker-helpers.js";
-import { taskStatusSinceAt } from "./broker-record-helpers.js";
+import { ageSecFromIso, countBy, sortedCopy } from "../broker-helpers.js";
+import { taskStatusSinceAt } from "../broker-record-helpers.js";
 import {
   isWorkerStale,
-} from "./broker-worker-status.js";
+} from "../broker-worker-status.js";
 import type {
   AuditEvent,
   BrokerDashboard,
@@ -25,7 +25,7 @@ import type {
   TaskStatus,
   WorkerFleetSummary,
   WorkerRecord,
-} from "./types.js";
+} from "../types.js";
 
 const DEFAULT_OFFLINE_AFTER_MS = 90_000;
 

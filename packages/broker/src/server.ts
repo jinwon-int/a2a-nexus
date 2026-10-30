@@ -206,7 +206,7 @@ import {
 } from "./core/store.js";
 import {
   type HotTableGrowthProjection,
-} from "./core/hot-table-growth.js";
+} from "./core/observability/hot-table-growth.js";
 import { HealthDiagnosticsCache } from "./health-diagnostics-cache.js";
 import { A2AHttpSignatureReplayCache } from "./a2a-http-signature-replay-cache.js";
 import {
@@ -219,7 +219,7 @@ import {
   createWorkerThreadPersistence,
 } from "./core/sqlite-worker-thread-persistence.js";
 import type { WorkerThreadPersistenceHandle } from "./core/sqlite-worker-thread-persistence.js";
-import type { AlertScanResult } from "./core/alert-projection.js";
+import type { AlertScanResult } from "./core/observability/alert-projection.js";
 import { GitHubIngestionService } from "./github/ingestion.js";
 import { BoundedPoller, type BoundedPollerOptions } from "./github/bounded-poller.js";
 import { readRawBody } from "./http/body.js";

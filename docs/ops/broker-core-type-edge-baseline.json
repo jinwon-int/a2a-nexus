@@ -4,7 +4,7 @@
   "description": "Ratchet baseline of TYPE-only import edges between broker core modules that violate the allow-matrix in broker-core-domain-map.json (owner decision #5: ratchet now, strict per domain when a domain is extracted). scripts/check-broker-core-dependency-isolation.mjs fails on any type-only violation not listed here; entries that no longer occur are reported, and `node scripts/check-broker-core-dependency-isolation.mjs --lower-baseline` rewrites this file only when that removes entries. Never add an entry by hand: re-point the import to the defining module or declare a narrow port instead.",
   "typeOnlyViolations": [
     {
-      "from": "broker-compact-diagnostics.ts",
+      "from": "observability/broker-compact-diagnostics.ts",
       "to": "broker.ts"
     },
     {
@@ -52,7 +52,7 @@
       "to": "broker.ts"
     },
     {
-      "from": "broker-task-diagnostics.ts",
+      "from": "observability/broker-task-diagnostics.ts",
       "to": "broker.ts"
     },
     {
@@ -64,7 +64,7 @@
       "to": "broker.ts"
     },
     {
-      "from": "hot-table-growth.ts",
+      "from": "observability/hot-table-growth.ts",
       "to": "store.ts"
     },
     {

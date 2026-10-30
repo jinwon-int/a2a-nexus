@@ -1,11 +1,11 @@
-import { TERMINAL_TASK_STATUSES, type TaskRecord, type TaskStatus } from "./types.js";
-import { resolveTaskStalenessSignalMs } from "./broker-status-predicates.js";
+import { TERMINAL_TASK_STATUSES, type TaskRecord, type TaskStatus } from "../types.js";
+import { resolveTaskStalenessSignalMs } from "../broker-status-predicates.js";
 import {
   normalizeTerminalTaskReceiptStatus,
   type TerminalTaskOutboxEvent,
   type TerminalTaskOutboxAckDecision,
   type TerminalTaskReceiptStatus,
-} from "./completion/terminal-event-outbox.js";
+} from "../completion/terminal-event-outbox.js";
 
 export type OperatorTaskReportStage = "queued" | "claimed" | "running" | "terminal";
 export type OperatorTaskReportKind = "progress" | "stale" | "result";

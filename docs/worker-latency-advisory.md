@@ -2,7 +2,7 @@
 
 Status: advisory telemetry contract for #1815 (items 1/6 measurement axis).
 Surface: `GET /stats/workers` (hub/operator role-gated), schema
-`a2a.worker-latency-profiles.v1` (implemented in `packages/broker/src/core/task-stats.ts` alongside the lifecycle-latency read path).
+`a2a.worker-latency-profiles.v1` (implemented in `packages/broker/src/core/observability/task-stats.ts` alongside the lifecycle-latency read path).
 
 ## What it provides
 
