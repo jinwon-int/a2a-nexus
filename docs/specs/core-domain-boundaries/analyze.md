@@ -11,8 +11,9 @@
 > [Owner decisions](#owner-decisions-2026-10-29).
 > **PR-0 implemented** (enforcement plus Step 0): see
 > [PR-0 implemented](#pr-0-implemented).
-> **Step 4 partly implemented** (CLI-only retirement, 6 of 8; 2 held for the
-> owner): see [Step 4: CLI-only retirement](#step-4-cli-only-retirement).
+> **Step 4 implemented** (CLI-only retirement: 6 of 8 retired in #2481; the
+> other 2 are kept permanently by the 2026-10-30 owner decision): see
+> [Step 4: CLI-only retirement](#step-4-cli-only-retirement).
 
 ## Summary
 
@@ -633,7 +634,7 @@ the earlier "Needs confirmation" list.
 | 3 | `review-lineage-*` placement | **store** | Matches the #2454 decision record (persistence adapters stay in the broker); `review-lineage-observation-store` value-imports `store-schemas`, so putting it in the review-lifecycle package would make that package depend on the broker. The `src/review-lifecycle/` option is withdrawn. |
 | 4 | Complexity chain | **Split it.** classifier, recommendation, envelope-draft and plan-draft are reached at runtime through `http/complexity-orchestration-routes.ts` (`/complexity-orchestration/recommendation`, `/complexity-execution-plan/draft`) and stay in dispatch/policy. dry-run, preflight-seal and operator-approval-request are CLI-only and become retirement candidates. | Route retirement, if ever, only after call-count instrumentation shows zero use (#1665 style) |
 | 5 | Type-only edges strict or ratcheted | **Ratchet now (baseline only goes down); strict per domain when a domain is extracted** | 8 of the 23 are `broker.js` re-export shortcuts (easy); 6 are `broker-contracts` aggregation (structural); strict now would bloat PR-0 |
-| 6 | Retire CLI-only policy modules before moving | **Yes, before the moves.** The 8: `broker-rehearsal-manifest`, `complexity-orchestration-dry-run`, `operator-approval-request`, `orchestration-intelligence-worker-subagent-spawn-bridge`, `source-public-approval-rehearsal`, `source-public-execution-orchestrator`, `terminal-brief-auto-closeout-dryrun-runner`, `two-broker-safety-matrix` | No functional change since August and no workflow reference. The source-public gate uses its own `scripts/lib/source-public-gate-kit`. `operator-approval-request` needs its npm script and 8 docs cleaned up in the same PR. |
+| 6 | Retire CLI-only policy modules before moving | **Yes, before the moves.** The 8: `broker-rehearsal-manifest`, `complexity-orchestration-dry-run`, `operator-approval-request`, `orchestration-intelligence-worker-subagent-spawn-bridge`, `source-public-approval-rehearsal`, `source-public-execution-orchestrator`, `terminal-brief-auto-closeout-dryrun-runner`, `two-broker-safety-matrix` | No functional change since August and no workflow reference. The source-public gate uses its own `scripts/lib/source-public-gate-kit`. `operator-approval-request` needs its npm script and 8 docs cleaned up in the same PR. **Amended 2026-10-30:** `two-broker-safety-matrix` and `orchestration-intelligence-worker-subagent-spawn-bridge` are kept permanently as an operator gate and a reuse oracle. See [Step 4](#step-4-cli-only-retirement). |
 | 7 | TCK filter | **Done in #2476** | — |
 
 **Sequence:** (1) this correction; (2) the #2454 `packages/review-lifecycle`
@@ -686,10 +687,11 @@ move:
 
 ## Step 4: CLI-only retirement
 
-Owner decision #6 named eight CLI-only modules. Six are retired. Two are held
-for a fresh owner decision, because the pre-delete audit found a reference
-path that the import graph does not see (Family Wiki A2 runbook: a doc or spec
-that tells operators to run the module, or that relies on it).
+Owner decision #6 named eight CLI-only modules. Six are retired (#2481). The
+pre-delete audit found that the other two have a reference path the import
+graph does not see: a doc or spec that tells operators to run the module, or
+that relies on it (Family Wiki A2 runbook). The owner decided on 2026-10-30 to
+keep both permanently.
 
 **Retired (6):** `broker-rehearsal-manifest`, `complexity-orchestration-dry-run`,
 `operator-approval-request`, `source-public-approval-rehearsal`,
@@ -714,9 +716,15 @@ behind `/complexity-orchestration/recommendation` stays, per decision #4), plus
 - `docs/specs/delegated-approval-matrix.md` now cites the retired
   `operator-approval-request.md` through a permalink at `d90a5ede`.
 
-**Held (2), owner decision needed:**
+**Kept permanently (2), owner decision 2026-10-30:** these are exceptions
+to "CLI-only means retire". They are an operator gate and a reuse oracle, not
+dead code. Do not propose them for retirement again unless the dependent gate
+or spec changes first: move the cutover GO/NO-GO check to another gate, or
+amend the piri reuse oracle. For the domain moves they stay in
+`policy-approval`, and they count against the core and ceremony budgets like
+any other module.
 
-| module | why held |
+| module | why kept |
 |---|---|
 | `two-broker-safety-matrix` | `packages/broker/docs/a2a-2broker-safety-regression-readiness-matrix.md` names `node --test dist/core/two-broker-safety-matrix.test.js` as the no-live cutover GO/NO-GO gate. The module was deleted and then restored in the 2026-08-09 T2 cleanup round for exactly this reason. |
 | `orchestration-intelligence-worker-subagent-spawn-bridge` | `docs/specs/piri-lane-fanout-reuse/phase-1-mapping.md` §5 lists its test as a "must keep passing unchanged" reuse oracle. Its wrapper path is also hard-coded in the worker source-bundle lists (`hermes-a2a-analysis-bridge.mjs`, `piri-a2a-analysis-bridge.mjs`, `lib/analysis-source-bundle.mjs`), so retiring it changes worker artifacts. |
