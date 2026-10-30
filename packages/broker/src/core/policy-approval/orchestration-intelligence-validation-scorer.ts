@@ -1,4 +1,4 @@
-import { stableId } from "./value-guards.js";
+import { stableId } from "../value-guards.js";
 
 import {
   buildOIValidationFrameworkPacket,

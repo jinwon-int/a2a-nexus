@@ -23,7 +23,7 @@ import {
   buildComplexityExecutionPlanPreflightSeal,
   extractExecutionPlanDraftForPreflightSeal,
   renderComplexityExecutionPlanPreflightSealMarkdown,
-} from "../dist/core/complexity-execution-plan-preflight-seal.js";
+} from "../dist/core/policy-approval/complexity-execution-plan-preflight-seal.js";
 
 function usage() {
   return [

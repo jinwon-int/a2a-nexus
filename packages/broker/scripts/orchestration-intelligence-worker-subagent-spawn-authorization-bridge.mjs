@@ -5,7 +5,7 @@ import process from "node:process";
 import {
   buildOIWorkerSubagentSpawnAuthorizationBridgePacket,
   renderOIWorkerSubagentSpawnAuthorizationBridgeMarkdown,
-} from "../dist/core/orchestration-intelligence-worker-subagent-spawn-bridge.js";
+} from "../dist/core/policy-approval/orchestration-intelligence-worker-subagent-spawn-bridge.js";
 import {
   buildA2AWorkerSubagentSpawnAuthorizationRequest,
   extractA2AWorkerSubagentSpawnAuthorizationRequestHandoff,

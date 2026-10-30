@@ -32,6 +32,8 @@
 > [Store move](#store-move).
 > **Root flip implemented** (owner decision 2026-10-30, option 1): see
 > [Root flip](#root-flip).
+> **Policy-approval 2a implemented** (#2490): see
+> [Policy-approval move](#policy-approval-move).
 
 ## Summary
 
@@ -1105,6 +1107,33 @@ allow-matrix row.
 `core/policy-approval/` once the #2350 A7 hold is lifted. It is entangled with the
 two permanently kept modules (decision #6), the ceremony naming and 44 CLI
 wrappers. After that move, the 29 exceptions leave the map.
+
+## Policy-approval move
+
+#2490 covers split rows 2a/2b. Its precondition was the #2350 A7 hold. #2350
+is closed, and A7 was not pursued (the benefit was judged small relative to
+the risk; a new issue if it is ever needed), so nothing runs in parallel with
+it. The owner approved starting on 2026-10-30.
+
+**2a moved:** 15 `orchestration-intelligence-*` and 3 `complexity-*`
+modules, plus their 18 tests, to `packages/broker/src/core/policy-approval/`.
+The directory name equals the domain key. The two modules kept by decision #6
+stay in this domain and simply move with it.
+
+**2a changes:**
+
+- 30 specifiers rewritten.
+- 104 path strings updated, mostly the wrappers' `../dist/core/…` imports,
+  plus the jev-calibration specs, the piri reuse-oracle doc, and
+  `scripts/lib/secret-scan-allowlist.mjs`.
+- 1 test's `join(__dirname, "../../fixtures/…")` gets one more `../`.
+- 18 map entries removed.
+
+**Ceremony-budget fix:** `isCeremonyModule` used to test the whole relative
+path. After the move, the `approval` in the directory name made all 18 moved
+modules match, and the count went from 16 to 26. It now tests only the
+filename, as its doc comment always said. The count is back to 16, and a
+regression test pins this.
 
 ## Appendix: survey script
 

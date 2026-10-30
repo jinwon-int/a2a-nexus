@@ -16,7 +16,7 @@
 //            approval envelope.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { isRecord, stableStringify } from "./value-guards.js";
+import { isRecord, stableStringify } from "../value-guards.js";
 import { createHash } from "node:crypto";
 import type { ComplexityExecutionPlanDraftPacket } from "./complexity-execution-plan-draft.js";
 

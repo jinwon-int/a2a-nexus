@@ -100,7 +100,7 @@ content unchanged._
 - `packages/broker/src/core/execution/worker-subagent-context-brief.test.ts`
 - `packages/broker/src/core/execution/worker-subagent-planner-handoff.test.ts`
 - `packages/broker/src/core/execution/worker-subagent-spawn-authorization-request.test.ts`
-- `packages/broker/src/core/orchestration-intelligence-worker-subagent-spawn-bridge.test.ts`
+- `packages/broker/src/core/policy-approval/orchestration-intelligence-worker-subagent-spawn-bridge.test.ts`
 - broker `worker.test.ts` dynamic-runtime / finalize tests — the logic is
   lane-agnostic; only the env **key name** is claude-coupled, so Phase 2
   parametrization updates these suites additively (new cases for the piri

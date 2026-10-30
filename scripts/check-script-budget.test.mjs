@@ -96,6 +96,12 @@ test('isCeremonyModule matches approval-workflow stages', () => {
   }
 });
 
+test('isCeremonyModule judges the filename only, not the domain directory (#2490)', () => {
+  assert.equal(isCeremonyModule('policy-approval/orchestration-intelligence-validation-scorer.ts'), false);
+  assert.equal(isCeremonyModule('policy-approval\\policy.ts'), false);
+  assert.equal(isCeremonyModule('policy-approval/orchestration-intelligence-runtime-approval-request.ts'), true);
+});
+
 test('isCeremonyModule leaves genuine lifecycle behaviour alone', () => {
   // These name real broker capability, not a stage of a human approval
   // workflow. Catching them would make the budget unfalsifiable — every

@@ -13,8 +13,8 @@ Refs #2185.
       `packages/broker/src/core/dispatch/complexity-orchestration-recommendation.ts`,
       `packages/broker/src/core/dispatch/scheduler-dry-run.ts`,
       `docs/worker-latency-advisory.md`,
-      `packages/broker/src/core/orchestration-intelligence-validation-framework.ts`,
-      `packages/broker/src/core/orchestration-intelligence-validation-scorer.ts`,
+      `packages/broker/src/core/policy-approval/orchestration-intelligence-validation-framework.ts`,
+      `packages/broker/src/core/policy-approval/orchestration-intelligence-validation-scorer.ts`,
       `docs/ops/cost-per-outcome.json`.
 - [x] Evaluation design pins all five separations: structured judgments; explicit defer vs
       recommendation; probability vs confidence kept distinct; recommendation vs execution

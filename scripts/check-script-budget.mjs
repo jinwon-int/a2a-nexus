@@ -72,9 +72,14 @@ export const CEREMONY_MODULE_MARKERS = [
 
 const CEREMONY_MODULE_PATTERN = new RegExp(CEREMONY_MODULE_MARKERS.join('|'));
 
-/** True when a core module filename encodes an approval-ceremony stage. */
+/**
+ * True when a core module filename encodes an approval-ceremony stage.
+ * Only the basename counts: a domain directory such as core/policy-approval/
+ * (#2490) must not turn every module under it into a ceremony module.
+ */
 export function isCeremonyModule(relativePath) {
-  return CEREMONY_MODULE_PATTERN.test(relativePath);
+  const fileName = String(relativePath).replace(/\\/g, '/').split('/').pop();
+  return CEREMONY_MODULE_PATTERN.test(fileName);
 }
 
 /** Count top-level *.mjs files in a directory (non-recursive; excludes subdirs like lib/). */

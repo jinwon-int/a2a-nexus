@@ -1,8 +1,8 @@
-import { isRecord } from "./value-guards.js";
+import { isRecord } from "../value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { OIWorkerSpawnApprovalDecisionEvidencePacket } from "./orchestration-intelligence-worker-spawn-approval-decision-evidence.js";
-import type { A2AWorkerSubagentSpawnAuthorizationRequestPacket } from "./execution/worker-subagent-spawn-authorization-request.js";
+import type { A2AWorkerSubagentSpawnAuthorizationRequestPacket } from "../execution/worker-subagent-spawn-authorization-request.js";
 
 /**
  * OI v2 worker/subagent spawn authorization request bridge packet.

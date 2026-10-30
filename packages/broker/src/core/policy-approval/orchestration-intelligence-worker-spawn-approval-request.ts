@@ -3,7 +3,7 @@ import {
   type OIBrokerDispatchApprovalDecisionEvidencePacket,
 } from "./orchestration-intelligence-broker-dispatch-approval-decision-evidence.js";
 import type { OIRuntimeReadinessEvidence } from "./orchestration-intelligence-runtime-readiness-gate.js";
-import { stableId } from "./value-guards.js";
+import { stableId } from "../value-guards.js";
 
 export type OIWorkerSpawnApprovalRequestState =
   | "worker_spawn_approval_request_ready"

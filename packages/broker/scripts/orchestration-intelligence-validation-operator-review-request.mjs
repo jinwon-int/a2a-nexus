@@ -2,12 +2,12 @@
 import { readFile } from "node:fs/promises";
 import process from "node:process";
 
-import { buildOIValidationScorePacket } from "../dist/core/orchestration-intelligence-validation-scorer.js";
-import { buildOIValidationFinalizerReviewPacket } from "../dist/core/orchestration-intelligence-validation-finalizer-review.js";
+import { buildOIValidationScorePacket } from "../dist/core/policy-approval/orchestration-intelligence-validation-scorer.js";
+import { buildOIValidationFinalizerReviewPacket } from "../dist/core/policy-approval/orchestration-intelligence-validation-finalizer-review.js";
 import {
   buildOIValidationOperatorReviewRequestPacket,
   renderOIValidationOperatorReviewRequestMarkdown,
-} from "../dist/core/orchestration-intelligence-validation-operator-review-request.js";
+} from "../dist/core/policy-approval/orchestration-intelligence-validation-operator-review-request.js";
 
 function readOption(argv, name) {
   const inline = argv.find((arg) => arg.startsWith(name + "="));

@@ -50,10 +50,10 @@ Exit gate: label ledger frozen; review coverage recorded; no outcome field prese
 ## Phase 3 — Evaluation harness reuse (separate slice, not approved here)
 
 - [ ] Reuse the packet/metric shapes of
-      `packages/broker/src/core/orchestration-intelligence-validation-framework.ts` (metric
+      `packages/broker/src/core/policy-approval/orchestration-intelligence-validation-framework.ts` (metric
       name, unit, direction, required) for comparison reports instead of inventing a format.
 - [ ] Reuse the decision-status semantics of
-      `packages/broker/src/core/orchestration-intelligence-validation-scorer.ts`
+      `packages/broker/src/core/policy-approval/orchestration-intelligence-validation-scorer.ts`
       (e.g., `blocked`, `waiting_for_paired_evidence`) for comparison verdicts.
 - [ ] Run in-process and offline only; no broker code changes, no new root scripts (script
       budget untouched); any checker registers in the existing `test/conformance/` runner.
