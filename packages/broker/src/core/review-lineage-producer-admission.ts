@@ -8,12 +8,8 @@
  * or projected here.
  */
 
-import {
-  projectReviewLineageProducerFact,
-} from "../review-lifecycle/producer-contract.js";
-import type {
-  ProjectedReviewLineageObservation,
-} from "../review-lifecycle/observation.js";
+import { projectReviewLineageProducerFact } from "a2a-review-lifecycle";
+import type { ProjectedReviewLineageObservation } from "a2a-review-lifecycle";
 import type {
   ReviewLineageObservationApplicationResult,
 } from "./review-lineage-observation-store.js";

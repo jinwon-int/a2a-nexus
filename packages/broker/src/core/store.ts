@@ -111,8 +111,10 @@ import {
   tombstoneSchema,
   terminalOutboxEventSchema,
 } from "./store-schemas.js";
-import type { ProjectedReviewLineageObservation } from "../review-lifecycle/observation.js";
-import type { ReviewLineageRecord } from "../review-lifecycle/types.js";
+import type {
+  ProjectedReviewLineageObservation,
+  ReviewLineageRecord,
+} from "a2a-review-lifecycle";
 import {
   SqliteReviewLineageObservationStore,
   type AuthorizedReviewLineageSourceAdmissionV1,

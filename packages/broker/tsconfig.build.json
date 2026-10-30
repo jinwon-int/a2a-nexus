@@ -6,7 +6,8 @@
   "references": [
     { "path": "../policy-referee" },
     { "path": "../attestation" },
-    { "path": "../nclex-evaluation" }
+    { "path": "../nclex-evaluation" },
+    { "path": "../review-lifecycle" }
   ],
   "exclude": [
     "src/**/*.test.ts",

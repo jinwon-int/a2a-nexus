@@ -4,15 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { intentHash } from "../review-lifecycle/canonical-json.js";
 import {
+  intentHash,
   REVIEW_LINEAGE_PRODUCER_FACT_KIND,
-  type ReviewLineageProducerFactV1,
-} from "../review-lifecycle/producer-contract.js";
+} from "a2a-review-lifecycle";
 import type {
+  ReviewLineageProducerFactV1,
   IntentContractV1,
   ReviewLineageBudgetV1,
-} from "../review-lifecycle/types.js";
+} from "a2a-review-lifecycle";
 import { InMemoryA2ABroker } from "./broker.js";
 import {
   admitReviewLineageProducerFact,

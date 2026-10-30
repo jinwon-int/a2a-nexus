@@ -453,7 +453,8 @@ install -D -m 0644 \
 
 worker artifact 배포가 `dist/`·`scripts/`·`handlers/` 만 갱신하고
 `node_modules/` 는 그대로 두면, 워크스페이스 패키지
-(`a2a-attestation`, `a2a-nclex-evaluation`, `a2a-policy-referee`) 의
+(`a2a-attestation`, `a2a-nclex-evaluation`, `a2a-policy-referee`,
+`a2a-review-lifecycle`) 의
 오래된 사본이 남는다. 새 `dist/` 가 그 사본에 없는 이름을 import 하면
 worker 는 restart 직후 ESM 링크 단계에서
 `does not provide an export named …` 로 종료된다.
@@ -463,13 +464,13 @@ worker root 의 `node_modules/` 로 동기화한다:
 
 ```bash
 # repo checkout (배포 dist 와 같은 sha) 에서
-for pkg in attestation nclex-evaluation policy-referee; do
+for pkg in attestation nclex-evaluation policy-referee review-lifecycle; do
   npm run build -w "packages/$pkg"
 done
 
 # worker root 로 동기화 — dist/, src/, scripts/, package.json
 # (그 외 패키지 package.json "files" 에 있는 항목도 함께)
-for pkg in attestation nclex-evaluation policy-referee; do
+for pkg in attestation nclex-evaluation policy-referee review-lifecycle; do
   dst="/opt/openclaw-a2a-worker/node_modules/a2a-$pkg"
   mkdir -p "$dst"
   for item in dist src scripts package.json; do

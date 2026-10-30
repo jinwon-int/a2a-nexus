@@ -25,7 +25,7 @@ const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
 function usage(): string {
   return [
     "Usage:",
-    "  node packages/broker/dist/review-lifecycle/scorecard-cli.js",
+    "  node packages/review-lifecycle/dist/scorecard-cli.js",
     "    --input <redacted-input.json> [--output <scorecard.json>]",
     "",
     "Without --output the validated scorecard is written to stdout.",

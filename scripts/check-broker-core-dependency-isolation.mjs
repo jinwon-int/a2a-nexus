@@ -21,6 +21,17 @@ const REPO_ROOT = path.resolve(scriptDir, "..");
 const BROKER_SRC = path.join(REPO_ROOT, "packages", "broker", "src");
 const BROKER_PKG = path.join(REPO_ROOT, "packages", "broker", "package.json");
 
+// #2477: the bounded review lifecycle engine left packages/broker/src for the
+// a2a-review-lifecycle workspace package, but the broker still runs it at
+// runtime, so it stays inside this guard's scope.
+export const CORE_ISOLATION_TARGETS = Object.freeze([
+  Object.freeze({ srcDir: BROKER_SRC, pkgJsonPath: BROKER_PKG }),
+  Object.freeze({
+    srcDir: path.join(REPO_ROOT, "packages", "review-lifecycle", "src"),
+    pkgJsonPath: path.join(REPO_ROOT, "packages", "review-lifecycle", "package.json"),
+  }),
+]);
+
 // Harness/app packages the broker core must not hard-depend on.
 const FORBIDDEN_PACKAGES = ["openclaw"];
 
@@ -84,12 +95,18 @@ export function checkBrokerCoreIsolation({ srcDir = BROKER_SRC, pkgJsonPath = BR
   return { ok: violations.length === 0, forbidden: FORBIDDEN_PACKAGES, violations };
 }
 
+/** Run checkBrokerCoreIsolation over every runtime core target (#2477). */
+export function checkAllCoreIsolationTargets(targets = CORE_ISOLATION_TARGETS) {
+  const violations = targets.flatMap((target) => checkBrokerCoreIsolation(target).violations);
+  return { ok: violations.length === 0, forbidden: FORBIDDEN_PACKAGES, violations };
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  const result = checkBrokerCoreIsolation();
+  const result = checkAllCoreIsolationTargets();
   if (!result.ok) {
     console.error("broker core dependency-isolation guard FAILED — the broker core must not import harness/app packages:");
     console.error(JSON.stringify(result, null, 2));
     process.exit(1);
   }
-  console.log(JSON.stringify({ ok: true, forbidden: result.forbidden, checked: "packages/broker/src + packages/broker/package.json" }, null, 2));
+  console.log(JSON.stringify({ ok: true, forbidden: result.forbidden, checked: "packages/{broker,review-lifecycle}/src + package.json" }, null, 2));
 }

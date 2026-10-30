@@ -135,7 +135,7 @@ test('diffHashFromBytes hashes raw bytes', () => {
 });
 
 test('DEFAULT_BUDGET mirrors DEFAULT_LINEAGE_BUDGET in the broker types', () => {
-  const source = fs.readFileSync(path.join(ROOT, 'packages/broker/src/review-lifecycle/types.ts'), 'utf8');
+  const source = fs.readFileSync(path.join(ROOT, 'packages/review-lifecycle/src/types.ts'), 'utf8');
   const block = source.match(/DEFAULT_LINEAGE_BUDGET: ReviewLineageBudgetV1 = \{([\s\S]*?)\};/);
   assert.ok(block, 'DEFAULT_LINEAGE_BUDGET literal not found');
   const fields = Object.fromEntries([...block[1].matchAll(/(\w+):\s*("?)([\w_]+)\2/g)]

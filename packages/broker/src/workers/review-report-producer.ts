@@ -31,15 +31,17 @@
 import { createHash } from "node:crypto";
 
 import type { TaskRecord, TaskResult } from "../core/types.js";
-import { findingSignature } from "../review-lifecycle/canonical-json.js";
 import {
+  findingSignature,
   NON_BLOCKING_CATEGORIES,
-  type FindingCategory,
-  type FindingSeverity,
-  type FindingV1,
-  type NewFindingJustification,
-  type ReviewReceiptV1,
-} from "../review-lifecycle/types.js";
+} from "a2a-review-lifecycle";
+import type {
+  FindingCategory,
+  FindingSeverity,
+  FindingV1,
+  NewFindingJustification,
+  ReviewReceiptV1,
+} from "a2a-review-lifecycle";
 import { reviewValidation } from "../worker-review.js";
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/;

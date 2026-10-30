@@ -41,7 +41,8 @@ without changing the recorded fixtures.
 ### Naming boundary (required to avoid collision)
 
 `review-lifecycle` already ships a **ReviewLineage** concept
-(`packages/broker/src/review-lifecycle/`, `docs/specs/bounded-pr-review-lifecycle/`):
+(`packages/review-lifecycle/src/`, moved from the broker in #2477;
+`docs/specs/bounded-pr-review-lifecycle/`):
 a bounded intra-review-loop chain of correction generations with an intent
 contract and budget. That is **not** this feature. This spec introduces
 **task lineage** — a read-only projection over the *task* parent graph.

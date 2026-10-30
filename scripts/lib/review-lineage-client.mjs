@@ -51,7 +51,7 @@ import { intentHash } from '../../test/conformance/lib/canonical-json.mjs';
 
 export const RECORD_SCHEMA = 'a2a.review-lineage-client-record.v1';
 
-// Mirrors DEFAULT_LINEAGE_BUDGET in packages/broker/src/review-lifecycle/
+// Mirrors DEFAULT_LINEAGE_BUDGET in packages/review-lifecycle/src/
 // types.ts; a test pins the two together so they cannot drift.
 export const DEFAULT_BUDGET = Object.freeze({
   kind: 'ReviewLineageBudgetV1',
@@ -63,7 +63,7 @@ export const DEFAULT_BUDGET = Object.freeze({
   onExhaustion: 'blocked_needs_operator',
 });
 
-// Local pre-checks mirror packages/broker/src/review-lifecycle/observation.ts
+// Local pre-checks mirror packages/review-lifecycle/src/observation.ts
 // so obvious mistakes fail before any network call. The broker stays the
 // authoritative validator.
 const SHA_PATTERN = /^[0-9a-f]{40}$/;

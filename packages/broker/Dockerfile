@@ -8,7 +8,8 @@ COPY packages/broker/package.json packages/broker/
 COPY packages/policy-referee/package.json packages/policy-referee/
 COPY packages/attestation/package.json packages/attestation/
 COPY packages/nclex-evaluation/package.json packages/nclex-evaluation/
-RUN npm ci --include=dev -w packages/broker -w packages/policy-referee -w packages/attestation -w packages/nclex-evaluation
+COPY packages/review-lifecycle/package.json packages/review-lifecycle/
+RUN npm ci --include=dev -w packages/broker -w packages/policy-referee -w packages/attestation -w packages/nclex-evaluation -w packages/review-lifecycle
 
 FROM deps AS build
 WORKDIR /app
@@ -19,6 +20,8 @@ COPY packages/attestation/tsconfig.json packages/attestation/
 COPY packages/attestation/src packages/attestation/src
 COPY packages/nclex-evaluation/tsconfig.json packages/nclex-evaluation/
 COPY packages/nclex-evaluation/src packages/nclex-evaluation/src
+COPY packages/review-lifecycle/tsconfig.json packages/review-lifecycle/
+COPY packages/review-lifecycle/src packages/review-lifecycle/src
 COPY packages/broker/tsconfig.json packages/broker/
 # #2080 step 2: the image builds from the runtime-only config (no dist tests).
 COPY packages/broker/tsconfig.build.json packages/broker/
@@ -74,18 +77,25 @@ COPY packages/broker/package.json packages/broker/
 COPY packages/policy-referee/package.json packages/policy-referee/
 COPY packages/attestation/package.json packages/attestation/
 COPY packages/nclex-evaluation/package.json packages/nclex-evaluation/
-RUN npm ci --omit=dev -w packages/broker -w packages/policy-referee -w packages/attestation -w packages/nclex-evaluation
+COPY packages/review-lifecycle/package.json packages/review-lifecycle/
+RUN npm ci --omit=dev -w packages/broker -w packages/policy-referee -w packages/attestation -w packages/nclex-evaluation -w packages/review-lifecycle
 COPY --from=build /app/packages/broker/dist ./packages/broker/dist
 COPY --from=build /app/packages/policy-referee/dist ./packages/policy-referee/dist
 COPY --from=build /app/packages/attestation/dist ./packages/attestation/dist
 COPY --from=build /app/packages/nclex-evaluation/dist ./packages/nclex-evaluation/dist
+COPY --from=build /app/packages/review-lifecycle/dist ./packages/review-lifecycle/dist
 # #2080 step 1: the runtime image ships executable runtime JS only. The broker
 # build compiles the whole src tree, so dist carries ~5.4 MB of *.test.js and
 # the shared-state conformance harnesses — none of it has a runtime importer
 # (server.js imports zero conformance modules; the harness-only
 # shared-state-sqlite-expiry-snapshot-v1.js would keep a dangling import to a
 # deleted harness, so it goes too). check:broker-docker-hardening pins this.
+# #2477: a2a-review-lifecycle compiles its whole src tree (composite project,
+# tests included), and before the move tsconfig.build.json kept those tests
+# out of the image, so strip that package's compiled tests too.
 RUN find packages/broker/dist -name '*.test.js' -delete \
+  && find packages/review-lifecycle/dist -name '*.test.js' -delete \
+  && find packages/review-lifecycle/dist -name '*.test.d.ts' -delete \
   && find packages/broker/dist -maxdepth 1 -name 'shared-state-*conformance*.js' -delete \
   && rm -f packages/broker/dist/shared-state-sqlite-expiry-snapshot-v1.js \
   && rm -rf packages/broker/dist/shared-state-worker-mode packages/broker/dist/fixtures

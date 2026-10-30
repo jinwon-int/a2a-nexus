@@ -479,19 +479,27 @@ Phase 7 adds a manual, offline scorecard over redacted record-mode exports. It
 does not read the broker, change `DEFAULT_LINEAGE_BUDGET`, enable `enforce`, or
 apply a recommendation.
 
-Build the broker once, then pass the strict
+The CLI ships in the `a2a-review-lifecycle` workspace package (#2477). Build
+the broker once (its build also compiles that package), then pass the strict
 `a2a.review-lineage-scorecard-input.v1` envelope to the compiled CLI:
 
 ```bash
 npm --workspace packages/broker run build
-node packages/broker/dist/review-lifecycle/scorecard-cli.js \
+node packages/review-lifecycle/dist/scorecard-cli.js \
   --input /path/to/redacted-lineages.json \
   --output /path/to/scorecard.json
 ```
 
+The old path `packages/broker/dist/review-lifecycle/scorecard-cli.js` is
+retired. The broker `build` does not clean `dist/`, so a checkout built before
+#2477 still has that directory and the old path would keep running **stale**
+code without an error. Remove it before rebuilding, either with
+`npm run clean:dist -w packages/broker` or by deleting
+`packages/broker/dist/review-lifecycle/`.
+
 The source fixture at
-`packages/broker/fixtures/review-lineage-scorecard/sample-input.json` is
-synthetic contract documentation, not rollout evidence.
+`packages/review-lifecycle/fixtures/review-lineage-scorecard/sample-input.json`
+is synthetic contract documentation, not rollout evidence.
 
 The TypeScript projection
 `projectReviewLineageScorecardSample(record, { sourceRoundId, asOf })` is the

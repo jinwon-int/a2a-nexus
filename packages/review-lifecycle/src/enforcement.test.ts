@@ -83,13 +83,13 @@ const fixtureSchema = z
 
 const FIXTURE_PATH = fileURLToPath(
   new URL(
-    "../../../../fixtures/review-lifecycle/enforcement/decisions.json",
+    "../../../fixtures/review-lifecycle/enforcement/decisions.json",
     import.meta.url,
   ),
 );
 const NON_CONVERGING_PATH = fileURLToPath(
   new URL(
-    "../../../../fixtures/review-lifecycle/non-converging.json",
+    "../../../fixtures/review-lifecycle/non-converging.json",
     import.meta.url,
   ),
 );

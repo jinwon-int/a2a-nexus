@@ -5,13 +5,14 @@
  * Mirrors the docker runner's retrieval snapshot design (canonicalized
  * payload, signature over everything except `signature`, EdDSA/ES256) so a
  * future shared-type migration stays mechanical. Canonicalization here is the
- * broker's sorted-keys canonical JSON (review-lifecycle/canonical-json.ts),
- * labeled explicitly in every snapshot.
+ * broker's sorted-keys canonical JSON (`a2a-review-lifecycle`,
+ * packages/review-lifecycle/src/canonical-json.ts), labeled explicitly in
+ * every snapshot.
  */
 
 import { createPrivateKey, createPublicKey, sign as cryptoSign, verify as cryptoVerify } from "node:crypto";
 
-import { canonicalize, sha256Hex } from "../review-lifecycle/canonical-json.js";
+import { canonicalize, sha256Hex } from "a2a-review-lifecycle";
 import {
   WEB_RETRIEVAL_CANONICALIZATION,
   WEB_RETRIEVAL_SNAPSHOT_SCHEMA,

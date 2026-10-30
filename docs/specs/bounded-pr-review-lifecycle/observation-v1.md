@@ -8,7 +8,8 @@ mutation.
 The machine-readable schema is
 [`schemas/review-lineage-observation-v1.json`](schemas/review-lineage-observation-v1.json).
 The strict parser and pure projector are in
-`packages/broker/src/review-lifecycle/observation.ts`.
+`packages/review-lifecycle/src/observation.ts` (workspace package
+`a2a-review-lifecycle`).
 
 ## Required source evidence
 

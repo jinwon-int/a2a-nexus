@@ -40,6 +40,10 @@ function check() {
     // dependencies must be installed and built alongside the broker.
     assert.match(dockerfile, /COPY\s+packages\/policy-referee\/src\s+packages\/policy-referee\/src/);
     assert.match(dockerfile, /COPY\s+packages\/attestation\/src\s+packages\/attestation\/src/);
+    // #2477: the broker imports a2a-review-lifecycle at runtime.
+    assert.match(dockerfile, /COPY\s+packages\/review-lifecycle\/src\s+packages\/review-lifecycle\/src/);
+    assert.match(dockerfile, /COPY --from=build \/app\/packages\/review-lifecycle\/dist \.\/packages\/review-lifecycle\/dist/);
+    assert.equal((dockerfile.match(/-w packages\/review-lifecycle\b/g) ?? []).length, 2);
   });
   ok("compose build args require revision and created timestamp", () => {
     assert.match(compose, /A2A_BROKER_REVISION:\s+\$\{A2A_BROKER_REVISION:\?[^}]+\}/);
@@ -80,6 +84,8 @@ function check() {
   });
   ok("runtime image dist ships no tests or conformance harnesses (#2080)", () => {
     assert.match(dockerfile, /find packages\/broker\/dist -name '\*\.test\.js' -delete/);
+    // #2477: the moved review-lifecycle tests compile into that package's dist.
+    assert.match(dockerfile, /find packages\/review-lifecycle\/dist -name '\*\.test\.js' -delete/);
     assert.match(dockerfile, /find packages\/broker\/dist -maxdepth 1 -name 'shared-state-\*conformance\*\.js' -delete/);
     assert.match(dockerfile, /rm -f packages\/broker\/dist\/shared-state-sqlite-expiry-snapshot-v1\.js/);
     assert.match(dockerfile, /rm -rf packages\/broker\/dist\/shared-state-worker-mode packages\/broker\/dist\/fixtures/);

@@ -4,11 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { intentHash } from "../review-lifecycle/canonical-json.js";
+import { intentHash } from "a2a-review-lifecycle";
 import type {
   IntentContractV1,
   ReviewLineageEvent,
-} from "../review-lifecycle/types.js";
+} from "a2a-review-lifecycle";
 import {
   ReviewLineageStore,
   ReviewLineageStoreError,

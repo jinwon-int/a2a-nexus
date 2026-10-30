@@ -231,38 +231,26 @@ import {
 import {
   admitReviewLineageProducerFact as admitProducerFact,
 } from "./review-lineage-producer-admission.js";
-import type {
-  AuthorizedReviewLineageSourceV1,
-} from "../review-lifecycle/authorized-source.js";
 import {
   authorizeOperatorReviewLineageCreate,
-} from "../review-lifecycle/lineage-create-source.js";
-import {
   authorizeOperatorReviewLineageCancel,
-} from "../review-lifecycle/operator-cancel-source.js";
-import {
   authorizeOperatorReviewLineageCorrectionGeneration,
-} from "../review-lifecycle/correction-generation-source.js";
-import {
   authorizeOperatorReviewLineageReviewerReplacement,
-} from "../review-lifecycle/reviewer-replacement-source.js";
-import {
   authorizeReviewerReviewLineageReport,
-} from "../review-lifecycle/review-report-source.js";
+  projectLineageReadModel,
+} from "a2a-review-lifecycle";
 import type {
+  AuthorizedReviewLineageSourceV1,
   ReviewLineageEvent,
   ReviewLineageRecord,
-} from "../review-lifecycle/types.js";
-import type { ProjectedReviewLineageObservation } from "../review-lifecycle/observation.js";
+  ProjectedReviewLineageObservation,
+  AppliedEvent,
+  ReviewLineageReadModel,
+} from "a2a-review-lifecycle";
 import type {
   AuthorizedReviewLineageSourceAdmissionV1,
   ReviewLineageObservationApplicationResult,
 } from "./review-lineage-observation-store.js";
-import type { AppliedEvent } from "../review-lifecycle/lifecycle.js";
-import {
-  projectLineageReadModel,
-  type ReviewLineageReadModel,
-} from "../review-lifecycle/read-model.js";
 import {
   CrossBrokerTerminalBriefProjectionStore,
   type CrossBrokerTerminalBriefProjection,

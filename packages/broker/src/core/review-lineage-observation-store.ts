@@ -12,24 +12,18 @@ import { DatabaseSync } from "node:sqlite";
 import {
   canonicalize,
   sha256Hex,
-} from "../review-lifecycle/canonical-json.js";
-import {
   applyEvent,
   createLineage,
-} from "../review-lifecycle/lifecycle.js";
-import {
   deriveObservationIdempotencyKey,
-  type ProjectedReviewLineageObservation,
-  type ReviewLineageSubjectBindingV1,
-} from "../review-lifecycle/observation.js";
-import type {
-  AuthorizedReviewLineageSourceEventV1,
-} from "../review-lifecycle/authorized-source.js";
-import {
   TERMINAL_LINEAGE_STATES,
-  type ReviewLineageRecord,
-  type ReviewLineageState,
-} from "../review-lifecycle/types.js";
+} from "a2a-review-lifecycle";
+import type {
+  ProjectedReviewLineageObservation,
+  ReviewLineageSubjectBindingV1,
+  AuthorizedReviewLineageSourceEventV1,
+  ReviewLineageRecord,
+  ReviewLineageState,
+} from "a2a-review-lifecycle";
 import { reviewLineageRecordSchema } from "./store-schemas.js";
 
 export const REVIEW_LINEAGE_OBSERVATION_LINEAGE_TABLE =

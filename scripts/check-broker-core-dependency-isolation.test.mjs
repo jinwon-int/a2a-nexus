@@ -4,7 +4,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { findForbiddenAppImports, checkBrokerCoreIsolation } from "./check-broker-core-dependency-isolation.mjs";
+import {
+  CORE_ISOLATION_TARGETS,
+  checkAllCoreIsolationTargets,
+  checkBrokerCoreIsolation,
+  findForbiddenAppImports,
+} from "./check-broker-core-dependency-isolation.mjs";
 
 test("findForbiddenAppImports flags openclaw module imports but not string references", () => {
   assert.equal(findForbiddenAppImports(`import { x } from "openclaw";`).length, 1);
@@ -20,6 +25,10 @@ test("findForbiddenAppImports flags openclaw module imports but not string refer
 test("checkBrokerCoreIsolation passes the real broker core (no harness imports today)", () => {
   const result = checkBrokerCoreIsolation();
   assert.equal(result.ok, true, JSON.stringify(result.violations));
+  // #2477: the review-lifecycle engine the broker runs stays in scope.
+  assert.ok(CORE_ISOLATION_TARGETS.some((t) => t.srcDir.endsWith(path.join("packages", "review-lifecycle", "src"))));
+  const all = checkAllCoreIsolationTargets();
+  assert.equal(all.ok, true, JSON.stringify(all.violations));
 });
 
 test("checkBrokerCoreIsolation fails closed on a synthetic forbidden source import", () => {

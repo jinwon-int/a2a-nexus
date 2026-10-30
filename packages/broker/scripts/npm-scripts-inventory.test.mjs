@@ -19,10 +19,21 @@ test('broker npm test manifest removes ignored dist artifacts before incremental
   ]);
 });
 
-test('broker npm test manifest includes bounded review lifecycle conformance', () => {
+// #2477: the bounded review lifecycle conformance suite moved with its code to
+// the a2a-review-lifecycle workspace package, whose own `npm test` runs it in
+// that package's CI-parity job (like the sibling packages). The broker manifest
+// must not keep a glob over the removed dist/review-lifecycle/ directory: a
+// stale local dist would otherwise run old code under the broker suite.
+test('bounded review lifecycle conformance runs from the a2a-review-lifecycle package', () => {
   const manifest = JSON.parse(readFileSync(brokerTestManifestPath, 'utf8'));
   const commands = manifest.entries.map((entry) => entry.command).join('\n');
-  assert.match(commands, /dist\/review-lifecycle\/\*\.test\.js/);
+  assert.doesNotMatch(commands, /dist\/review-lifecycle\//);
+  assert.doesNotMatch(manifest.legacyEquivalent ?? '', /dist\/review-lifecycle\//);
+  const pkg = JSON.parse(readFileSync(new URL('../../review-lifecycle/package.json', import.meta.url), 'utf8'));
+  assert.equal(pkg.name, 'a2a-review-lifecycle');
+  assert.match(pkg.scripts?.test ?? '', /^node --test dist\/\*\.test\.js$/);
+  const parity = readFileSync(new URL('../../../scripts/run-monorepo-package-ci-parity.mjs', import.meta.url), 'utf8');
+  assert.match(parity, /\['npm', \['test', '-w', 'packages\/review-lifecycle'\]\]/);
 });
 
 test('npm scripts inventory emits caller audit refs without reading package files as callers', () => {

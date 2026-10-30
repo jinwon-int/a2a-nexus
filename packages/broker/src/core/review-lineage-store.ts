@@ -6,16 +6,13 @@
  * finalizer paths. Broker rollout mode decides whether mutations are recorded.
  */
 
-import {
-  applyEvent,
-  createLineage,
-  type AppliedEvent,
-  type CreateLineageInput,
-} from "../review-lifecycle/lifecycle.js";
+import { applyEvent, createLineage } from "a2a-review-lifecycle";
 import type {
+  AppliedEvent,
+  CreateLineageInput,
   ReviewLineageEvent,
   ReviewLineageRecord,
-} from "../review-lifecycle/types.js";
+} from "a2a-review-lifecycle";
 
 export type CreateRecordedReviewLineageInput = Omit<CreateLineageInput, "mode">;
 export type ReviewLineageRolloutMode = "off" | "record";
