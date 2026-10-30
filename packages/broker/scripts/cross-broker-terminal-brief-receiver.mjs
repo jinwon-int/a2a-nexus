@@ -6,7 +6,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { readFileSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import process from "node:process";
-import { pollCrossBrokerTerminalBriefReceiver } from "../dist/core/cross-broker-terminal-brief-receiver.js";
+import { pollCrossBrokerTerminalBriefReceiver } from "../dist/core/completion/cross-broker-terminal-brief-receiver.js";
 
 function envBool(name, fallback = false) {
   const value = process.env[name];

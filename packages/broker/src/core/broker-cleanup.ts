@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { DEFAULT_BROKER_RETENTION_POLICY } from "./broker-retention-policy.js";
-import { DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION } from "./terminal-event-outbox.js";
+import { DEFAULT_TERMINAL_TASK_OUTBOX_RETENTION } from "./completion/terminal-event-outbox.js";
 import type {
   SqliteBrokerStateStore,
   SqliteCanonicalSnapshotRetentionSyncResult,

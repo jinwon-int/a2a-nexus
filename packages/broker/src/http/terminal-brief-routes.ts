@@ -5,7 +5,7 @@ import { assertRequesterHasRole, type RequesterIdentity } from "../core/request-
 import {
   buildTerminalBriefCloseoutGate,
   extractTerminalBriefFinalizerWorkflowPacket,
-} from "../core/terminal-brief-closeout-gate.js";
+} from "../core/completion/terminal-brief-closeout-gate.js";
 import {
   buildTerminalBriefApprovalRequest,
   extractTerminalBriefCloseoutGatePacket,

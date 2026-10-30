@@ -3,7 +3,7 @@
 // without a bespoke projection. Keyed on the top-level task.parentRoundId, which
 // normalizeTaskRecord guarantees is populated even for payload-only dispatches.
 
-import { TERMINAL_TASK_STATUSES, type TaskRecord, type TaskStatus, type TerminalTaskStatus } from "./types.js";
+import { TERMINAL_TASK_STATUSES, type TaskRecord, type TaskStatus, type TerminalTaskStatus } from "../types.js";
 
 // Must enumerate every TaskStatus: byStatus is seeded from this list, so a
 // missing state would leave its counter undefined and yield NaN on increment.

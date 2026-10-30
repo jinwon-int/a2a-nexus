@@ -4,7 +4,7 @@ import type { ServerResponse } from "node:http";
 
 import { handleRoundStatusRequest } from "./rounds.js";
 import { BrokerError } from "../core/broker.js";
-import type { RoundStatusSummary } from "../core/round-status.js";
+import type { RoundStatusSummary } from "../core/completion/round-status.js";
 
 function fakeRes(): ServerResponse & { _status?: number; _body?: string } {
   const res = {

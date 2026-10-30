@@ -9,7 +9,7 @@
 // This module imports only leaf helpers and types, never broker.ts, so there is
 // no import cycle.
 import { formatAgeMs } from "./broker-helpers.js";
-import type { TerminalTaskOutboxEvent } from "./terminal-event-outbox.js";
+import type { TerminalTaskOutboxEvent } from "./completion/terminal-event-outbox.js";
 import type {
   CleanupCandidate,
   CleanupCandidateActionability,

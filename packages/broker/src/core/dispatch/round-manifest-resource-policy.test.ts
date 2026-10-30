@@ -44,7 +44,7 @@ import {
 import {
   collectRoundResults,
   type RoundManifest as CollectorManifest,
-} from "../round-result-collector.js";
+} from "../completion/round-result-collector.js";
 
 import type { TaskRecord, TaskResult, TaskStatus } from "../types.js";
 

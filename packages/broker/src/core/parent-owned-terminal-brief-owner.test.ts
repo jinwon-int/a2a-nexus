@@ -8,9 +8,9 @@ import { test } from "node:test";
 import { InMemoryA2ABroker } from "./broker.js";
 import { BrokerError } from "./broker-error.js";
 import { normalizeGitHubPatchTaskRequest } from "./broker-task-request-normalizers.js";
-import { buildCrossBrokerTerminalBriefProjectionFromEvent } from "./cross-broker-terminal-brief-receiver.js";
+import { buildCrossBrokerTerminalBriefProjectionFromEvent } from "./completion/cross-broker-terminal-brief-receiver.js";
 import type { TaskStatusEvent } from "./task-events.js";
-import { TerminalTaskEventOutbox, type TerminalTaskOutboxEvent } from "./terminal-event-outbox.js";
+import { TerminalTaskEventOutbox, type TerminalTaskOutboxEvent } from "./completion/terminal-event-outbox.js";
 import type { CreateTaskRequest, TaskRecord } from "./types.js";
 
 const WORKER = "workerA";

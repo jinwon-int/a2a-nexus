@@ -5,7 +5,7 @@ import {
   type TerminalTaskOutboxEvent,
   type TerminalTaskOutboxAckDecision,
   type TerminalTaskReceiptStatus,
-} from "./terminal-event-outbox.js";
+} from "./completion/terminal-event-outbox.js";
 
 export type OperatorTaskReportStage = "queued" | "claimed" | "running" | "terminal";
 export type OperatorTaskReportKind = "progress" | "stale" | "result";

@@ -1,4 +1,4 @@
-import type { TaskError, TaskRecord, TaskResult } from "./types.js";
+import type { TaskError, TaskRecord, TaskResult } from "../types.js";
 
 const GITHUB_TASK_MODES = new Set(["github-propose-patch", "github-issue-instruction"]);
 const READ_ONLY_ANALYSIS_MODES = new Set(["analysis-only", "read-only-analysis", "analyze-only"]);

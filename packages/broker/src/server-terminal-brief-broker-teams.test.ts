@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { InMemoryA2ABroker } from "./core/broker.js";
-import { parseTerminalBriefBrokerTeams } from "./core/terminal-brief-routing.js";
+import { parseTerminalBriefBrokerTeams } from "./core/completion/terminal-brief-routing.js";
 import { jsonHeaders, startTestServer } from "./server-test-helpers.js";
 
 const TEAMS = "seoseo=team1,gwakga=team2";

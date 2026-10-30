@@ -443,7 +443,7 @@ test("receiver presents minimum-scope peer credentials per target", async () => 
 
 test("receiver attaches a verifiable request-bound senderProof when a signing key is configured", async () => {
   const { generateKeyPairSync } = await import("node:crypto");
-  const { verifyCrossBrokerSenderProof, CrossBrokerNonceCache } = await import("../a2a/cross-broker-sender-proof.js");
+  const { verifyCrossBrokerSenderProof, CrossBrokerNonceCache } = await import("../../a2a/cross-broker-sender-proof.js");
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
   const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();

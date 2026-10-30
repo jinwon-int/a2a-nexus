@@ -8,8 +8,8 @@ import {
   extractTerminalBriefApprovalExecutorPacket,
   renderTerminalBriefApprovalDispatchAdapterMarkdown,
 } from "./terminal-brief-approval-dispatch-adapter.js";
-import { buildTerminalBriefCloseoutGate } from "./terminal-brief-closeout-gate.js";
-import type { TerminalBriefFinalizerWorkflowPacket } from "./terminal-brief-finalizer-workflow.js";
+import { buildTerminalBriefCloseoutGate } from "./completion/terminal-brief-closeout-gate.js";
+import type { TerminalBriefFinalizerWorkflowPacket } from "./completion/terminal-brief-finalizer-workflow.js";
 
 const NOW = "2026-05-18T21:00:00.000Z";
 

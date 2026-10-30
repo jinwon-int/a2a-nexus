@@ -4,13 +4,13 @@ import test from "node:test";
 import {
   buildTerminalBriefCloseoutGate,
   type TerminalBriefCloseoutGatePacket,
-} from "./terminal-brief-closeout-gate.js";
+} from "./completion/terminal-brief-closeout-gate.js";
 import {
   buildTerminalBriefApprovalRequest,
   extractTerminalBriefCloseoutGatePacket,
   renderTerminalBriefApprovalRequestMarkdown,
 } from "./terminal-brief-approval-request.js";
-import type { TerminalBriefFinalizerWorkflowPacket } from "./terminal-brief-finalizer-workflow.js";
+import type { TerminalBriefFinalizerWorkflowPacket } from "./completion/terminal-brief-finalizer-workflow.js";
 
 const NOW = "2026-05-18T16:00:00.000Z";
 

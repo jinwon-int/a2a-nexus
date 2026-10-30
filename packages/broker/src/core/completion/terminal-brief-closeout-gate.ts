@@ -1,4 +1,4 @@
-import { isRecord } from "./value-guards.js";
+import { isRecord } from "../value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefFinalizerWorkflowPacket } from "./terminal-brief-finalizer-workflow.js";

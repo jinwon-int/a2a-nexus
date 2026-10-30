@@ -82,7 +82,7 @@ const ALLOWED_TERMINAL_TRIPLE_SITES: Record<string, string> = {
   "src/core/types.ts": "canonical definition of TERMINAL_TASK_STATUSES itself",
   "src/core/task-event-stream.ts":
     "NOTIFIABLE_TERMINAL_STATUSES gates newly minted outbox events; `blocked` must not be newly minted (legacy persisted rows still admit it via TerminalTaskEventStatus)",
-  "src/core/terminal-event-outbox.ts":
+  "src/core/completion/terminal-event-outbox.ts":
     "TERMINAL_TASK_EVENT_KINDS is a TaskStatusEvent kind set (event vocabulary), not a task-status gate",
   "src/wave-plan-dag-v2/stage-task-binding.ts":
     "\u00a74.2 spec-scoped closed vocabulary, deliberately re-declared as plain strings; runtime drift against the canonical set is asserted separately below",

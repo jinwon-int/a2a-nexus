@@ -12,7 +12,7 @@ import process from "node:process";
 import {
   buildTerminalBriefFinalCountCloseoutCandidate,
   renderTerminalBriefFinalCountCloseoutMarkdown,
-} from "../dist/core/terminal-brief-final-count-closeout.js";
+} from "../dist/core/completion/terminal-brief-final-count-closeout.js";
 
 function parseArgs(argv) {
   const readOption = (name) => {

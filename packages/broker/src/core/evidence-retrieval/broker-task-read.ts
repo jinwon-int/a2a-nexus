@@ -1,7 +1,7 @@
 import { taskMatchesFilters, applyTaskListLimit, HOT_READ_HARD_MAX_LIMIT } from "../broker-list-filters.js";
 import { sortedCopy, sortNewestFirst } from "../broker-helpers.js";
 import { normalizeTaskRecord } from "../broker-task-record-normalizers.js";
-import { summarizeRoundStatus, type RoundStatusSummary } from "../round-status.js";
+import { summarizeRoundStatus, type RoundStatusSummary } from "../completion/round-status.js";
 import type { TaskRuntimeRepository } from "../task-repository.js";
 import type { TaskListFilters, TaskRecord } from "../types.js";
 

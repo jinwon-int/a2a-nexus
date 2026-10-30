@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-import { buildCrossBrokerSenderProof } from "../a2a/cross-broker-sender-proof.js";
+import { buildCrossBrokerSenderProof } from "../../a2a/cross-broker-sender-proof.js";
 import type { CrossBrokerTerminalBriefProjectionRequest } from "./cross-broker-terminal-brief.js";
 import type { TerminalTaskOutboxEvent, TerminalTaskEventPayload } from "./terminal-event-outbox.js";
-import { isSettledTaskStatus } from "./broker-status-predicates.js";
+import { isSettledTaskStatus } from "../broker-status-predicates.js";
 
 /**
  * Destination ack codes that are terminal for the individual event: retrying

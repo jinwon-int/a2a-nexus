@@ -1,4 +1,4 @@
-import type { ReceiptGateCanaryMatrix } from "./receipt-gate-canary.js";
+import type { ReceiptGateCanaryMatrix } from "../receipt-gate-canary.js";
 
 const SAFE_ACK_EVIDENCE = new Set([
   "current_session_visible",

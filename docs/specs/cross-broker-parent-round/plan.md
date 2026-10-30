@@ -21,8 +21,8 @@ broker core(판정·outbox·receiver·http·store 스냅샷)와 dispatch helper�
 
 - `a2a-plane`(이 레포 `contracts/`, `fixtures/contract/`, `test/conformance`):
   `handoffBrokerId` 필수화, `missing_anchor` code, 4-case fixture 확장.
-- `a2a-broker`(`packages/broker`): `core/cross-broker-terminal-brief.ts`,
-  `core/terminal-event-outbox.ts`, `core/cross-broker-terminal-brief-receiver.ts`,
+- `a2a-broker`(`packages/broker`): `core/completion/cross-broker-terminal-brief.ts`,
+  `core/completion/terminal-event-outbox.ts`, `core/completion/cross-broker-terminal-brief-receiver.ts`,
   `core/broker.ts`(판정 배선), 신규 `core/dispatch/parent-round-registry.ts`,
   `http/a2a-terminal-outbox-routes.ts`(sender-proof 모드), 신규
   `http/parent-round-routes.ts`, `core/dispatch/a2a-dispatch-helper.ts` +

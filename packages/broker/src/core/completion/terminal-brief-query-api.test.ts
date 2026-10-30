@@ -20,7 +20,7 @@ import {
   summarizeTerminalBriefRounds,
   listTerminalBriefWorkers,
 } from "./terminal-brief-query-api.js";
-import type { TaskRecord, TaskStatus } from "./types.js";
+import type { TaskRecord, TaskStatus } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -7,13 +7,13 @@ import { BrokerError } from "./core/broker-error.js";
 import {
   isTerminalTaskOutboxAckInputEvidence,
   isTerminalTaskReceiptStatus,
-} from "./core/terminal-event-outbox.js";
+} from "./core/completion/terminal-event-outbox.js";
 import type { CreateTaskRequest } from "./core/types.js";
 import type { RequesterIdentity } from "./core/request-security.js";
 import type {
   TerminalTaskOutboxAckInput,
   TerminalTaskOutboxReceiptUpdateInput,
-} from "./core/terminal-event-outbox.js";
+} from "./core/completion/terminal-event-outbox.js";
 
 export function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;

@@ -1,4 +1,4 @@
-import { SETTLED_TASK_STATUSES } from "./types.js";
+import { SETTLED_TASK_STATUSES } from "../types.js";
 import type {
   TerminalTaskOutboxEvent,
   TerminalTaskReceiptStatus,

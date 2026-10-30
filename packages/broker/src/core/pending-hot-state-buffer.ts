@@ -20,7 +20,7 @@ import type {
   ValidationResult,
   WorkerRecord,
 } from "./types.js";
-import type { TerminalTaskOutboxEvent } from "./terminal-event-outbox.js";
+import type { TerminalTaskOutboxEvent } from "./completion/terminal-event-outbox.js";
 import type { BrokerSnapshot, BrokerStateSaveHints } from "./store.js";
 
 // The drain order matches the historical BrokerStateSaveHints construction order.

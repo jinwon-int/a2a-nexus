@@ -194,7 +194,7 @@ export const SHARED_STATE_IDEMPOTENCY_V1_VALUES = deepFreeze({
         plannedNamespace: "broker.task.terminal",
         sourceRefs: [
           {
-            path: "packages/broker/src/core/broker-task-terminal.ts",
+            path: "packages/broker/src/core/completion/broker-task-terminal.ts",
             symbol: "export function completeTask(",
             proves: [
               "durable-key-or-state",
@@ -203,7 +203,7 @@ export const SHARED_STATE_IDEMPOTENCY_V1_VALUES = deepFreeze({
             ],
           },
           {
-            path: "packages/broker/src/core/broker-task-terminal.ts",
+            path: "packages/broker/src/core/completion/broker-task-terminal.ts",
             symbol: "export function failTask(",
             proves: [
               "domain-mutation",
@@ -289,7 +289,7 @@ export const SHARED_STATE_IDEMPOTENCY_V1_VALUES = deepFreeze({
         plannedNamespace: "broker.terminal-brief.cross-broker-ingest",
         sourceRefs: [
           {
-            path: "packages/broker/src/core/cross-broker-terminal-brief.ts",
+            path: "packages/broker/src/core/completion/cross-broker-terminal-brief.ts",
             symbol: "const sourceDigest = digestProjection(normalized)",
             proves: [
               "payload-fingerprint",

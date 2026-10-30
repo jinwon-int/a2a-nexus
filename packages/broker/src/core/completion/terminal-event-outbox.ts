@@ -1,12 +1,12 @@
-import { BrokerError } from "./broker-error.js";
-import { isRecord } from "./value-guards.js";
-import { terminalOutboxPayloadIssueSchema } from "./store-schemas.js";
-import { SETTLED_TASK_STATUSES } from "./types.js";
-import type { SettledTaskStatus, TaskRecord, TaskStatus } from "./types.js";
-import type { TaskStatusEvent } from "./task-events.js";
+import { BrokerError } from "../broker-error.js";
+import { isRecord } from "../value-guards.js";
+import { terminalOutboxPayloadIssueSchema } from "../store-schemas.js";
+import { SETTLED_TASK_STATUSES } from "../types.js";
+import type { SettledTaskStatus, TaskRecord, TaskStatus } from "../types.js";
+import type { TaskStatusEvent } from "../task-events.js";
 import type { CrossBrokerTerminalBriefProjection } from "./cross-broker-terminal-brief.js";
 import { RoundProgressTracker, applyRoundProgressMetadata } from "./round-progress-tracker.js";
-import { canonicalJsonString } from "../shared-state-idempotency-gate-v1.js";
+import { canonicalJsonString } from "../../shared-state-idempotency-gate-v1.js";
 
 const TERMINAL_TASK_EVENT_KINDS = new Set<TaskStatusEvent["kind"]>(["succeeded", "failed", "canceled"]);
 const TERMINAL_TASK_ACK_INPUT_EVIDENCE = new Set<TerminalTaskOutboxAckInputEvidence>([

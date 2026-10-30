@@ -1357,7 +1357,7 @@ test('#2393 completion: real worker-wrapped failures (handler_exit_nonzero neste
 // #2400: the collector's gateVerdict is documented as a mirror of this gate.
 // Feed the same succeeded+marked=false lane to both and require the same answer.
 test('#2400 parity: collector and gate agree that a succeeded lane with marked=false is not quorum evidence', async () => {
-  const { collectRoundResults } = await import('../packages/broker/dist/core/round-result-collector.js');
+  const { collectRoundResults } = await import('../packages/broker/dist/core/completion/round-result-collector.js');
   const output = { ...analysisOutput(['real looking finding']), doneCommentUrl: 'https://github.com/o/r/issues/1#issuecomment-1' };
   const cases = [
     { name: 'marked=false', completion: { marked: false, reason: 'analysis_blocked' }, counts: false },

@@ -4,7 +4,7 @@ import type { ArtifactRuntimeRepository } from "./artifact-repository.js";
 import type { AuditRuntimeRepository } from "./audit-repository.js";
 import type { BrokerPolicyDocument } from "a2a-policy-referee";
 import type { InjectedKnowledgeSnapshot } from "./execution/broker-knowledge-injection.js";
-import type { FinalizerVerdictEnforcement } from "./finalizer-verdict-admission.js";
+import type { FinalizerVerdictEnforcement } from "./completion/finalizer-verdict-admission.js";
 import type { FinalizerKeyring } from "a2a-attestation";
 import type { ExchangeMessageRuntimeRepository, ExchangeRuntimeRepository } from "./exchange-repository.js";
 import type { ProposalRuntimeRepository } from "./proposal-repository.js";
@@ -193,7 +193,7 @@ export interface InMemoryA2ABrokerOptions {
    * keeps the resolver's placeholder default and skips registry-backed route
    * checks.
    */
-  terminalBriefBrokerTeams?: readonly import("./terminal-brief-routing.js").TerminalBriefBrokerTeamRegistration[];
+  terminalBriefBrokerTeams?: readonly import("./completion/terminal-brief-routing.js").TerminalBriefBrokerTeamRegistration[];
   /**
    * Stable team/tenant identity for ownership-guarded tasks. When a task
    * carries teamId metadata, lifecycle mutation is accepted only by a broker

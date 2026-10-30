@@ -17,7 +17,7 @@
 - `packages/broker/src/core/broker.ts`.
 - `packages/broker/src/core/store.ts` and
   `sqlite-worker-thread-persistence.ts`.
-- `packages/broker/src/core/terminal-event-outbox.ts`.
+- `packages/broker/src/core/completion/terminal-event-outbox.ts`.
 - `packages/broker/src/core/artifact-repository.ts` and
   `audit-repository.ts`.
 - `packages/broker/docs/process-local-security-limits.md`.

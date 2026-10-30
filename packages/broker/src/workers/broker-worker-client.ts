@@ -17,7 +17,7 @@ import { normalizeBrokerUrl } from "./worker-env.js";
 import { optionalTrimmed } from "./worker-metadata.js";
 import { parseTaskAcceptance, runTaskAcceptance, normalizeBridgeAcceptanceReport, validateAcceptanceEvidence } from "../worker-acceptance.js";
 import { validateReviewEvidence } from "../worker-review.js";
-import { validateGithubTaskCompletionEvidence } from "../core/github-task-completion.js";
+import { validateGithubTaskCompletionEvidence } from "../core/completion/github-task-completion.js";
 import { normalizeTaskResult } from "../core/broker-task-record-normalizers.js";
 import {
   assertHomeBrokerLease,
