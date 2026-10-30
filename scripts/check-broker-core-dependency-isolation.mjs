@@ -228,10 +228,20 @@ export function checkCoreDomainBoundaries({ coreDir = CORE_DIR, map, baseline } 
     }
   }
 
+  // #2453 row 7 root flip (owner decision 2026-10-30, option 1): when the map
+  // declares `rootDefaultDomain`, a module directly under core/ that the map
+  // does not list belongs to that domain (kernel). The map then lists only the
+  // root exceptions; an entry that repeats the default is a second source of
+  // truth and fails. Modules in a non-domain subdirectory still need an entry.
+  const rootDefault = map.rootDefaultDomain;
+  if (rootDefault !== undefined && !domainNames.has(rootDefault)) {
+    errors.push(`rootDefaultDomain names undeclared domain "${rootDefault}"`);
+  }
   const moduleRels = listTsFiles(coreDir).map((file) => toPosix(path.relative(coreDir, file))).sort();
   const onDisk = new Set(moduleRels);
   const domainOf = new Map();
   const missingFromMap = [];
+  const rootDefaulted = [];
   for (const rel of moduleRels) {
     const top = rel.includes("/") ? rel.split("/")[0] : null;
     const dirDomain = top && domainNames.has(top) ? top : null;
@@ -242,7 +252,13 @@ export function checkCoreDomainBoundaries({ coreDir = CORE_DIR, map, baseline } 
     } else if (Object.hasOwn(mapModules, rel)) {
       const domain = mapModules[rel];
       if (!domainNames.has(domain)) errors.push(`${rel}: map assigns undeclared domain "${domain}"`);
+      if (rootDefault !== undefined && !top && domain === rootDefault) {
+        errors.push(`${rel}: the core/ root defaults to "${rootDefault}"; remove its map entry`);
+      }
       domainOf.set(rel, domain);
+    } else if (rootDefault !== undefined && !top) {
+      rootDefaulted.push(rel);
+      domainOf.set(rel, rootDefault);
     } else {
       missingFromMap.push(rel);
     }
@@ -295,6 +311,8 @@ export function checkCoreDomainBoundaries({ coreDir = CORE_DIR, map, baseline } 
     typeOnlyEdges: edges.filter((edge) => edge.typeOnly).length,
     missingFromMap,
     unknownInMap,
+    rootDefaultDomain: rootDefault ?? null,
+    rootDefaulted,
     valueViolations,
     typeViolations,
     typeBaseline: baselineEntries.length,
@@ -319,6 +337,8 @@ function summarize(domainResult) {
     ok: domainResult.ok,
     map: toPosix(path.relative(REPO_ROOT, DOMAIN_MAP_PATH)),
     modules: domainResult.modules,
+    rootDefaultDomain: domainResult.rootDefaultDomain,
+    rootDefaulted: domainResult.rootDefaulted.length,
     perDomain: domainResult.perDomain,
     edges: domainResult.edges,
     typeOnlyEdges: domainResult.typeOnlyEdges,

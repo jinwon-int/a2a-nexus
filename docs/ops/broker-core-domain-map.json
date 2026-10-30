@@ -33,7 +33,7 @@
   "domains": {
     "kernel": {
       "mayImport": [],
-      "description": "Types, contracts, errors, value guards, shared normalizers and validators, persistence ports (*-repository, store-schemas). Stays at the core/ root."
+      "description": "Types, contracts, errors, value guards, shared normalizers and validators, persistence ports (*-repository, store-schemas). Stays at the core/ root. The core/ root defaults to kernel (rootDefaultDomain); the modules map lists only root exceptions."
     },
     "dispatch": {
       "mayImport": [
@@ -157,31 +157,16 @@
       "description": "Non-test helper modules used by tests; the only domain allowed to import the facade."
     }
   },
+  "rootDefaultDomain": "kernel",
   "modules": {
-    "artifact-repository.ts": "kernel",
-    "audit-repository.ts": "kernel",
-    "broker-contracts.ts": "kernel",
-    "broker-error.ts": "kernel",
-    "broker-helpers.ts": "kernel",
-    "broker-list-filters.ts": "kernel",
     "broker-proposal-read.ts": "policy-approval",
     "broker-proposal-write.ts": "policy-approval",
-    "broker-record-helpers.ts": "kernel",
-    "broker-retention-selectors.ts": "kernel",
-    "broker-status-predicates.ts": "kernel",
     "broker-task-approval.ts": "policy-approval",
-    "broker-task-record-normalizers.ts": "kernel",
-    "broker-task-request-normalizers.ts": "kernel",
     "broker-test-helpers.ts": "test-support",
-    "broker-transition-guards.ts": "kernel",
-    "broker-wake-normalizers.ts": "kernel",
-    "broker-worker-status.ts": "kernel",
     "broker.ts": "facade",
-    "collections.ts": "kernel",
     "complexity-execution-plan-draft.ts": "policy-approval",
     "complexity-execution-plan-preflight-seal.ts": "policy-approval",
     "complexity-finalizer-approval-envelope-draft.ts": "policy-approval",
-    "exchange-repository.ts": "kernel",
     "orchestration-intelligence-broker-dispatch-approval-decision-evidence.ts": "policy-approval",
     "orchestration-intelligence-broker-dispatch-approval-request.ts": "policy-approval",
     "orchestration-intelligence-runtime-approval-decision-evidence.ts": "policy-approval",
@@ -198,24 +183,13 @@
     "orchestration-intelligence-worker-spawn-approval-request.ts": "policy-approval",
     "orchestration-intelligence-worker-subagent-spawn-bridge.ts": "policy-approval",
     "policy.ts": "policy-approval",
-    "proposal-repository.ts": "kernel",
     "receipt-gate-canary.ts": "policy-approval",
-    "store-schemas.ts": "kernel",
     "store-test-helpers.ts": "test-support",
-    "task-error-details.ts": "kernel",
-    "task-repository.ts": "kernel",
     "terminal-brief-approval-dispatch-adapter.ts": "policy-approval",
     "terminal-brief-approval-executor.ts": "policy-approval",
     "terminal-brief-approval-receipt-ingestor.ts": "policy-approval",
     "terminal-brief-approval-request.ts": "policy-approval",
     "terminal-brief-finalizer-approval-status.ts": "policy-approval",
-    "terminal-brief-metadata.ts": "kernel",
-    "tombstone-repository.ts": "kernel",
-    "two-broker-safety-matrix.ts": "policy-approval",
-    "types.ts": "kernel",
-    "validation-repository.ts": "kernel",
-    "value-guards.ts": "kernel",
-    "value-text.ts": "kernel",
-    "worker-repository.ts": "kernel"
+    "two-broker-safety-matrix.ts": "policy-approval"
   }
 }
