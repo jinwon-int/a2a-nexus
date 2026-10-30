@@ -1,7 +1,7 @@
-import { isRecord } from "./value-guards.js";
+import { isRecord } from "../value-guards.js";
 import { createHash } from "node:crypto";
 
-import { numberValue, optionalString } from "./value-text.js";
+import { numberValue, optionalString } from "../value-text.js";
 import { canonicalizeJson } from "a2a-attestation";
 import { redactAndBound } from "a2a-attestation";
 

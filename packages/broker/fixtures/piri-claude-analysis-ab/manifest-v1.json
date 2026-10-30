@@ -74,7 +74,7 @@
       "prompt": "lastProgressAt 기반 stale 정책이 heartbeat로 멈춘 harness를 가리지 않으면서 레거시 작업을 보존하는지 경계값·시계 왜곡·reaper 경로를 포함해 검토하라.",
       "sourcePaths": [
         "packages/broker/src/core/broker-status-predicates.ts",
-        "packages/broker/src/core/broker-task-checkpoint.ts",
+        "packages/broker/src/core/execution/broker-task-checkpoint.ts",
         "packages/broker/src/core/broker-task-diagnostics.ts",
         "packages/broker/src/core/lifecycle.test.ts"
       ],

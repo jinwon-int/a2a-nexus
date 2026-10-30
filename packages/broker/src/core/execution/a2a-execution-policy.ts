@@ -12,7 +12,7 @@
 // blocked) is tracked separately, because that step changes the behavior of live
 // write paths.
 
-import { routeA2AIntent, type A2AIntentRouterInput } from "./a2a-intent-router.js";
+import { routeA2AIntent, type A2AIntentRouterInput } from "../a2a-intent-router.js";
 
 /** Repo/GitHub write actions that an A2A/A2AD execution context must gate. */
 export const A2A_GUARDED_ACTIONS = [

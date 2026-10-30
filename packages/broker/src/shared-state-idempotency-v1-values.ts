@@ -211,7 +211,7 @@ export const SHARED_STATE_IDEMPOTENCY_V1_VALUES = deepFreeze({
             ],
           },
           {
-            path: "packages/broker/src/core/broker-task-cancellation.ts",
+            path: "packages/broker/src/core/execution/broker-task-cancellation.ts",
             symbol: "export function cancelTask(",
             proves: [
               "domain-mutation",

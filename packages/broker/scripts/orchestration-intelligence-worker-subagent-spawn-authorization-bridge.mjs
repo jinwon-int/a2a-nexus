@@ -10,7 +10,7 @@ import {
   buildA2AWorkerSubagentSpawnAuthorizationRequest,
   extractA2AWorkerSubagentSpawnAuthorizationRequestHandoff,
   extractA2AWorkerSubagentSpawnAuthorizationRequestOptions,
-} from "../dist/core/worker-subagent-spawn-authorization-request.js";
+} from "../dist/core/execution/worker-subagent-spawn-authorization-request.js";
 
 function readOption(argv, name) {
   const inline = argv.find((arg) => arg.startsWith(name + "="));

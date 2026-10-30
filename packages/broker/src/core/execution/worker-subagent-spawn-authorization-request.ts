@@ -1,9 +1,9 @@
-import { unique } from "./collections.js";
-import { isRecord } from "./value-guards.js";
+import { unique } from "../collections.js";
+import { isRecord } from "../value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { A2AWorkerSubagentPlannerHandoffPacket } from "./worker-subagent-planner-handoff.js";
-import { numberValue, optionalString } from "./value-text.js";
+import { numberValue, optionalString } from "../value-text.js";
 
 export type A2AWorkerSubagentSpawnAuthorizationRequestState =
   | "authorization_request_draft_ready"

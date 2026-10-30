@@ -9,7 +9,7 @@
     },
     {
       "from": "broker-contracts.ts",
-      "to": "broker-knowledge-injection.ts"
+      "to": "execution/broker-knowledge-injection.ts"
     },
     {
       "from": "broker-contracts.ts",
@@ -93,7 +93,7 @@
     },
     {
       "from": "types.ts",
-      "to": "delegated-runtime.ts"
+      "to": "execution/delegated-runtime.ts"
     }
   ]
 }

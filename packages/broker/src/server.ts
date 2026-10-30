@@ -138,7 +138,7 @@ import { computeReusedSocketGate } from "./diagnostics/reused-socket-gate.js";
 import { resolveBrokerBuildInfo } from "./broker-build-info.js";
 import { normalizeTaskReadinessMode } from "./task-readiness.js";
 import { loadBrokerPolicyFile } from "a2a-policy-referee";
-import { loadInjectedKnowledgeFile } from "./core/broker-knowledge-injection.js";
+import { loadInjectedKnowledgeFile } from "./core/execution/broker-knowledge-injection.js";
 import { resolveFinalizerVerdictEnforcement } from "./core/finalizer-verdict-admission.js";
 import { loadFinalizerKeyringFile } from "a2a-attestation";
 import { resolveReviewLineageRolloutMode } from "./core/review-lineage-store.js";

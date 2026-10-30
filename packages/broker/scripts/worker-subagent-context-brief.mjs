@@ -6,7 +6,7 @@ import {
   buildA2AWorkerSubagentContextBrief,
   extractA2AWorkerSubagentContextBriefInput,
   renderA2AWorkerSubagentContextBriefMarkdown,
-} from "../dist/core/worker-subagent-context-brief.js";
+} from "../dist/core/execution/worker-subagent-context-brief.js";
 
 function readOption(argv, name) {
   const inline = argv.find((arg) => arg.startsWith(name + "="));

@@ -7,11 +7,11 @@
 // (the broker-exchange.ts pattern); InMemoryA2ABroker keeps cancelTask public
 // and cancelTaskTree/cancelActiveExchangeTask as private delegators (both are
 // bound into other extracted-module contexts).
-import { BrokerError } from "./broker-error.js";
-import { isoNow, sortedCopy, sortNewestFirst } from "./broker-helpers.js";
-import { isTerminalTaskStatus } from "./broker-status-predicates.js";
-import { cleanOptionalTaskCancelField } from "./broker-task-request-normalizers.js";
-import type { TaskUpdateReason } from "./broker-contracts.js";
+import { BrokerError } from "../broker-error.js";
+import { isoNow, sortedCopy, sortNewestFirst } from "../broker-helpers.js";
+import { isTerminalTaskStatus } from "../broker-status-predicates.js";
+import { cleanOptionalTaskCancelField } from "../broker-task-request-normalizers.js";
+import type { TaskUpdateReason } from "../broker-contracts.js";
 import type {
   A2AExchangeState,
   AuditAction,
@@ -19,7 +19,7 @@ import type {
   TaskCancelRequest,
   TaskRecord,
   TombstoneReason,
-} from "./types.js";
+} from "../types.js";
 
 export interface TaskCancellationContext {
   tasks: ReadonlyMap<string, TaskRecord>;

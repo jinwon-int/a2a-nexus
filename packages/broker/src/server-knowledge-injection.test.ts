@@ -14,7 +14,7 @@ import {
   selectInjectedKnowledge,
   validateInjectedKnowledgeSnapshot,
   type InjectedKnowledgeSnapshot,
-} from "./core/broker-knowledge-injection.js";
+} from "./core/execution/broker-knowledge-injection.js";
 import { startTestServer, jsonHeaders, workerPayload } from "./server-test-helpers.js";
 
 // #2386: remove every temp dir this file creates.

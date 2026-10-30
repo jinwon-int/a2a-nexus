@@ -13,7 +13,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { InMemoryA2ABroker } from "./broker.js";
+import { InMemoryA2ABroker } from "../broker.js";
 import {
   buildWaitingState,
   buildResumedState,
@@ -25,7 +25,7 @@ import {
   ALL_RUNTIME_STATES,
   TERMINAL_RUNTIME_STATES,
   INFLIGHT_RUNTIME_STATES,
-} from "../fixtures/delegated-runtime.js";
+} from "../../fixtures/delegated-runtime.js";
 
 // ---------------------------------------------------------------------------
 // Fixture loading helper
