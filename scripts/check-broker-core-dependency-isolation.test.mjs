@@ -280,6 +280,51 @@ test("a domain directory is authoritative: core/<domain>/x.ts needs no map entry
   assert.equal(dup.ok, false);
 });
 
+test("root default: with rootDefaultDomain, an unlisted root module is kernel and passes", () => {
+  const f = fixture({ ...BASE_FILES, "new-guard.ts": `import type { Task } from "./types.js";\nexport const ok = (t: Task) => !!t;\n` }, BASE_MODULES);
+  f.map.rootDefaultDomain = "kernel";
+  const { "types.ts": _kernelEntry, ...exceptions } = BASE_MODULES;
+  f.map.modules = exceptions;
+  const result = checker.checkCoreDomainBoundaries(f);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.deepEqual(result.missingFromMap, []);
+  assert.deepEqual(result.rootDefaulted, ["new-guard.ts", "types.ts"]);
+});
+
+test("root default: an unlisted root module that value-imports a domain fails (kernel imports nothing)", () => {
+  const f = fixture({ ...BASE_FILES, "sneaky.ts": `import { admit } from "./admission.js";\nexport const s = admit;\n` }, BASE_MODULES);
+  f.map.rootDefaultDomain = "kernel";
+  const result = checker.checkCoreDomainBoundaries(f);
+  assert.equal(result.ok, false);
+  assert.ok(result.valueViolations.some((v) => v.from === "sneaky.ts" && v.fromDomain === "kernel" && v.toDomain === "dispatch"));
+});
+
+test("root default: a map entry that repeats the root default fails (one source of truth)", () => {
+  const f = fixture(BASE_FILES, BASE_MODULES);
+  f.map.rootDefaultDomain = "kernel";
+  const result = checker.checkCoreDomainBoundaries(f);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.startsWith("types.ts: the core/ root defaults to")));
+});
+
+test("root default: a module in a non-domain subdirectory still needs a map entry", () => {
+  const f = fixture({ ...BASE_FILES, "nested/deep.ts": `export const x = 1;\n` }, BASE_MODULES);
+  f.map.rootDefaultDomain = "kernel";
+  const { "types.ts": _kernelEntry, ...exceptions } = BASE_MODULES;
+  f.map.modules = exceptions;
+  const result = checker.checkCoreDomainBoundaries(f);
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.missingFromMap, ["nested/deep.ts"]);
+});
+
+test("root default: rootDefaultDomain must name a declared domain", () => {
+  const f = fixture(BASE_FILES, BASE_MODULES);
+  f.map.rootDefaultDomain = "nowhere";
+  const result = checker.checkCoreDomainBoundaries(f);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((e) => e.includes('rootDefaultDomain names undeclared domain "nowhere"')));
+});
+
 // ---------------------------------------------------------------------------
 // The committed map and baseline against the real tree.
 
@@ -289,6 +334,9 @@ test("the committed domain map covers every core module and the real tree has no
   assert.deepEqual(result.missingFromMap, []);
   assert.deepEqual(result.unknownInMap, []);
   assert.deepEqual(result.valueViolations, []);
+  // #2453 row 7 root flip: the root defaults to kernel and the map lists only root exceptions.
+  assert.equal(result.rootDefaultDomain, "kernel");
+  assert.ok(result.rootDefaulted.length >= 27, `expected >= 27 root-defaulted kernel modules, got ${result.rootDefaulted.length}`);
   // Floor against silent module loss; lowered 181 -> 175 by the #2453 step 4
   // CLI-only retirement (mirrored in check-script-budget BUDGETS.brokerCoreModules).
   assert.ok(result.modules >= 175, `expected >= 175 core modules, got ${result.modules}`);

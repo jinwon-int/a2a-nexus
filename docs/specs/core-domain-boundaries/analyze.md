@@ -30,6 +30,8 @@
 > see [Transport move](#transport-move).
 > **Store move implemented** (split-order row 7, third of three): see
 > [Store move](#store-move).
+> **Root flip implemented** (owner decision 2026-10-30, option 1): see
+> [Root flip](#root-flip).
 
 ## Summary
 
@@ -1071,11 +1073,38 @@ policy-approval 29 (split rows 2a/2b, held behind the #2350 A7 hold), facade 1 a
 test-support 2, i.e. 59 map entries. Value violations stay at 0 and
 type-only at 23 = baseline. No store module is in the worker dist closure.
 
-**Open: the root flip.** Row 7's rule says root modules other than
-`broker.ts` may not import any domain directory. The kernel modules already
-cannot, because `kernel.mayImport` is empty. The 29 policy-approval modules
-still at the root do import domains, so a literal flip would fail at once. It
-needs an owner decision, recorded in #2453.
+**The root flip** is decided and implemented below, in [Root flip](#root-flip).
+
+## Root flip
+
+**Owner decision (2026-10-30), option 1:** finish the flip at the data level
+now, and split the policy-approval move into its own step after the A7 hold.
+
+- `docs/ops/broker-core-domain-map.json` declares `"rootDefaultDomain":
+  "kernel"`. A module directly under `core/` that the map does not list is
+  kernel.
+- The map now lists only the root exceptions: 29 `policy-approval` modules,
+  the `facade` (`broker.ts`) and 2 `test-support` modules. The 27 kernel
+  entries were removed.
+- The checker rejects an entry that repeats the default, because that would
+  be a second source of truth. It also rejects a `rootDefaultDomain` that
+  names an undeclared domain.
+- A module in a non-domain subdirectory still needs an entry.
+- The checker's report adds `rootDefaultDomain` and the `rootDefaulted`
+  count.
+
+**What this enforces:** a new root file is kernel by default. `kernel` may
+import nothing, so a new root file that value-imports a domain fails the
+allow-matrix check, without anyone having to remember to add a map entry.
+The literal row-7 rule, "only `broker.ts` may import domain directories",
+holds for every root module except the 29 policy-approval exceptions. Those
+remain explicit, and the gate already checks them against their own
+allow-matrix row.
+
+**Follow-up (#2490, split rows 2a/2b):** move `policy-approval` to
+`core/policy-approval/` once the #2350 A7 hold is lifted. It is entangled with the
+two permanently kept modules (decision #6), the ceremony naming and 44 CLI
+wrappers. After that move, the 29 exceptions leave the map.
 
 ## Appendix: survey script
 
