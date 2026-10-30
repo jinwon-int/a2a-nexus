@@ -5,8 +5,8 @@ import type {
   WorkerCapabilities,
   WorkerStatus,
   WorkerView,
-} from "./types.js";
-import type { AgentCapabilities, AgentSkill } from "../a2a/agent-card.js";
+} from "../types.js";
+import type { AgentCapabilities, AgentSkill } from "../../a2a/agent-card.js";
 
 export const WORKER_CAPABILITY_CARD_SCHEMA_VERSION = "worker-capability-card/v1";
 

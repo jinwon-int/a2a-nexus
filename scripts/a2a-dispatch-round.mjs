@@ -176,7 +176,7 @@ function readinessNodeId(row) {
 }
 
 // #1597: canonical implementationCapability runtime values. Mirrors the broker
-// normalizer in packages/broker/src/core/broker-capability-normalizers.ts;
+// normalizer in packages/broker/src/core/claim/broker-capability-normalizers.ts;
 // 'unknown' is the broker's fallback for unrecognized declarations, so a
 // canonical profile copied from broker capabilities never carries it here.
 const IMPLEMENTATION_RUNTIMES = new Set(['claude-native', 'codex-native', 'provider-native']);

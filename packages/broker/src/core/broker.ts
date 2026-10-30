@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { TaskEventDispatcher } from "./task-event-dispatcher.js";
 import { BrokerListenerRegistry } from "./broker-listener-registry.js";
-import { WorkerIdentityChurnTracker } from "./worker-identity-churn-tracker.js";
+import { WorkerIdentityChurnTracker } from "./claim/worker-identity-churn-tracker.js";
 import { SnapshotExtensionRegistry } from "./snapshot-extension-registry.js";
 import {
   recordBrokerTerminalAttempt,
@@ -12,7 +12,7 @@ import {
   validateTaskAttemptHistoryQuery,
   type TaskAttemptHistoryPreflightResponseV1,
 } from "../task-attempt/views.js";
-import { HeartbeatPersistThrottle } from "./heartbeat-persist-throttle.js";
+import { HeartbeatPersistThrottle } from "./claim/heartbeat-persist-throttle.js";
 import { PendingHotStateBuffer } from "./pending-hot-state-buffer.js";
 import { computeRetainedRecordIds } from "./broker-retention-reachability.js";
 import {
@@ -22,14 +22,14 @@ import {
   findLatestTaskAuditEvent,
   buildTaskDiagnosticReport,
 } from "./broker-task-diagnostics.js";
-import { normalizeWorkerRecord } from "./broker-worker-identity.js";
+import { normalizeWorkerRecord } from "./claim/broker-worker-identity.js";
 import {
   applyWorkerHeartbeatRuntimeUpdate,
   buildRegisteredWorkerRecord,
   normalizeWorkerRegistrationCapabilities,
   workerHeartbeatRequestFromRegistration,
   workerRegistrationMateriallyChanges,
-} from "./broker-worker-runtime.js";
+} from "./claim/broker-worker-runtime.js";
 import {
   normalizeTaskPayload,
   normalizeTaskRecord,
@@ -133,7 +133,7 @@ import {
   readBrokerArtifact,
 } from "./broker-evidence-read.js";
 import { buildCleanupDryRunPlan } from "./broker-cleanup-discovery.js";
-import { buildWorkerCapacitySummary } from "./broker-worker-capacity.js";
+import { buildWorkerCapacitySummary } from "./claim/broker-worker-capacity.js";
 import { buildCompactDiagnostics } from "./broker-compact-diagnostics.js";
 import {
   listBrokerWorkerViews,
@@ -156,8 +156,8 @@ import type { FinalizerVerdictEnforcement } from "./finalizer-verdict-admission.
 import type { FinalizerKeyring } from "a2a-attestation";
 import * as taskAdmission from "./broker-task-admission.js";
 import type { TaskAdmissionContext } from "./broker-task-admission.js";
-import * as staleTaskRequeue from "./broker-stale-task-requeue.js";
-import type { StaleTaskRequeueContext } from "./broker-stale-task-requeue.js";
+import * as staleTaskRequeue from "./claim/broker-stale-task-requeue.js";
+import type { StaleTaskRequeueContext } from "./claim/broker-stale-task-requeue.js";
 import * as proposalWrite from "./broker-proposal-write.js";
 import * as taskApproval from "./broker-task-approval.js";
 import * as taskCancellation from "./execution/broker-task-cancellation.js";
@@ -286,15 +286,15 @@ import type {
   WorkerCapabilityCard,
   WorkerCapabilityCardQuery,
   WorkerCapabilityCardRepository,
-} from "./worker-capability-card.js";
-import { InMemoryWorkerCapabilityCardRepository } from "./worker-capability-card.js";
+} from "./claim/worker-capability-card.js";
+import { InMemoryWorkerCapabilityCardRepository } from "./claim/worker-capability-card.js";
 import {
   deleteBrokerCapabilityProfile,
   listBrokerCapabilityProfiles,
   readBrokerCapabilityProfile,
   registerDefaultBrokerCapabilityProfile,
   storeBrokerCapabilityProfile,
-} from "./broker-capability-profiles.js";
+} from "./claim/broker-capability-profiles.js";
 import type {
   ApplyProposalRequest,
   ArtifactRecord,
@@ -349,7 +349,7 @@ import type {
 import {
   evaluateWorkerOnboarding,
   resourceAwareOnboardingFromMetadata,
-} from "./resource-aware-worker-policy.js";
+} from "./claim/resource-aware-worker-policy.js";
 
 import { BrokerError, REQUEUE_EXHAUSTED_ERROR_CODE, type BrokerErrorCode } from "./broker-error.js";
 import { canonicalJsonString } from "../shared-state-idempotency-gate-v1.js";

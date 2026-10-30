@@ -6,7 +6,7 @@
 //
 // Touches only its own map plus the pure pruneMapEntries helper, so it is cleanly
 // separable from the broker.
-import { pruneMapEntries } from "./broker-retention-selectors.js";
+import { pruneMapEntries } from "../broker-retention-selectors.js";
 
 export class HeartbeatPersistThrottle {
   private readonly lastPersistedAtMs = new Map<string, number>();

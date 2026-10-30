@@ -9,7 +9,7 @@ import type {
   WorkerCapabilities,
   WorkerIdentityWarning,
   WorkerRecord,
-} from "./types.js";
+} from "../types.js";
 
 interface ChurnRecord {
   fingerprint: string;

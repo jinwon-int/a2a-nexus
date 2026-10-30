@@ -258,7 +258,7 @@ Hermes workers must comply with the `mobilealpha-hermes` preset policy:
 - `maxConcurrent` ≤ 2
 
 See [resource-aware-worker-policy.md](resource-aware-worker-policy.md) and
-`src/core/resource-aware-worker-policy.ts` for full details.
+`src/core/claim/resource-aware-worker-policy.ts` for full details.
 
 ## Credential Rotation
 
@@ -280,7 +280,7 @@ Hermes/native worker contract tests are in:
 | `src/server.test.ts` | End-to-end HTTP poll + evidence flow (`server accepts a broker-agnostic Hermes-style worker poll and evidence flow`) |
 | `src/core/broker.test.ts` | Capability metadata preservation, stale/offline mobile health, redacted evidence |
 | `src/core/worker.test.ts` | Daemon-level Hermes worker env variables and registration |
-| `src/core/resource-aware-worker-policy.test.ts` | GO/NO-GO onboarding for mobilealpha/Hermes workers |
+| `src/core/claim/resource-aware-worker-policy.test.ts` | GO/NO-GO onboarding for mobilealpha/Hermes workers |
 
 ## Related
 

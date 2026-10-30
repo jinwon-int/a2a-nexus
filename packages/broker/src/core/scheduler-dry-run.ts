@@ -8,7 +8,7 @@ import type {
 import {
   type WorkerAssignmentRole,
   type WorkerCapabilityCard,
-} from "./worker-capability-card.js";
+} from "./claim/worker-capability-card.js";
 
 // ── Scheduling intent ───────────────────────────────────────────────────────
 

@@ -39,7 +39,7 @@
 | 보류 상태의 의미 중첩 | `packages/broker/src/core/types.ts:43` `TaskStatus`, :52–:55 주석 | `blocked` 는 "operator 승인 대기로 parking" 이라는 단일 의미만 정의됨 — 실행 금지 자리표시자 보류와 구분하는 상태/플래그 없음 |
 | 실행 모드 초안 | [`operator-approval-request.md:59`–`:62` @ `d90a5ede`](https://github.com/jinwon-int/a2a-nexus/blob/d90a5edea11e39a2123fc169a8866c6521816cef/packages/broker/docs/operator-approval-request.md#L59-L62) (#2453 4단계에서 문서·CLI 폐기, 고정 커밋으로 인용) | `autonomous` / `operator_notify` / `operator_approval_gated` / `operator_review_gated` (source-only 초안) |
 | 승인 기록 스펙 | `docs/specs/approval-record.md`, `fixtures/approvals/approval-record.schema.json` | `approverRole: const "operator"`, `action` enum 19종 |
-| 역할 라벨 | `packages/broker/src/core/types.ts:2` `A2APartyRole` | `hub`·`operator`·`orchestrator` 등 8종. 브로커 내부 서비스 actor 도 `operator` 라벨을 쓴다(예: `broker-stale-task-requeue.ts:196`, `delegated-runtime.ts:264`, 둘 다 cancel 경로) — 라벨만으로 사람/에이전트를 구분할 수 없다는 관찰을 보강 |
+| 역할 라벨 | `packages/broker/src/core/types.ts:2` `A2APartyRole` | `hub`·`operator`·`orchestrator` 등 8종. 브로커 내부 서비스 actor 도 `operator` 라벨을 쓴다(예: `claim/broker-stale-task-requeue.ts:236`, `delegated-runtime.ts:264`, 둘 다 cancel 경로) — 라벨만으로 사람/에이전트를 구분할 수 없다는 관찰을 보강 |
 
 ### 2.1 Phase 0 조사 결과 (T2 브로커, 2026-10-05 KST, read-only)
 

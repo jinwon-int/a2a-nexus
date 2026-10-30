@@ -1,4 +1,4 @@
-import type { A2AExchangeIntent, WorkerView } from "./types.js";
+import type { A2AExchangeIntent, WorkerView } from "../types.js";
 import {
   createDefaultCapabilityCard,
   queryWorkerCapabilityCards,

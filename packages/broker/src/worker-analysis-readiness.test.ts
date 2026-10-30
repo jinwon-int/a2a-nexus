@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { createWorkerConfigFromEnv, probeAnalysisArtifactReadiness } from "./worker.js";
 import { probeAnalysisHarnessPreflight, withAnalysisProbeMetadata } from "./workers/worker-metadata.js";
 import { isWorkerSubstantiveAnalysisReady, workerAnalysisAdapterMismatch } from "./core/broker-worker-status.js";
-import { buildWorkerCapacitySummary } from "./core/broker-worker-capacity.js";
+import { buildWorkerCapacitySummary } from "./core/claim/broker-worker-capacity.js";
 import type { WorkerRecord } from "./core/types.js";
 
 const BASE_ENV = {

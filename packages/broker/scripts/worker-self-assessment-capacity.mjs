@@ -6,7 +6,7 @@ import {
   buildA2AWorkerSelfAssessmentCapacity,
   extractA2AWorkerSelfAssessmentCapacityInput,
   renderA2AWorkerSelfAssessmentCapacityMarkdown,
-} from "../dist/core/worker-self-assessment-capacity.js";
+} from "../dist/core/claim/worker-self-assessment-capacity.js";
 
 function readOption(argv, name) {
   const inline = argv.find((arg) => arg.startsWith(name + "="));

@@ -1,4 +1,4 @@
-import { isRecord } from "./value-guards.js";
+import { isRecord } from "../value-guards.js";
 import { createHash } from "node:crypto";
 
 import type {
@@ -6,7 +6,7 @@ import type {
   A2AWorkerSubagentTaskProfile,
   A2AWorkerSubagentPolicyInput,
 } from "a2a-attestation";
-import { numberValue, optionalBoolean, optionalString } from "./value-text.js";
+import { numberValue, optionalBoolean, optionalString } from "../value-text.js";
 
 export interface A2AWorkerSelfAssessmentCapacityInput {
   now?: string;

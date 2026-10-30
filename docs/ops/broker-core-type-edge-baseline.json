@@ -29,7 +29,7 @@
     },
     {
       "from": "broker-contracts.ts",
-      "to": "worker-capability-card.ts"
+      "to": "claim/worker-capability-card.ts"
     },
     {
       "from": "broker-listener-registry.ts",

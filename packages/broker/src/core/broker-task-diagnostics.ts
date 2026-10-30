@@ -25,7 +25,7 @@ import { classifySameSourceRedispatch } from "../worker-review.js";
 // The requeue-reason rule belongs to the claim domain and lives beside the
 // stale-task requeue engine (#2453 Step 0); re-exported here so existing
 // importers keep their specifier.
-export { getTaskRequeueReason } from "./broker-stale-task-requeue.js";
+export { getTaskRequeueReason } from "./claim/broker-stale-task-requeue.js";
 
 export function collectThreadMessageIds(
   messages: A2AExchangeMessageRecord[],

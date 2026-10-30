@@ -6,7 +6,7 @@ This is a validation-first, additive registry shape for worker discovery. It doe
 
 ## Shape source
 
-The TypeScript shape and checker live in `src/core/worker-capability-card.ts`:
+The TypeScript shape and checker live in `src/core/claim/worker-capability-card.ts`:
 
 - `WorkerCapabilityCard` is the registry record.
 - `createWorkerCapabilityCard(worker, options)` projects a safe card from a `WorkerView` without copying raw `metadata`, `brokerUrl`, private host hints, or secrets.
