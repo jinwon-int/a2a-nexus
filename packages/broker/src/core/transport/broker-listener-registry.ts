@@ -10,7 +10,7 @@ import type {
   BrokerProfilingSample,
   BrokerStateChange,
   BrokerStateListener,
-} from "./broker.js";
+} from "../broker.js";
 
 export class BrokerListenerRegistry {
   private readonly stateListeners = new Set<BrokerStateListener>();

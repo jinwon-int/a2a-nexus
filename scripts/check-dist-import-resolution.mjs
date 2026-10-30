@@ -188,8 +188,8 @@ export const CORE_PATH_CONSUMERS = {
   'test/conformance/check-trace-propagation.mjs': ['dist/core/broker.js'],
   'test/conformance/lib/ensure-built.mjs': ['dist/core/broker.js', 'dist/core/store.js'],
   // Source imports of the requester-role contract (not compiled output).
-  'scripts/a2a-dispatch-round.mjs': ['src/core/requester-role-contract.mjs'],
-  'scripts/lib/task-assign-entrypoint.mjs': ['src/core/requester-role-contract.mjs'],
+  'scripts/a2a-dispatch-round.mjs': ['src/core/transport/requester-role-contract.mjs'],
+  'scripts/lib/task-assign-entrypoint.mjs': ['src/core/transport/requester-role-contract.mjs'],
   // Coverage floors keyed by compiled path (data).
   'scripts/check-promotion-capstone-conformance.mjs': ['dist/core/evidence-retrieval/release-evidence.js'],
   'packages/broker/scripts/coverage-baseline-report.mjs': ['dist/core/evidence-retrieval/release-evidence.js', 'dist/core/evidence-retrieval/release-evidence.test.js'],

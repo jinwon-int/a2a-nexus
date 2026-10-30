@@ -1683,7 +1683,7 @@ process.stdout.write(JSON.stringify({
   status: "pr_opened",
   prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/9999",
   branch: "h2-budget-should-not-run",
-  filesChanged: ["packages/broker/src/core/broker-exchange-task-decision.ts"],
+  filesChanged: ["packages/broker/src/core/transport/broker-exchange-task-decision.ts"],
   tests: ["not expected to run"]
 }) + "\\n");
 `);
@@ -1697,7 +1697,7 @@ process.stdout.write(JSON.stringify({
         issueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/1348",
         executionMode: "hybrid-subagent",
         subagentBudget: { max: 0, remaining: 0 },
-        declaredScope: { paths: ["packages/broker/src/core/broker-exchange-task-decision.ts"] },
+        declaredScope: { paths: ["packages/broker/src/core/transport/broker-exchange-task-decision.ts"] },
       },
     }), {
       PATH: process.env.PATH,
@@ -1737,7 +1737,7 @@ process.stdout.write(JSON.stringify({
         issueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/1348",
         executionMode: "hybrid-subagent",
         subagentBudget: { max: 2, remaining: 1 },
-        declaredScope: { paths: ["packages/broker/src/core/broker-exchange-task-decision.ts"] },
+        declaredScope: { paths: ["packages/broker/src/core/transport/broker-exchange-task-decision.ts"] },
       },
     }), {
       PATH: process.env.PATH,
@@ -1767,7 +1767,7 @@ process.stdout.write(JSON.stringify({
   status: "pr_opened",
   prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/9996",
   branch: "h2-happy-path",
-  filesChanged: ["packages/broker/src/core/broker-exchange-task-decision.ts"],
+  filesChanged: ["packages/broker/src/core/transport/broker-exchange-task-decision.ts"],
   tests: ["hybrid happy path runner invoked"]
 }) + "\\n");
 `);
@@ -1781,7 +1781,7 @@ process.stdout.write(JSON.stringify({
         issueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/1348",
         executionMode: "hybrid-subagent",
         subagentBudget: { max: 2, remaining: 1 },
-        declaredScope: { paths: ["packages/broker/src/core/broker-exchange-task-decision.ts"] },
+        declaredScope: { paths: ["packages/broker/src/core/transport/broker-exchange-task-decision.ts"] },
       },
     }), {
       PATH: process.env.PATH,
@@ -1792,7 +1792,7 @@ process.stdout.write(JSON.stringify({
     assert.equal(result.error, undefined);
     assert.equal(result.result?.output?.prUrl, "https://github.com/jinwon-int/a2a-nexus/pull/9996");
     assert.equal(existsSync(invocation), true, "in-budget H2 tasks should invoke the runner");
-    assert.deepEqual(result.result?.output?.filesChanged, ["packages/broker/src/core/broker-exchange-task-decision.ts"]);
+    assert.deepEqual(result.result?.output?.filesChanged, ["packages/broker/src/core/transport/broker-exchange-task-decision.ts"]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1873,7 +1873,7 @@ process.stdout.write(JSON.stringify({
         issueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/1376",
         executionMode: "hybrid-subagent",
         subagentBudget: { max: 2, remaining: 1 },
-        declaredScope: { paths: ["packages/broker/src/core/broker-exchange-task-decision.ts"] },
+        declaredScope: { paths: ["packages/broker/src/core/transport/broker-exchange-task-decision.ts"] },
       },
     }), {
       PATH: process.env.PATH,
@@ -1899,7 +1899,7 @@ import { join, dirname } from "node:path";
 import { spawnSync } from "node:child_process";
 const wd = mkdtempSync(join(tmpdir(), "h2-runner-worktree-"));
 spawnSync("git", ["-C", wd, "init", "-q"], { encoding: "utf8" });
-const inScope = join(wd, "packages/broker/src/core/broker-exchange-task-decision.ts");
+const inScope = join(wd, "packages/broker/src/core/transport/broker-exchange-task-decision.ts");
 mkdirSync(dirname(inScope), { recursive: true });
 writeFileSync(inScope, "// in-scope change\\n");
 process.stdout.write(JSON.stringify({
@@ -1908,7 +1908,7 @@ process.stdout.write(JSON.stringify({
   prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/9993",
   branch: "h2-writepoint-ok",
   workDir: wd,
-  filesChanged: ["packages/broker/src/core/broker-exchange-task-decision.ts"],
+  filesChanged: ["packages/broker/src/core/transport/broker-exchange-task-decision.ts"],
   tests: ["in-scope write-point readback passes"]
 }) + "\\n");
 `);
@@ -1922,7 +1922,7 @@ process.stdout.write(JSON.stringify({
         issueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/1376",
         executionMode: "hybrid-subagent",
         subagentBudget: { max: 2, remaining: 1 },
-        declaredScope: { paths: ["packages/broker/src/core/broker-exchange-task-decision.ts"] },
+        declaredScope: { paths: ["packages/broker/src/core/transport/broker-exchange-task-decision.ts"] },
       },
     }), {
       PATH: process.env.PATH,

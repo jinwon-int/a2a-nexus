@@ -4,7 +4,7 @@ import { BrokerError } from "../broker-error.js";
 import { buildLiveApprovalConsumptionKey, type LiveApprovalScope } from "./runtime-safety-gates.js";
 import type { BrokerStateStore } from "../store-contracts.js";
 import type { CreateTaskRequest, WorkerView } from "../types.js";
-import type { RequesterIdentity } from "../request-security.js";
+import type { RequesterIdentity } from "../transport/request-security.js";
 
 export const LIVE_TASK_MODE = "promote-to-live-v1";
 export const LIVE_OPERATION_SCHEMA = "a2a.live-operation.v1";

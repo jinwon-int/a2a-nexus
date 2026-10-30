@@ -13,7 +13,7 @@ import test from "node:test";
 
 import { InMemoryA2ABroker } from "../core/broker.js";
 import type { BrokerStateStore } from "../core/store.js";
-import { sha256Hex, parsePeerCredentialRegistry } from "../core/request-security.js";
+import { sha256Hex, parsePeerCredentialRegistry } from "../core/transport/request-security.js";
 import { buildCrossBrokerSenderProof, CrossBrokerNonceCache, type CrossBrokerTrustAnchors } from "../a2a/cross-broker-sender-proof.js";
 import { handleConversationRelayRoutesIfMatched } from "./conversation-relay-routes.js";
 

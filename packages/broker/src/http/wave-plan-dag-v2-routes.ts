@@ -18,7 +18,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { BrokerError } from "../core/broker-error.js";
 import type { InMemoryA2ABroker } from "../core/broker.js";
-import { assertRequesterHasRole, type RequesterIdentity } from "../core/request-security.js";
+import { assertRequesterHasRole, type RequesterIdentity } from "../core/transport/request-security.js";
 import { sendJson } from "./response.js";
 
 const WAVE_PLAN_DAG_V2_PREFIX = "/wave-plan-dag-v2/";

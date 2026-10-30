@@ -8,7 +8,7 @@ import type { ServerResponse } from "node:http";
 
 import { InMemoryA2ABroker } from "../core/broker.js";
 import { SqliteBrokerStateStore, type BrokerStateStore } from "../core/store.js";
-import { assertRequesterHasRole, type RequesterIdentity } from "../core/request-security.js";
+import { assertRequesterHasRole, type RequesterIdentity } from "../core/transport/request-security.js";
 import { projectHotTableGrowth, type HotTableGrowthProjection } from "../core/observability/hot-table-growth.js";
 import { buildAlertScan } from "./dashboard-response.js";
 import { numberQueryParam } from "./read-path-filters.js";

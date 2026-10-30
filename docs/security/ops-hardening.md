@@ -463,7 +463,7 @@ review-lineage.report
 
 ### Key provisioning and rotation requirements (no live secrets)
 
-Refer to `packages/broker/src/core/request-security.ts` for the `A2AHttpSignatureKeyRecord`
+Refer to `packages/broker/src/core/transport/request-security.ts` for the `A2AHttpSignatureKeyRecord`
 schema. A key registry JSON file contains one record per `keyid`:
 
 ```json

@@ -16,7 +16,7 @@ import {
   assertRequesterMatchesParty,
   type RequesterIdentity,
   type VerifiedApproverCredential,
-} from "../core/request-security.js";
+} from "../core/transport/request-security.js";
 import type { ApproverRoleBindingMode } from "../server-contracts.js";
 import type {
   A2APartyRole,

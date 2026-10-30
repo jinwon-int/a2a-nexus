@@ -18,7 +18,7 @@ import {
   CLASS_PREFLIGHT_EXCLUDED,
   A2A_REQUESTER_ROLES,
 } from './a2a-dispatch-round.mjs';
-import { A2A_REQUESTER_ROLES as BROKER_REQUESTER_ROLES } from '../packages/broker/src/core/requester-role-contract.mjs';
+import { A2A_REQUESTER_ROLES as BROKER_REQUESTER_ROLES } from '../packages/broker/src/core/transport/requester-role-contract.mjs';
 import { RECORD_SCHEMA } from './lib/review-lineage-client.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

@@ -13,7 +13,7 @@ import {
   assertRequesterMatchesParty,
   type A2AWorkerRouteScope,
   type RequesterIdentity,
-} from "../core/request-security.js";
+} from "../core/transport/request-security.js";
 import type { RegisterWorkerRequest, WorkerHeartbeatRequest } from "../core/types.js";
 import type { A2AHttpSignatureVerifiedWorker } from "../server.js";
 import { recordWorkerHeartbeatPhase, recordWorkerRegisterPhase } from "../worker-phase-timing.js";

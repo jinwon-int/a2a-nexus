@@ -5,7 +5,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign, type KeyObject } from "node:crypto";
-import { buildA2AHttpSignatureBase, type A2AHttpSignatureKeyRegistry } from "./core/request-security.js";
+import { buildA2AHttpSignatureBase, type A2AHttpSignatureKeyRegistry } from "./core/transport/request-security.js";
 import { resolveApproverRoleBindingMode } from "./startup-security.js";
 import { jsonHeaders, registerTestWorker, startTestServer } from "./server-test-helpers.js";
 

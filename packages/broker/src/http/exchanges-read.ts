@@ -6,7 +6,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
-import { assertRequesterMatchesParty, type RequesterIdentity } from "../core/request-security.js";
+import { assertRequesterMatchesParty, type RequesterIdentity } from "../core/transport/request-security.js";
 import { SqliteBrokerStateStore, type BrokerStateStore } from "../core/store.js";
 import type { A2AExchangeMessageRecord, A2AExchangeMessageRequest, A2AExchangeRequest, A2AExchangeState } from "../core/types.js";
 import { readJson } from "./body.js";

@@ -21,7 +21,7 @@ import {
   assertRequesterHasRole,
   type A2AWorkerRouteScope,
   type RequesterIdentity,
-} from "../core/request-security.js";
+} from "../core/transport/request-security.js";
 import type { A2AHttpSignatureVerifiedWorker } from "../server.js";
 import { readJson } from "./body.js";
 import { sendJson } from "./response.js";

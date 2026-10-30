@@ -15,7 +15,7 @@ import {
   peerHasHandoffScope,
   resolvePeerFromRequest,
   sha256Hex,
-} from "./request-security.js";
+} from "./transport/request-security.js";
 
 // #2386: remove every temp dir this file creates.
 const trackedTempDirs: string[] = [];

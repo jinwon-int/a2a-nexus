@@ -6,9 +6,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { InMemoryA2ABroker } from "./broker.js";
+import { InMemoryA2ABroker } from "../broker.js";
 import { TASK_RESULT_REPLY_MAX_BYTES, buildTaskResultReplyEnvelope, taskReferencesOf } from "./broker-conversation-task-bridge.js";
-import { BrokerError } from "./broker-error.js";
+import { BrokerError } from "../broker-error.js";
 
 const WORKER_A = { kind: "worker", id: "worker-a", homeBrokerId: "broker-alpha" };
 const WORKER_B = { kind: "worker", id: "worker-b", homeBrokerId: "broker-alpha" };

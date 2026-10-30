@@ -12,7 +12,7 @@ import {
   assertRequesterMatchesParty,
   type A2AWorkerRouteScope,
   type RequesterIdentity,
-} from "../core/request-security.js";
+} from "../core/transport/request-security.js";
 import type { CreateTaskRequest, TaskRecord } from "../core/types.js";
 import {
   leaseGateAuthorityOrThrow,

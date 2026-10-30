@@ -62,7 +62,7 @@ import {
   classifyEndpointGroup,
   classifyRequestRoute,
 } from "./route-classification.js";
-import { classifyRateLimitBucket } from "../core/request-security.js";
+import { classifyRateLimitBucket } from "../core/transport/request-security.js";
 import { createDialecticRouteEntries } from "./dialectic-routes.js";
 
 /**

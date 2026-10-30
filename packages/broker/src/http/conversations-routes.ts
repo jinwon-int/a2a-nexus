@@ -13,7 +13,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
-import { assertRequesterMatchesParty, type RequesterIdentity } from "../core/request-security.js";
+import { assertRequesterMatchesParty, type RequesterIdentity } from "../core/transport/request-security.js";
 import type { BrokerStateStore } from "../core/store.js";
 import { awaitDurablePersistenceAck } from "./error-mapping.js";
 import { readJson } from "./body.js";
@@ -108,7 +108,7 @@ export async function handleConversationRoutesIfMatched(ctx: ConversationRoutesC
     if (!conversation) throw new BrokerError("not_found", "conversation not found");
     // Participant read (T6) via the domain guard: reuse the inbox poll with a
     // digest-only summary projection instead of exposing everything blindly.
-    const { assertConversationParticipant } = await import("../core/broker-conversation.js");
+    const { assertConversationParticipant } = await import("../core/transport/broker-conversation.js");
     assertConversationParticipant(conversation, actor, "read");
     sendJson(ctx.res, 200, {
       conversationId: conversation.conversationId,
@@ -128,7 +128,7 @@ export async function handleConversationRoutesIfMatched(ctx: ConversationRoutesC
     const actor = parseActorParam(ctx.url.searchParams.get("actor"));
     const conversation = ctx.broker.getConversation(conversationId);
     if (!conversation) throw new BrokerError("not_found", "conversation not found");
-    const { assertConversationParticipant } = await import("../core/broker-conversation.js");
+    const { assertConversationParticipant } = await import("../core/transport/broker-conversation.js");
     assertConversationParticipant(conversation, actor, "read");
     // Participant read exposes the queue matrix only — message bodies stay
     // behind the inbox poll (digest-first summary here).

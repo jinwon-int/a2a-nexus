@@ -12,13 +12,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
 import type { BrokerStateStore } from "../core/store.js";
-import { assertRequesterHasRole, type RequesterIdentity } from "../core/request-security.js";
+import { assertRequesterHasRole, type RequesterIdentity } from "../core/transport/request-security.js";
 import {
   assertPeerHandoffScope,
   resolvePeerFromRequest,
   type PeerCredentialRegistry,
   type PeerHandoffScopeMode,
-} from "../core/request-security.js";
+} from "../core/transport/request-security.js";
 import {
   verifyCrossBrokerSenderProof,
   type CrossBrokerNonceCache,

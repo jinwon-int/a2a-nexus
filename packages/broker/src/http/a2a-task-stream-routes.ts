@@ -8,7 +8,7 @@ import {
   assertRequesterCanSubscribeToTask,
   type A2AWorkerRouteScope,
   type RequesterIdentity,
-} from "../core/request-security.js";
+} from "../core/transport/request-security.js";
 import type { A2AHttpSignatureVerifiedWorker } from "../server.js";
 import { assertRequesterCanSubscribeToWorkerAssignments } from "../request-parsers.js";
 import {

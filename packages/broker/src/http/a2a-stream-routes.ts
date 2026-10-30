@@ -7,7 +7,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { InMemoryA2ABroker } from "../core/broker.js";
-import { assertRequesterHasRole, type RequesterIdentity } from "../core/request-security.js";
+import { assertRequesterHasRole, type RequesterIdentity } from "../core/transport/request-security.js";
 import type {
   BufferedOperatorEvent,
   OperatorReplayWindow,

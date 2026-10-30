@@ -19,7 +19,7 @@
 // distinction (spec §field rules): bridge replies carry taskId; pure message
 // turns do not touch task lifecycle.
 
-import { BrokerError } from "./broker-error.js";
+import { BrokerError } from "../broker-error.js";
 import type { A2AConversationState } from "./broker-conversation.js";
 
 export const TASK_RESULT_REPLY_MAX_BYTES = 2048;

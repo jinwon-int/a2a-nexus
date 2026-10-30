@@ -26,6 +26,8 @@
 > [Completion move](#completion-move).
 > **Observability move implemented** (split-order row 7, first of three
 > domains): see [Observability move](#observability-move).
+> **Transport move implemented** (split-order row 7, second of three):
+> see [Transport move](#transport-move).
 
 ## Summary
 
@@ -989,6 +991,40 @@ quotes `core/task-stats` inside historical round evidence text.
 **Results:** 175 core modules (observability 9), 96 map entries. Value
 violations stay at 0 and type-only at 23 = baseline. No observability module
 is in the worker dist closure.
+
+## Transport move
+
+The second of row 7's three domains.
+
+**Moved:** 17 modules and 5 tests to `packages/broker/src/core/transport/`,
+plus the plain-JS `requester-role-contract.mjs`, which moves together with
+`request-security`.
+
+- The `.mjs` is not a `.ts` module. The import rewriter does not see `.mjs`
+  specifiers, so it was moved by hand.
+- `request-security.ts` and its test import it as `./requester-role-contract.mjs`.
+  They move with it, so that path stays the same.
+- The three root scripts that import its **source** path were updated by hand:
+  `scripts/a2a-dispatch-round.mjs` (+ test) and
+  `scripts/lib/task-assign-entrypoint.mjs`. So were the two
+  `CORE_PATH_CONSUMERS` entries.
+- `allowJs` makes `tsc` emit it to `dist/core/transport/`.
+
+**Changes:**
+
+- 112 specifiers rewritten.
+- 21 path strings updated, plus 2 bare `core/…` comments by hand.
+- 17 map entries removed; 6 type-baseline entries re-keyed.
+- The `delegated-approval-matrix.md` citation `request-security.ts:514` is
+  still the right line.
+
+**Results:** 175 core modules (transport 17), 79 map entries. Value
+violations stay at 0 and type-only at 23 = baseline.
+
+**Worker artifact:** `dist/core/request-security.js` is in the worker dist
+closure and moves to `dist/core/transport/`. Like the dispatch and completion
+moves, it ships in one pack-built artifact with the next regular worker
+deploy.
 
 ## Appendix: survey script
 

@@ -69,7 +69,7 @@ import path from 'node:path';
 
 import {
   A2A_REQUESTER_ROLES,
-} from '../../packages/broker/src/core/requester-role-contract.mjs';
+} from '../../packages/broker/src/core/transport/requester-role-contract.mjs';
 import {
   CLASS_ACCEPTED_UNCONFIRMED,
   CLASS_ALREADY_EXISTS,

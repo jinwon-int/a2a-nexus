@@ -6,7 +6,7 @@ import {
 } from "node:crypto";
 import test from "node:test";
 
-import { buildA2AHttpSignatureBase } from "./core/request-security.js";
+import { buildA2AHttpSignatureBase } from "./core/transport/request-security.js";
 import { SqliteBrokerStateStore } from "./core/store.js";
 import { intentHash } from "a2a-review-lifecycle";
 import {

@@ -4,7 +4,7 @@ import { specTaskStateName } from "../a2a/json-rpc.js";
 import { projectBrokerTask } from "../a2a/task-projection.js";
 import { InMemoryA2ABroker } from "../core/broker.js";
 import type { TaskUpdate } from "../core/broker.js";
-import type { TaskStatusEvent, TerminalTaskEvent } from "../core/task-events.js";
+import type { TaskStatusEvent, TerminalTaskEvent } from "../core/transport/task-events.js";
 import { TERMINAL_TASK_STATUSES, type TaskRecord, type TaskStatus } from "../core/types.js";
 
 import {

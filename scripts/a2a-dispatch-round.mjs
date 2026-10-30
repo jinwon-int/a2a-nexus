@@ -31,7 +31,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { A2A_REQUESTER_ROLES } from '../packages/broker/src/core/requester-role-contract.mjs';
+import { A2A_REQUESTER_ROLES } from '../packages/broker/src/core/transport/requester-role-contract.mjs';
 import { validateRetrievalManifestBlock } from '../packages/broker/src/retrieval/web-retrieval-contract.mjs';
 import { laneBinding } from './lib/review-lineage-client.mjs';
 

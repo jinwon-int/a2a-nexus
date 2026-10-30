@@ -20,7 +20,7 @@
  *   edge secret resolves to undefined (createBrokerServer, ~L357), and
  *   validateBrokerStartupSecurity (packages/broker/src/startup-security.ts L42)
  *   permits an unsecured bind on a loopback host. assertEdgeSecret
- *   (packages/broker/src/core/request-security.ts L748-765) returns early when
+ *   (packages/broker/src/core/transport/request-security.ts L748-765) returns early when
  *   the expected secret is undefined. Therefore the documented curl in §4 with
  *   NO x-a2a-edge-secret header is correct, and this doctest submits with no
  *   secret -- faithful to the docs. No deviation.

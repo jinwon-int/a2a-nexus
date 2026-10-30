@@ -1,4 +1,4 @@
-import type { A2AExchangeIntent, SettledTaskStatus, TaskOrigin, TaskStatus } from "./types.js";
+import type { A2AExchangeIntent, SettledTaskStatus, TaskOrigin, TaskStatus } from "../types.js";
 
 /**
  * Task lifecycle event kinds emitted by the broker. Mirrors the task-scoped

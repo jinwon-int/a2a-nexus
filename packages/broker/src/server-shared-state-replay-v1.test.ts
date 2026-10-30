@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 
 import { createBrokerServer } from "./server.js";
-import { buildA2AHttpSignatureBase } from "./core/request-security.js";
+import { buildA2AHttpSignatureBase } from "./core/transport/request-security.js";
 import { createPrivateKey, sign } from "node:crypto";
 import {
   createInMemoryStateStore,

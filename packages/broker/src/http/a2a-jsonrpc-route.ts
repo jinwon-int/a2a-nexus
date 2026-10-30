@@ -8,7 +8,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { InMemoryA2ABroker } from "../core/broker.js";
-import type { RequesterIdentity } from "../core/request-security.js";
+import type { RequesterIdentity } from "../core/transport/request-security.js";
 import type { AgentCard } from "../a2a/agent-card.js";
 import { PushNotificationConfigStore } from "../a2a/push-notification-config.js";
 import { PeerStatusService } from "../a2a/peer-status.js";

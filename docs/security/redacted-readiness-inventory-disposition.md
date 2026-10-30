@@ -33,8 +33,8 @@ Scope: redacted metadata only; this document does **not** include matched values
 | `packages/broker/scripts/public-readiness-scan.test.mjs` | `github-token-shape`=1 | Test fixture metadata; keep synthetic/redacted. |
 | `packages/broker/scripts/round-coordinator-closeout-dry-run.test.mjs` | `github-token-shape`=2 | Test fixture metadata; keep synthetic/redacted. |
 | `packages/broker/src/core/completion/cross-broker-terminal-brief.test.ts` | `absolute-private-path`=1 | Test fixture metadata; keep synthetic/redacted. |
-| `packages/broker/src/core/request-security.test.ts` | `private-topology-term`=1 | Test fixture metadata; keep synthetic/redacted. |
-| `packages/broker/src/core/task-events.test.ts` | `absolute-private-path`=5 | Test fixture metadata; keep synthetic/redacted. |
+| `packages/broker/src/core/transport/request-security.test.ts` | `private-topology-term`=1 | Test fixture metadata; keep synthetic/redacted. |
+| `packages/broker/src/core/transport/task-events.test.ts` | `absolute-private-path`=5 | Test fixture metadata; keep synthetic/redacted. |
 | `packages/broker/src/github/handoff-receiver.test.ts` | `github-token-shape`=1 | Test fixture metadata; keep synthetic/redacted. |
 | `packages/broker/src/openclaw-handler-artifact.test.ts` | `private-topology-term`=3 | Test fixture metadata; keep synthetic/redacted. |
 | `packages/docker-runner/docs/openclaw-cli-provisioning.md` | `absolute-private-path`=1 | Documentation/protocol metadata; keep historical context with current-state caveats. |
