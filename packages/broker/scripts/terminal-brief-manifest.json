@@ -14,18 +14,6 @@
       "script": "command-center-closeout-checklist.mjs",
       "build": false
     },
-    "rehearsal_manifest": {
-      "script": "broker-rehearsal-manifest.mjs",
-      "build": false
-    },
-    "source_public_approval_rehearsal": {
-      "script": "source-public-approval-rehearsal.mjs",
-      "build": true
-    },
-    "source_public_execution_orchestrator": {
-      "script": "source-public-execution-orchestrator.mjs",
-      "build": true
-    },
     "terminal_brief_activation_report": {
       "script": "terminal-brief-activation-report.mjs",
       "build": false
@@ -44,10 +32,6 @@
     },
     "terminal_brief_approval_request": {
       "script": "terminal-brief-approval-request.mjs",
-      "build": true
-    },
-    "terminal_brief_auto_closeout_dryrun_runner": {
-      "script": "terminal-brief-auto-closeout-dryrun-runner.mjs",
       "build": true
     },
     "terminal_brief_auto_closeout_planner": {

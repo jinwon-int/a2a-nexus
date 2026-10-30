@@ -16,9 +16,9 @@ build` runs first (`build: true`).
 
 | npm entry | tools | manifest | runner |
 |---|---|---|---|
-| `terminal_brief` | 59 | `scripts/terminal-brief-manifest.json` | `scripts/terminal-brief.mjs` |
-| `orchestration` | 21 | `scripts/orchestration-manifest.json` | `scripts/orchestration.mjs` |
-| `rollout` | 22 | `scripts/rollout-preflight-manifest.json` | `scripts/rollout.mjs` |
+| `terminal_brief` | 18 | `scripts/terminal-brief-manifest.json` | `scripts/terminal-brief.mjs` |
+| `orchestration` | 19 | `scripts/orchestration-manifest.json` | `scripts/orchestration.mjs` |
+| `rollout` | 21 | `scripts/rollout-preflight-manifest.json` | `scripts/rollout.mjs` |
 
 ```bash
 npm run orchestration -- --list                 # discover valid tool names
@@ -75,9 +75,9 @@ audit in `docs/npm-scripts-inventory.md` shows no live references.
 | `reconcile_closeout` | T1 | closeout reconciliation |
 | `scripts_inventory` | T1 | npm script inventory/audit |
 | `test:drift-watch` / `refresh:drift-refs` | T1 | protocol drift watch |
-| `terminal_brief` | T2 | dispatcher, 59 tools |
-| `orchestration` | T2 | dispatcher, 21 tools |
-| `rollout` | T2 | dispatcher, 22 tools |
+| `terminal_brief` | T2 | dispatcher, 18 tools |
+| `orchestration` | T2 | dispatcher, 19 tools |
+| `rollout` | T2 | dispatcher, 21 tools |
 | `live_readiness_canary` | T3 | live broker canary |
 | `smoke:restart-recovery` | T3 | restart recovery smoke |
 | `smoke:docker-broker` / `smoke:docker-broker:fleet` | T3 | live docker smoke |
@@ -94,7 +94,6 @@ audit in `docs/npm-scripts-inventory.md` shows no live references.
 | `test:work_mode_pre_dispatch_decision` | T4 | |
 | `test:adaptive_work_mode_selector` | T4 | |
 | `test:execution-plan-draft` | T4 | |
-| `test:operator-approval-request` | T4 | |
 | `test:terminal_brief_activation_report` | T4 | |
 | `test:edge_secret_rotation_diagnostics` | T4 | |
 | `test:round_coordinator_closeout_dry_run` | T4 | |

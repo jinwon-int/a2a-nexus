@@ -183,8 +183,6 @@ export const CORE_PATH_SCAN_DIRS = ['scripts', 'scripts/lib', 'packages/broker/s
 export const CORE_PATH_CONSUMERS = {
   // DB recovery tool: template literal `${rootDir}/dist/core/store.js` in import().
   'packages/broker/scripts/export-sqlite-state.mjs': ['dist/core/store.js'],
-  // join(REPO_ROOT, "dist/core/operator-approval-request.js") in import().
-  'packages/broker/scripts/operator-approval-request.mjs': ['dist/core/operator-approval-request.js'],
   // Conformance harness: path.join(root, 'packages/broker/dist/core/...').
   'test/conformance/check-three-component-e2e.mjs': ['dist/core/store.js'],
   'test/conformance/check-trace-propagation.mjs': ['dist/core/broker.js'],

@@ -40,7 +40,6 @@
     "test:adaptive_work_mode_selector": "node --test dist/core/adaptive-work-mode-selector.test.js",
     "a2a_hybrid_worker_mode_benchmark": "node scripts/a2a-hybrid-worker-mode-benchmark.mjs",
     "test:execution-plan-draft": "node --test dist/core/complexity-execution-plan-draft.test.js",
-    "test:operator-approval-request": "node --test dist/core/operator-approval-request.test.js",
     "test:terminal_brief_activation_report": "node --test scripts/terminal-brief-activation-report.test.mjs",
     "scan:public-readiness": "node scripts/public-readiness-scan.mjs",
     "test:edge_secret_rotation_diagnostics": "node --test scripts/edge-secret-rotation-diagnostics.test.mjs",

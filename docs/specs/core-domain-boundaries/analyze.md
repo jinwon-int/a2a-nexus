@@ -11,6 +11,8 @@
 > [Owner decisions](#owner-decisions-2026-10-29).
 > **PR-0 implemented** (enforcement plus Step 0): see
 > [PR-0 implemented](#pr-0-implemented).
+> **Step 4 partly implemented** (CLI-only retirement, 6 of 8; 2 held for the
+> owner): see [Step 4: CLI-only retirement](#step-4-cli-only-retirement).
 
 ## Summary
 
@@ -681,6 +683,43 @@ move:
    reports it; run
    `node scripts/check-broker-core-dependency-isolation.mjs --lower-baseline`.
    That command refuses to write if it would add an entry.
+
+## Step 4: CLI-only retirement
+
+Owner decision #6 named eight CLI-only modules. Six are retired. Two are held
+for a fresh owner decision, because the pre-delete audit found a reference
+path that the import graph does not see (Family Wiki A2 runbook: a doc or spec
+that tells operators to run the module, or that relies on it).
+
+**Retired (6):** `broker-rehearsal-manifest`, `complexity-orchestration-dry-run`,
+`operator-approval-request`, `source-public-approval-rehearsal`,
+`source-public-execution-orchestrator`, `terminal-brief-auto-closeout-dryrun-runner`.
+Each one goes together with its test, its `packages/broker/scripts/` wrapper and
+dispatcher entry, its tool doc and its fixtures. Also removed:
+`complexity-orchestration-recommendation.mjs`, which despite its name only
+wrapped the dry-run (the runtime `complexity-orchestration-recommendation.ts`
+behind `/complexity-orchestration/recommendation` stays, per decision #4), plus
+`generate-operator-approval-request-fixtures.ts` and the
+`test:operator-approval-request` npm script.
+
+- Dispatchers: `terminal_brief` goes 22 → 18 tools and `orchestration` 21 → 19.
+- Budgets: broker npm scripts 57 → 56, core modules 181 → 175, ceremony
+  modules 21 → 16.
+- Domain map: 175 modules, with `policy-approval` 35 → 29. Value violations
+  stay at 0 and type-only at 23 (the baseline is unchanged).
+- Callers: none in `.github/`. A GitHub code search across the `jinwon-int`
+  org found no reference to these tool or file names outside a2a-nexus.
+- The `scripts/a2a-source-public-*` release-gate family and its schemas and
+  fixtures are separate code that only shares the name. They are untouched.
+- `docs/specs/delegated-approval-matrix.md` now cites the retired
+  `operator-approval-request.md` through a permalink at `d90a5ede`.
+
+**Held (2), owner decision needed:**
+
+| module | why held |
+|---|---|
+| `two-broker-safety-matrix` | `packages/broker/docs/a2a-2broker-safety-regression-readiness-matrix.md` names `node --test dist/core/two-broker-safety-matrix.test.js` as the no-live cutover GO/NO-GO gate. The module was deleted and then restored in the 2026-08-09 T2 cleanup round for exactly this reason. |
+| `orchestration-intelligence-worker-subagent-spawn-bridge` | `docs/specs/piri-lane-fanout-reuse/phase-1-mapping.md` §5 lists its test as a "must keep passing unchanged" reuse oracle. Its wrapper path is also hard-coded in the worker source-bundle lists (`hermes-a2a-analysis-bridge.mjs`, `piri-a2a-analysis-bridge.mjs`, `lib/analysis-source-bundle.mjs`), so retiring it changes worker artifacts. |
 
 ## Appendix: survey script
 
