@@ -35,7 +35,7 @@
 | 승인 필요 판정 | `packages/broker/src/core/policy.ts:140` `isTaskApprovalRequired` | `DANGEROUS_TASK_INTENTS`(:95, `apply_local_change`·`promote_to_live`·`rollback_live`) · `liveImpact` · `targetEnvironment=live` · `requiresApproval` |
 | HTTP 경로 | `packages/broker/src/http/tasks-decision-routes.ts:61` `readActorGatedBody` (이슈 원문 :99) | `enforceRequesterIdentity` 일 때만(:70) 인증 신원·hub/operator 역할 대조. 기본 on: `packages/broker/src/server.ts:343` `ENFORCE_REQUESTER_IDENTITY !== "0"` (이슈 원문 :340) |
 | 승인자 자격증명 바인딩 (#2322) | `tasks-decision-routes.ts:116` `readApproverDecisionBody`, `server.ts:349` | opt-in `A2A_APPROVER_ROLE_BINDING` = `off`(기본) \| `enforce`. `enforce` 시 서명 키 소유자 == requester, 키 레코드가 `roles` 를 명시적으로 선언해야 승인 가능 (`request-security.ts:1001`–`:1026` `a2a_signature_approver_*`) |
-| 서명 키 역할 제한 | `packages/broker/src/core/request-security.ts:514` | `a2a_signature_role_denied` — 키 레지스트리 `roles` 제한 |
+| 서명 키 역할 제한 | `packages/broker/src/core/transport/request-security.ts:514` | `a2a_signature_role_denied` — 키 레지스트리 `roles` 제한 |
 | 보류 상태의 의미 중첩 | `packages/broker/src/core/types.ts:43` `TaskStatus`, :52–:55 주석 | `blocked` 는 "operator 승인 대기로 parking" 이라는 단일 의미만 정의됨 — 실행 금지 자리표시자 보류와 구분하는 상태/플래그 없음 |
 | 실행 모드 초안 | [`operator-approval-request.md:59`–`:62` @ `d90a5ede`](https://github.com/jinwon-int/a2a-nexus/blob/d90a5edea11e39a2123fc169a8866c6521816cef/packages/broker/docs/operator-approval-request.md#L59-L62) (#2453 4단계에서 문서·CLI 폐기, 고정 커밋으로 인용) | `autonomous` / `operator_notify` / `operator_approval_gated` / `operator_review_gated` (source-only 초안) |
 | 승인 기록 스펙 | `docs/specs/approval-record.md`, `fixtures/approvals/approval-record.schema.json` | `approverRole: const "operator"`, `action` enum 19종 |

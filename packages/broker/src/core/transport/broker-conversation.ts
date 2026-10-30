@@ -23,7 +23,7 @@
 //   (T1 groundwork; JWS signing arrives with the wire slice)
 
 import { createHash, randomUUID } from "node:crypto";
-import { BrokerError } from "./broker-error.js";
+import { BrokerError } from "../broker-error.js";
 
 export const A2A_CONVERSATION_ENVELOPE_SCHEMA_VERSION = "a2a.conversation-envelope.v1";
 export const A2A_CONVERSATION_RECEIPT_SCHEMA_VERSION = "a2a.conversation-receipt.v1";
@@ -957,7 +957,7 @@ export function summarizeConversationDelivery(
 // ---------------------------------------------------------------------------
 
 import { createPrivateKey, createPublicKey, sign as workerSignCrypto, verify as workerVerifyCrypto, type KeyObject as WorkerKeyObject } from "node:crypto";
-import { base64url as jwsBase64url, algorithmForKey as jwsAlgorithmForKey } from "../a2a/cross-broker-sender-proof.js";
+import { base64url as jwsBase64url, algorithmForKey as jwsAlgorithmForKey } from "../../a2a/cross-broker-sender-proof.js";
 import { canonicalizeJson as jwsCanonicalize } from "a2a-attestation";
 
 export interface WorkerEnvelopeSignature {

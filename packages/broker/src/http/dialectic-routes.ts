@@ -13,7 +13,7 @@ import {
   assertRequesterHasRole,
   assertRequesterMatchesParty,
   type RequesterIdentity,
-} from "../core/request-security.js";
+} from "../core/transport/request-security.js";
 import type { BrokerStateStore } from "../core/store.js";
 import type { DecisionDialecticPatchV1, DecisionDialecticPhase } from "../decision-dialectic/types.js";
 import {

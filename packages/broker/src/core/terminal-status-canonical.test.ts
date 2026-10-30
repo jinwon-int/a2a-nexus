@@ -80,7 +80,7 @@ const TERMINAL_TRIPLE = /\[\s*"succeeded"\s*,\s*"failed"\s*,\s*"canceled"\s*,?\s
  */
 const ALLOWED_TERMINAL_TRIPLE_SITES: Record<string, string> = {
   "src/core/types.ts": "canonical definition of TERMINAL_TASK_STATUSES itself",
-  "src/core/task-event-stream.ts":
+  "src/core/transport/task-event-stream.ts":
     "NOTIFIABLE_TERMINAL_STATUSES gates newly minted outbox events; `blocked` must not be newly minted (legacy persisted rows still admit it via TerminalTaskEventStatus)",
   "src/core/completion/terminal-event-outbox.ts":
     "TERMINAL_TASK_EVENT_KINDS is a TaskStatusEvent kind set (event vocabulary), not a task-status gate",

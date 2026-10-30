@@ -3,7 +3,7 @@ import { isRecord } from "../value-guards.js";
 import { terminalOutboxPayloadIssueSchema } from "../store-schemas.js";
 import { SETTLED_TASK_STATUSES } from "../types.js";
 import type { SettledTaskStatus, TaskRecord, TaskStatus } from "../types.js";
-import type { TaskStatusEvent } from "../task-events.js";
+import type { TaskStatusEvent } from "../transport/task-events.js";
 import type { CrossBrokerTerminalBriefProjection } from "./cross-broker-terminal-brief.js";
 import { RoundProgressTracker, applyRoundProgressMetadata } from "./round-progress-tracker.js";
 import { canonicalJsonString } from "../../shared-state-idempotency-gate-v1.js";

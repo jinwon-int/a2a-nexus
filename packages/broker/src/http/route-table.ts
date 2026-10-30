@@ -23,8 +23,8 @@
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import type { RequesterIdentity } from "../core/request-security.js";
-import type { RateLimitBucket } from "../core/request-security.js";
+import type { RequesterIdentity } from "../core/transport/request-security.js";
+import type { RateLimitBucket } from "../core/transport/request-security.js";
 import type { EndpointGroup, RequestRouteGroup } from "./route-classification.js";
 
 /**

@@ -19,7 +19,7 @@ import {
   MAX_CONVERSATION_TOTAL_BYTES,
   type A2AConversationState,
 } from "./broker-conversation.js";
-import { BrokerError } from "./broker-error.js";
+import { BrokerError } from "../broker-error.js";
 
 interface AuditCapture {
   events: Array<{ actorId: string; action: string; targetId: string; note?: string }>;
@@ -447,7 +447,7 @@ interface InMemoryLikeWorkerAdd {
 type InMemoryLikeWorker = InMemoryLikeWorkerAdd;
 
 test("T1: a signed worker message verifies; tampered digest and wrong key fail closed", async () => {
-  const { InMemoryA2ABroker } = await import("./broker.js");
+  const { InMemoryA2ABroker } = await import("../broker.js");
   const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-alpha" }) as unknown as InMemoryLikeWorker;
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const privatePem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
@@ -506,7 +506,7 @@ test("T1: a signed worker message verifies; tampered digest and wrong key fail c
 });
 
 test("T1: unsigned worker messages pass by default; a signature from an unknown-key worker is refused (cannot verify)", async () => {
-  const { InMemoryA2ABroker } = await import("./broker.js");
+  const { InMemoryA2ABroker } = await import("../broker.js");
   const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-alpha" });
   const opened = broker.startConversation({
     homeBrokerId: "broker-alpha",

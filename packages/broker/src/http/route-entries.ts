@@ -21,7 +21,7 @@
 import type { IncomingMessage } from "node:http";
 
 import type { InMemoryA2ABroker } from "../core/broker.js";
-import type { A2AWorkerRouteScope } from "../core/request-security.js";
+import type { A2AWorkerRouteScope } from "../core/transport/request-security.js";
 import type { A2AHttpSignatureVerifiedWorker } from "../server.js";
 import { handleA2AJsonRpcRouteIfMatched, type A2AJsonRpcRouteContext } from "./a2a-jsonrpc-route.js";
 import { handleComplexityOrchestrationRoutesIfMatched, type ComplexityOrchestrationRoutesContext } from "./complexity-orchestration-routes.js";

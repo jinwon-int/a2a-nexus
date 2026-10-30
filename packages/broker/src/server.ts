@@ -164,7 +164,7 @@ import {
   CrossBrokerSenderProofCounters,
   resolveCrossBrokerSenderProofMode,
 } from "./a2a/cross-broker-sender-proof.js";
-import { loadPeerCredentialRegistryFile, parsePeerHandoffScopeMode } from "./core/request-security.js";
+import { loadPeerCredentialRegistryFile, parsePeerHandoffScopeMode } from "./core/transport/request-security.js";
 import { startDefaultAgent, type DefaultAgentHandle } from "./a2a/default-agent.js";
 import { PeerStatusService } from "./a2a/peer-status.js";
 import {
@@ -187,7 +187,7 @@ import {
   type RateLimitDecision,
   type RequesterIdentity,
   type VerifiedApproverCredential,
-} from "./core/request-security.js";
+} from "./core/transport/request-security.js";
 import {
   DEFAULT_BROKER_STATE_MAX_BYTES,
   describeSnapshotQuarantineWarning,

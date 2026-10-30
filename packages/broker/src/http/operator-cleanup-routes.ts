@@ -7,7 +7,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { BrokerError } from "../core/broker-error.js";
 import { SqliteBrokerStateStore, type BrokerStateStore } from "../core/store.js";
-import { assertRequesterHasRole, type RequesterIdentity } from "../core/request-security.js";
+import { assertRequesterHasRole, type RequesterIdentity } from "../core/transport/request-security.js";
 import {
   buildBrokerCleanupPlan,
   executeBrokerCleanupPlan,

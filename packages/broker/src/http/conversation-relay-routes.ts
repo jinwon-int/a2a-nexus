@@ -17,7 +17,7 @@ import {
   type PeerCredentialRegistry,
   type PeerHandoffScopeMode,
   type VerifiedPeer,
-} from "../core/request-security.js";
+} from "../core/transport/request-security.js";
 import {
   CrossBrokerNonceCache,
   verifyCrossBrokerSenderProof,

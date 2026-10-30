@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { TaskEventDispatcher } from "./task-event-dispatcher.js";
-import { BrokerListenerRegistry } from "./broker-listener-registry.js";
+import { TaskEventDispatcher } from "./transport/task-event-dispatcher.js";
+import { BrokerListenerRegistry } from "./transport/broker-listener-registry.js";
 import { WorkerIdentityChurnTracker } from "./claim/worker-identity-churn-tracker.js";
 import { SnapshotExtensionRegistry } from "./snapshot-extension-registry.js";
 import {
@@ -51,7 +51,7 @@ import {
   normalizeExchangeState,
   normalizeExchangeMessageRecord,
   createLegacyRootExchangeMessage,
-} from "./broker-exchange-normalizers.js";
+} from "./transport/broker-exchange-normalizers.js";
 import {
   normalizeGitHubPatchTaskRequest,
   normalizeOwnershipString,
@@ -89,8 +89,8 @@ import {
   addBrokerExchangeMessage,
   listBrokerExchangeMessages,
   startBrokerExchange,
-} from "./broker-exchange.js";
-import { applyBrokerExchangeMessageDecision } from "./broker-exchange-task-decision.js";
+} from "./transport/broker-exchange.js";
+import { applyBrokerExchangeMessageDecision } from "./transport/broker-exchange-task-decision.js";
 import {
   acceptBrokerConversationMessage,
   assertConversationParticipant,
@@ -105,7 +105,7 @@ import {
   type A2AConversationState,
   type ConversationDeliverySummary,
   type ConversationInboxEntry,
-} from "./broker-conversation.js";
+} from "./transport/broker-conversation.js";
 import {
   applyRelayedConversationMessage,
   buildConversationRelayPayload,
@@ -114,13 +114,13 @@ import {
   type ApplyRelayedConversationResult,
   type ConversationRelayOutboxEntry,
   type ConversationRelayPayload,
-} from "./broker-conversation-relay.js";
+} from "./transport/broker-conversation-relay.js";
 import {
   buildTaskResultReplyEnvelope,
   RESUMING_MESSAGE_KINDS,
   taskReferencesOf,
-} from "./broker-conversation-task-bridge.js";
-import type { WorkerSignatureGateOptions } from "./broker-conversation.js";
+} from "./transport/broker-conversation-task-bridge.js";
+import type { WorkerSignatureGateOptions } from "./transport/broker-conversation.js";
 import { getBrokerRoundStatus, listBrokerTasks, readBrokerTask } from "./evidence-retrieval/broker-task-read.js";
 import { HOT_READ_HARD_MAX_LIMIT } from "./store-hot-select-projections.js";
 import { TaskLineageIndex } from "./evidence-retrieval/task-lineage-index.js";
@@ -178,7 +178,7 @@ import {
   type TaskReadinessMode,
 } from "../task-readiness.js";
 import { TASK_LANE_REASON_CODE_SET, classifyTaskLane } from "../task-lane-classifier.js";
-import { TaskEventStream } from "./task-event-stream.js";
+import { TaskEventStream } from "./transport/task-event-stream.js";
 import { RoundProgressTracker } from "./completion/round-progress-tracker.js";
 import {
   ParentRoundRegistry,
@@ -195,7 +195,7 @@ import {
   type TerminalTaskRelayFallbackInput,
   type TerminalTaskRelayFallbackResult,
 } from "./completion/terminal-event-outbox.js";
-import { ConferenceRoomManager } from "./conference-room.js";
+import { ConferenceRoomManager } from "./transport/conference-room.js";
 import { WavePlanStore, type StalledWavePlan } from "./dispatch/wave-plan-store.js";
 import type { WavePlan, WaveStageEvidence } from "./dispatch/wave-plan.js";
 import { classifyWavePlanIntake } from "../wave-plan-dag-v2/dispatch-boundary.js";
@@ -266,7 +266,7 @@ import {
   assertTaskStatus,
   assertTaskCreationOwnership,
 } from "./broker-transition-guards.js";
-import { readExchange, readExchanges } from "./broker-exchange-read.js";
+import { readExchange, readExchanges } from "./transport/broker-exchange-read.js";
 import {
   resolveTerminalBriefParentOriginRoute,
   normalizeTerminalBriefTeamScope,

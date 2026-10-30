@@ -13,7 +13,7 @@
 - Issue #1504 and its folded claim-graph scenario.
 - [spec.md](spec.md) and [clarify.md](clarify.md).
 - `packages/broker/src/a2a-http-signature-replay-cache.ts`.
-- `packages/broker/src/core/request-security.ts`.
+- `packages/broker/src/core/transport/request-security.ts`.
 - `packages/broker/src/core/broker.ts`.
 - `packages/broker/src/core/store.ts` and
   `sqlite-worker-thread-persistence.ts`.

@@ -43,9 +43,9 @@ import { readFileSync, statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 
-import { BrokerError } from "./broker-error.js";
+import { BrokerError } from "../broker-error.js";
 import { A2A_REQUESTER_ROLES } from "./requester-role-contract.mjs";
-import type { A2APartyKind, A2APartyRole, ChangeProposal, TaskRecord } from "./types.js";
+import type { A2APartyKind, A2APartyRole, ChangeProposal, TaskRecord } from "../types.js";
 
 const requesterKindSchema = z.enum(["session", "node", "user", "service"]);
 const requesterRoleSchema = z.enum(A2A_REQUESTER_ROLES);

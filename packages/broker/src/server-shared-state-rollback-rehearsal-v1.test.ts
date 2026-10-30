@@ -36,7 +36,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import { buildA2AHttpSignatureBase } from "./core/request-security.js";
+import { buildA2AHttpSignatureBase } from "./core/transport/request-security.js";
 import type { BrokerServerOptions } from "./server.js";
 import { startTestServer, workerPayload } from "./server-test-helpers.js";
 

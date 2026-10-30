@@ -9,7 +9,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { BrokerError } from "../core/broker-error.js";
-import { assertRequesterHasRole, type RequesterIdentity } from "../core/request-security.js";
+import { assertRequesterHasRole, type RequesterIdentity } from "../core/transport/request-security.js";
 import { readJson } from "./body.js";
 import { sendJson } from "./response.js";
 import {

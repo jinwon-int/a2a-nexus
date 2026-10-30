@@ -24,7 +24,7 @@
 // conversationId and homeBrokerId — the receiving broker never mints its own
 // identity for a relayed conversation.
 
-import { BrokerError } from "./broker-error.js";
+import { BrokerError } from "../broker-error.js";
 import {
   conversationContentDigest,
   redactConversationContentText,

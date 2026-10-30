@@ -11,7 +11,7 @@ import {
   type CrossBrokerTerminalBriefReceiverFetch,
 } from "./completion/cross-broker-terminal-brief-receiver.js";
 import type { CrossBrokerTerminalBriefProjectionRequest } from "./completion/cross-broker-terminal-brief.js";
-import type { TaskStatusEvent } from "./task-events.js";
+import type { TaskStatusEvent } from "./transport/task-events.js";
 import {
   TerminalTaskEventOutbox,
   buildRelayFallbackTitle,

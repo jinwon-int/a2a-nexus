@@ -28,7 +28,7 @@ import type {
   BrokerHotEntityMirrorStatus,
   BrokerHotHintCounts,
 } from "./observability/hot-diagnostics.js";
-import type { A2AConversationState } from "./broker-conversation.js";
+import type { A2AConversationState } from "./transport/broker-conversation.js";
 
 
 // Defined in store-schemas (kernel, #2453 Step 0); re-exported so existing
@@ -45,7 +45,7 @@ export interface BrokerSnapshot {
   /** Receiving-broker mirrors of cross-broker conversations (#1864 relay). */
   conversationRelayMirrors?: A2AConversationState[];
   /** Outbound conversation relay log (#1864 relay). */
-  conversationRelayOutbox?: import("./broker-conversation-relay.js").ConversationRelayOutboxEntry[];
+  conversationRelayOutbox?: import("./transport/broker-conversation-relay.js").ConversationRelayOutboxEntry[];
   proposals: ChangeProposal[];
   artifacts: ArtifactRecord[];
   validations: ValidationResult[];

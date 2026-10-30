@@ -6,7 +6,7 @@ import type { ServerResponse } from "node:http";
 
 import { InMemoryA2ABroker } from "../core/broker.js";
 import { SqliteBrokerStateStore, type BrokerStateStore } from "../core/store.js";
-import { assertRequesterHasRole, type RequesterIdentity } from "../core/request-security.js";
+import { assertRequesterHasRole, type RequesterIdentity } from "../core/transport/request-security.js";
 import type { TaskRecord } from "../core/types.js";
 import { queryTerminalBriefInbox } from "../core/completion/terminal-brief-query-api.js";
 import { buildReleaseEvidenceExport } from "../core/evidence-retrieval/release-evidence.js";

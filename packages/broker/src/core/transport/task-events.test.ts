@@ -1,9 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { InMemoryA2ABroker } from "./broker.js";
+import { InMemoryA2ABroker } from "../broker.js";
 import type { TaskStatusEvent, TerminalTaskEvent } from "./task-events.js";
-import type { TerminalTaskOutboxEvent } from "./completion/terminal-event-outbox.js";
+import type { TerminalTaskOutboxEvent } from "../completion/terminal-event-outbox.js";
 
 function registerWorker(broker: InMemoryA2ABroker, nodeId = "worker-1"): void {
   broker.registerWorker({
@@ -431,7 +431,7 @@ describe("TerminalTaskEventOutbox", () => {
     broker.claimTask(task.id, "worker-1");
     broker.startTask(task.id, "worker-1");
     broker.completeTask(task.id, "worker-1", {
-      summary: "tests passed from /work/repo/dist/core/task-events.test.js",
+      summary: "tests passed from /work/repo/dist/core/transport/task-events.test.js",
       output: {
         prUrl: "https://github.com/jinwon-int/a2a-broker/pull/999",
         doneUrl: "https://github.com/jinwon-int/a2a-broker/issues/218#issuecomment-1",
@@ -799,7 +799,7 @@ describe("TerminalTaskEventOutbox", () => {
     broker.claimTask(prOpened.id, "worker-1");
     broker.startTask(prOpened.id, "worker-1");
     broker.completeTask(prOpened.id, "worker-1", {
-      summary: "PR opened and Done evidence posted from /work/repo/dist/core/task-events.test.js",
+      summary: "PR opened and Done evidence posted from /work/repo/dist/core/transport/task-events.test.js",
       output: {
         prUrl: "https://github.com/jinwon-int/a2a-broker/pull/230",
         doneUrl: "https://github.com/jinwon-int/a2a-broker/issues/229#issuecomment-done",

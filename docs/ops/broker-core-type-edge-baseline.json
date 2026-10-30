@@ -32,7 +32,7 @@
       "to": "claim/worker-capability-card.ts"
     },
     {
-      "from": "broker-listener-registry.ts",
+      "from": "transport/broker-listener-registry.ts",
       "to": "broker.ts"
     },
     {
@@ -69,7 +69,7 @@
     },
     {
       "from": "dispatch/live-task-admission.ts",
-      "to": "request-security.ts"
+      "to": "transport/request-security.ts"
     },
     {
       "from": "dispatch/live-task-admission.ts",
@@ -77,19 +77,19 @@
     },
     {
       "from": "store-contracts.ts",
-      "to": "broker-conversation-relay.ts"
+      "to": "transport/broker-conversation-relay.ts"
     },
     {
       "from": "store-contracts.ts",
-      "to": "broker-conversation.ts"
+      "to": "transport/broker-conversation.ts"
     },
     {
-      "from": "task-event-dispatcher.ts",
+      "from": "transport/task-event-dispatcher.ts",
       "to": "broker.ts"
     },
     {
       "from": "completion/terminal-event-outbox.ts",
-      "to": "task-events.ts"
+      "to": "transport/task-events.ts"
     },
     {
       "from": "types.ts",

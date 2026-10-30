@@ -4,8 +4,8 @@
 // assignment or set a decision) on the given exchange, throwing BrokerError on
 // rejection. It reads only its arguments, so it is unit-testable in isolation
 // and follows the existing broker-*.ts free-function convention.
-import { BrokerError } from "./broker-error.js";
-import type { A2AExchangeMessageRequest, A2AExchangeState } from "./types.js";
+import { BrokerError } from "../broker-error.js";
+import type { A2AExchangeMessageRequest, A2AExchangeState } from "../types.js";
 
 /**
  * Reject an exchange message whose actor is not the requester, target, hub, or

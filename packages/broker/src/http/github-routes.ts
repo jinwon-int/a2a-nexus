@@ -6,7 +6,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { BrokerError } from "../core/broker.js";
-import { assertGitHubWebhookSignature } from "../core/request-security.js";
+import { assertGitHubWebhookSignature } from "../core/transport/request-security.js";
 import { parseGitHubWebhook, validateWebhookHeaders } from "../github/webhook-parser.js";
 import type { GitHubIngestionService } from "../github/ingestion.js";
 import type { BoundedPoller } from "../github/bounded-poller.js";

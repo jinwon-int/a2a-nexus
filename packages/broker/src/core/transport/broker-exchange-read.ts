@@ -4,10 +4,10 @@
 // records, exactly as before) and returns normalized/sorted results. The
 // caller owns the cache Map and passes it in, so these stay behavior-preserving
 // while following the existing broker-*.ts free-function convention.
-import type { A2AExchangeState } from "./types.js";
-import type { ExchangeRuntimeRepository } from "./exchange-repository.js";
+import type { A2AExchangeState } from "../types.js";
+import type { ExchangeRuntimeRepository } from "../exchange-repository.js";
 import { normalizeExchangeState } from "./broker-exchange-normalizers.js";
-import { sortedCopy, sortNewestFirst } from "./broker-helpers.js";
+import { sortedCopy, sortNewestFirst } from "../broker-helpers.js";
 
 /**
  * Read a single exchange by id, map-first (#2078 B, mirroring readBrokerTask):

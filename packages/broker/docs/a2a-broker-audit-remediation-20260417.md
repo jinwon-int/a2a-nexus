@@ -25,7 +25,7 @@
 - Prevents publishing broken AgentCard discovery metadata
 
 ### 5. Trusted-proxy gated rate limiting
-- `a2a-broker/src/core/request-security.ts`
+- `a2a-broker/src/core/transport/request-security.ts`
 - `a2a-broker/src/server.ts`
 - `x-forwarded-for` is now ignored unless `TRUSTED_PROXY=1`
 - Prevents clients from spoofing rate-limit identity through forwarded headers on direct connections

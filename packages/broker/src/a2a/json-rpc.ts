@@ -1,6 +1,6 @@
 import { BrokerError, type InMemoryA2ABroker } from "../core/broker.js";
 import { PushNotificationConfigStore, PushConfigError, redactPushConfigSecrets } from "./push-notification-config.js";
-import { assertRequesterCanSubscribeToTask, type RequesterIdentity } from "../core/request-security.js";
+import { assertRequesterCanSubscribeToTask, type RequesterIdentity } from "../core/transport/request-security.js";
 import { isTerminalTaskStatus } from "../core/broker-status-predicates.js";
 import type { A2AExchangeVia, TaskListFilters, TaskRecord } from "../core/types.js";
 import type { AgentCard, AgentCapabilities } from "./agent-card.js";

@@ -7,7 +7,7 @@ import {
   peerHasHandoffScope,
   type PeerCredentialRegistry,
   type PeerHandoffScopeMode,
-} from "../core/request-security.js";
+} from "../core/transport/request-security.js";
 import type {
   A2AExchangeIntent,
   CreateTaskRequest,

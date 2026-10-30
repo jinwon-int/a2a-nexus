@@ -13,7 +13,7 @@ import {
   assertRequesterCanTouchProposalArtifacts,
   assertRequesterMatchesParty,
   type RequesterIdentity,
-} from "../core/request-security.js";
+} from "../core/transport/request-security.js";
 import type {
   ApplyProposalRequest,
   AttachArtifactRequest,

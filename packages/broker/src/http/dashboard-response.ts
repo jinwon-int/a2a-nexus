@@ -1,5 +1,5 @@
 import { InMemoryA2ABroker } from "../core/broker.js";
-import { InMemoryRateLimiter, type RateLimitPressureSnapshot } from "../core/request-security.js";
+import { InMemoryRateLimiter, type RateLimitPressureSnapshot } from "../core/transport/request-security.js";
 import type { BrokerDashboard } from "../core/types.js";
 import { projectAlerts, type AlertScanResult } from "../core/observability/alert-projection.js";
 import { computeTaskDiagnosticStatus } from "../core/broker-status-predicates.js";

@@ -8,7 +8,7 @@
  * them back one-way; only the required `export` keywords differ.
  */
 import { createHash, createPrivateKey, randomUUID, sign, type KeyObject } from "node:crypto";
-import { buildA2AHttpSignatureBase } from "../core/request-security.js";
+import { buildA2AHttpSignatureBase } from "../core/transport/request-security.js";
 import { optionalTrimmed } from "./worker-metadata.js";
 
 const HTTP_SIGNATURE_PARAM_VALUE_RE = /^[A-Za-z0-9._~:/@-]{1,256}$/;

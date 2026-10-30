@@ -342,7 +342,7 @@ export const SHARED_STATE_OUTBOX_V1_VALUES = deepFreeze({
                 ],
               },
               {
-                path: "packages/broker/src/core/event-buffer.ts",
+                path: "packages/broker/src/core/transport/event-buffer.ts",
                 symbol: "private nextId = 0",
                 proves: [
                   "sequence-authority",

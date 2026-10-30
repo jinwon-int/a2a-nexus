@@ -12,7 +12,7 @@
 //      documented contract: `terminal-event-outbox.ts` states that when the
 //      total is unknown the field is omitted "so downstream notifiers fall
 //      back instead of rendering misleading `n/?` progress", and
-//      `core/task-events.test.ts` asserts exactly that fallback
+//      `core/transport/task-events.test.ts` asserts exactly that fallback
 //      (`parentRoundProgress === undefined` plus a
 //      "진단: parentRoundTotal, parentRoundOrder 누락" title).
 //      => the outbox semantics are the correct ones and are adopted here.

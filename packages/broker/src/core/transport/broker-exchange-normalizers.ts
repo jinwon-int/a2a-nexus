@@ -1,7 +1,7 @@
 // A2A exchange state/message record normalizers extracted from broker.ts. Pure
 // functions that fill default fields on exchange and exchange-message records
 // and build the legacy synthetic root message. They hold no broker state.
-import type { A2AExchangeMessageRecord, A2AExchangeState } from "./types.js";
+import type { A2AExchangeMessageRecord, A2AExchangeState } from "../types.js";
 
 export function normalizeExchangeState(exchange: A2AExchangeState): A2AExchangeState {
   return {

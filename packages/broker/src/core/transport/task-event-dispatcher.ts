@@ -6,15 +6,15 @@
 // The TaskUpdate/TaskUpdateListener/BufferedTaskEvent/TaskUpdateReason types are
 // defined and exported by broker.ts (public surface); they are imported here
 // type-only, so there is no runtime import cycle.
-import { pruneMapEntries } from "./broker-retention-selectors.js";
-import { isTerminalTaskStatus } from "./broker-status-predicates.js";
-import type { TaskRecord } from "./types.js";
+import { pruneMapEntries } from "../broker-retention-selectors.js";
+import { isTerminalTaskStatus } from "../broker-status-predicates.js";
+import type { TaskRecord } from "../types.js";
 import type {
   BufferedTaskEvent,
   TaskUpdate,
   TaskUpdateListener,
   TaskUpdateReason,
-} from "./broker.js";
+} from "../broker.js";
 
 export class TaskEventDispatcher {
   private readonly listeners = new Map<string, Set<TaskUpdateListener>>();

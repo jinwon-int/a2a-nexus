@@ -5,8 +5,8 @@ import type {
   TaskReassignRequest,
   TaskRecord,
   WorkerRecord,
-} from "./types.js";
-import { isTerminalTaskStatus } from "./broker-status-predicates.js";
+} from "../types.js";
+import { isTerminalTaskStatus } from "../broker-status-predicates.js";
 
 export interface ApplyBrokerExchangeMessageDecisionContext {
   workers: Map<string, WorkerRecord>;

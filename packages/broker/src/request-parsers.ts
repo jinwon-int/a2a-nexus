@@ -9,7 +9,7 @@ import {
   isTerminalTaskReceiptStatus,
 } from "./core/completion/terminal-event-outbox.js";
 import type { CreateTaskRequest } from "./core/types.js";
-import type { RequesterIdentity } from "./core/request-security.js";
+import type { RequesterIdentity } from "./core/transport/request-security.js";
 import type {
   TerminalTaskOutboxAckInput,
   TerminalTaskOutboxReceiptUpdateInput,

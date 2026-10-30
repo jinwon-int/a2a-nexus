@@ -8,7 +8,7 @@ import {
   intentHash,
   authorizeReviewerReviewLineageReport,
 } from "a2a-review-lifecycle";
-import { A2A_WORKER_ROUTE_SCOPES } from "../core/request-security.js";
+import { A2A_WORKER_ROUTE_SCOPES } from "../core/transport/request-security.js";
 import { jsonHeaders, startTestServer } from "../server-test-helpers.js";
 import { A2ABrokerWorker } from "../worker.js";
 import { deriveFindingId, planReviewReport } from "./review-report-producer.js";
