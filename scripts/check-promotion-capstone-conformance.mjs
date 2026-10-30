@@ -34,7 +34,7 @@ export function expectedCoverageBaselineCommand(packageName) {
 // Independent approved ratchet: deliberately separate from the runtime
 // reporter so a coupled reporter-floor lowering or module removal fails here.
 export const EXPECTED_BROKER_FLOORS = Object.freeze({
-  'dist/core/release-evidence.js': 97,
+  'dist/core/evidence-retrieval/release-evidence.js': 97,
 });
 
 export const EXPECTED_RUNNER_FLOORS = Object.freeze({
@@ -208,7 +208,7 @@ if (capstone) {
     /runner\.js[^\n]*85%/,
     /dist\/core\/broker-policy\.js[^\n]*84%[^\n]*85\.06%/,
     /dist\/core\/provenance\.js[^\n]*98%[^\n]*99\.00%/,
-    /dist\/core\/release-evidence\.js[^\n]*97%[^\n]*98\.66%/,
+    /dist\/core\/evidence-retrieval\/release-evidence\.js[^\n]*97%[^\n]*98\.66%/,
     /broker `noUnusedLocals`/i,
     /async-safety approval/i,
     /floating-promises=0/i,

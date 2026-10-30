@@ -39,7 +39,7 @@ import {
   type TaskLineageReadIndexV1,
   type TaskLineageReadProjectionV1,
 } from "./task-lineage-read.js";
-import type { TaskRecord } from "./types.js";
+import type { TaskRecord } from "../types.js";
 
 /** Retention keeps the row but drops the payload — so does this projection. */
 function slimLineageTaskRecord(record: TaskRecord): TaskRecord {

@@ -18,6 +18,8 @@
 > [Step 5: execution pilot](#step-5-execution-pilot).
 > **Claim move implemented** (split-order row 3): see
 > [Claim move](#claim-move).
+> **Evidence move implemented** (split-order row 4): see
+> [Evidence move](#evidence-move).
 
 ## Summary
 
@@ -822,6 +824,61 @@ artifact change is the import path inside the payload script
 #2477, Step 5 and this move ship with the next regular worker deploy. There is
 no separate rollout now. Pack the artifact, run the `--deployed` guard, and run
 `clean:dist` as part of that deploy.
+
+## Evidence move
+
+Split-order row 4, done with the Step 5 recipe. Its prerequisites were already
+met: owner decision #3 keeps the three `review-lineage-*` modules in `store`,
+and PR-0 sank `HOT_READ_HARD_MAX_LIMIT`.
+
+**Directory name:** `core/evidence-retrieval/`, not the `core/evidence/` that
+the split-order table wrote. The checker assigns a domain from a directory only
+when the directory name equals the domain key, and this key is
+`evidence-retrieval`. Matching the key avoids renaming it across the
+allow-matrix.
+
+**Moved:** 8 modules and 6 tests.
+
+- Modules: `broker-evidence-read`, `broker-task-read`, `broker-worker-read`,
+  `proof-matrix`, `release-evidence`, `task-lineage-index`,
+  `task-lineage-read`, `wave-evidence`.
+- Tests: `broker-task-read`, `proof-matrix`, `release-evidence`,
+  `task-lineage-index`, `task-lineage-read`, `wave-evidence`.
+
+**Changes:**
+
+- 55 specifiers rewritten.
+- 18 dist and source path strings updated in scripts, docs and tests.
+- 8 map entries removed; no type-baseline entry involved.
+
+**Coverage floor:** `release-evidence` carries the enforced 97% core line
+floor. The floor value is unchanged; only its key path changes, in three
+places:
+
+- `packages/broker/scripts/coverage-baseline-report.mjs`
+- `scripts/check-promotion-capstone-conformance.mjs`, including its
+  regex-escaped doc marker `dist\/core\/…`
+- the `CORE_PATH_CONSUMERS` inventory
+
+The synthetic coverage table in `coverage-baseline-report.test.mjs` now nests
+`release-evidence.js` under `evidence-retrieval`. The real measurement parses
+the nested path and passes: 98.67% against the 97% floor.
+
+**Recipe additions:**
+
+- Step 2 also has to search for regex-escaped paths (`core\/<module>\.js`).
+  The first capstone run failed on one, because a plain string search does not
+  match the escaped form.
+- Step 2 also has to search for file-relative paths built at runtime
+  (`new URL("../..", import.meta.url)`, `__dirname`, `import.meta.dirname`).
+  `task-lineage-read.test.ts` loaded `../../fixtures/…` relative to itself and
+  needed one more `../` after the move; this is Risk 4. The import rewriter
+  does not see these paths because they are not `.js` specifiers.
+
+**Results:** 175 core modules (`evidence-retrieval` 8, `claim` 11 and
+`execution` 9, all assigned by directory), 147 map entries. Value violations
+stay at 0 and type-only at 23 = baseline. No evidence module is in the worker
+dist closure.
 
 ## Appendix: survey script
 

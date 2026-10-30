@@ -1,4 +1,4 @@
-import type { BrokerSnapshot } from "../core/proof-matrix.js";
+import type { BrokerSnapshot } from "../core/evidence-retrieval/proof-matrix.js";
 import type { AuditEvent, TaskRecord } from "../core/types.js";
 
 export type AssignmentMode = "fanout" | "split" | "review" | "swarm";

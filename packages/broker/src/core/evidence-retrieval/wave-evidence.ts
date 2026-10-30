@@ -13,7 +13,7 @@
 // enforced the other way around: scripts/a2ad-finalizer-gate.test.mjs pins
 // this module's taxonomy and predicate against the gate's, failing CI on any
 // drift. Exactly one class ('substantive') counts toward quorum in both.
-import { WavePlanError, type WaveStageEvidence } from "./wave-plan.js";
+import { WavePlanError, type WaveStageEvidence } from "../wave-plan.js";
 
 /**
  * Closed lane evidence-class taxonomy. Keep synchronized with

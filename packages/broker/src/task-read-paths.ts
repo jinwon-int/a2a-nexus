@@ -348,7 +348,7 @@ export function canUseSqliteTaskHotRead(filters: TaskListFilters): boolean {
 
 export function mapBrokerDiagnosticsToSnapshot(
   diagnostics: import("./core/store.js").BrokerHotTerminalOutboxDiagnostics,
-): NonNullable<import("./core/release-evidence.js").ReleaseEvidenceExportOptions["terminalOutboxDiagnostics"]> {
+): NonNullable<import("./core/evidence-retrieval/release-evidence.js").ReleaseEvidenceExportOptions["terminalOutboxDiagnostics"]> {
   return {
     total: diagnostics.total,
     acked: diagnostics.acked,

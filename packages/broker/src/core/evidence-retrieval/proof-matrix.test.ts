@@ -7,8 +7,8 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { TEAM_ASSIGNMENT_FIXTURES } from "../fixtures/team-assignment.js";
-import type { AssignmentFixture } from "../fixtures/team-assignment.js";
+import { TEAM_ASSIGNMENT_FIXTURES } from "../../fixtures/team-assignment.js";
+import type { AssignmentFixture } from "../../fixtures/team-assignment.js";
 import {
   runProofMatrix,
   extractParentChildren,

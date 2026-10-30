@@ -17,7 +17,7 @@ import {
   parseTaskLineageChildrenRequestV1,
   parseTaskLineageLeavesRequestV1,
   parseTaskLineageLineageRequestV1,
-} from "../dist/core/task-lineage-read.js";
+} from "../dist/core/evidence-retrieval/task-lineage-read.js";
 import { createBrokerAgentCard } from "../dist/a2a/agent-card.js";
 import { executeA2AJsonRpc } from "../dist/a2a/json-rpc.js";
 

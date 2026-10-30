@@ -160,7 +160,7 @@ test('promotion capstone records the live-main quality-floor consistency contrac
   for (const [module, values] of Object.entries({
     'dist/core/broker-policy.js': [84, '85\\.06'],
     'dist/core/provenance.js': [98, '99\\.00'],
-    'dist/core/release-evidence.js': [97, '98\\.66'],
+    'dist/core/evidence-retrieval/release-evidence.js': [97, '98\\.66'],
   })) {
     assert.match(
       section,
@@ -265,7 +265,7 @@ test('quality-floor evaluator rejects missing, lowered, or additional runner flo
 
 test('quality-floor evaluator rejects missing, lowered, or additional broker floors', () => {
   for (const mutate of [
-    (floors) => { delete floors['dist/core/release-evidence.js']; },
+    (floors) => { delete floors['dist/core/evidence-retrieval/release-evidence.js']; },
     (floors) => { floors['dist/core/broker-policy.js'] = 83; },
     (floors) => { floors['extra.js'] = 100; },
   ]) {

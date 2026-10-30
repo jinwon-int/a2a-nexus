@@ -20,7 +20,7 @@ fixture 입력으로 사용한다.
 
 ## Phase 1 — 읽기 모델 코어 (순수 함수)
 
-- `packages/broker/src/core/task-lineage-read.ts` (신규):
+- `packages/broker/src/core/evidence-retrieval/task-lineage-read.ts` (신규):
   태스크 레코드 컬렉션 → 부모 인덱스 → `childrenOf`, `ancestorsOf`(cycle 감지),
   `leavesOf`(필터 AND 결합). 엔진은 순수 함수, I/O 없음.
 - `tasks/children` anchor 불일치 해소: closed request는 `taskId` 또는
