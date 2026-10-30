@@ -24,7 +24,7 @@ import {
   buildA2AWorkerSubagentContextBrief,
   extractA2AWorkerSubagentContextBriefInput,
   renderA2AWorkerSubagentContextBriefMarkdown,
-} from "../core/worker-subagent-context-brief.js";
+} from "../core/execution/worker-subagent-context-brief.js";
 import type { TaskRecord } from "../core/types.js";
 
 /**

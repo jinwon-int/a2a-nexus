@@ -1,5 +1,5 @@
-import type { TaskError, TaskRecord, TaskRetryPolicy } from "./types.js";
-import { isRecord } from "./value-guards.js";
+import type { TaskError, TaskRecord, TaskRetryPolicy } from "../types.js";
+import { isRecord } from "../value-guards.js";
 
 export const RETRY_HARD_DENY_CODES = new Set([
   "acceptance_failed",

@@ -160,7 +160,6 @@
   "modules": {
     "a2a-dialectic-lite-finalizer.ts": "completion",
     "a2a-dispatch-helper.ts": "dispatch",
-    "a2a-execution-policy.ts": "execution",
     "a2a-intent-router.ts": "dispatch",
     "a2a-round-policy.ts": "dispatch",
     "adaptive-work-mode-selector.ts": "dispatch",
@@ -186,7 +185,6 @@
     "broker-exchange-task-decision.ts": "transport",
     "broker-exchange.ts": "transport",
     "broker-helpers.ts": "kernel",
-    "broker-knowledge-injection.ts": "execution",
     "broker-list-filters.ts": "kernel",
     "broker-listener-registry.ts": "transport",
     "broker-payload-validators.ts": "dispatch",
@@ -200,8 +198,6 @@
     "broker-status-predicates.ts": "kernel",
     "broker-task-admission.ts": "dispatch",
     "broker-task-approval.ts": "policy-approval",
-    "broker-task-cancellation.ts": "execution",
-    "broker-task-checkpoint.ts": "execution",
     "broker-task-diagnostics.ts": "observability",
     "broker-task-read.ts": "evidence-retrieval",
     "broker-task-record-normalizers.ts": "kernel",
@@ -226,7 +222,6 @@
     "conference-types.ts": "transport",
     "cross-broker-terminal-brief-receiver.ts": "completion",
     "cross-broker-terminal-brief.ts": "completion",
-    "delegated-runtime.ts": "execution",
     "event-buffer.ts": "transport",
     "exchange-repository.ts": "kernel",
     "finalizer-verdict-admission.ts": "completion",
@@ -292,7 +287,6 @@
     "task-lineage-index.ts": "evidence-retrieval",
     "task-lineage-read.ts": "evidence-retrieval",
     "task-repository.ts": "kernel",
-    "task-retry-policy.ts": "execution",
     "task-stats.ts": "observability",
     "team1-dispatch-wrapper.ts": "dispatch",
     "terminal-brief-approval-dispatch-adapter.ts": "policy-approval",
@@ -329,9 +323,6 @@
     "worker-capability-card.ts": "claim",
     "worker-identity-churn-tracker.ts": "claim",
     "worker-repository.ts": "kernel",
-    "worker-self-assessment-capacity.ts": "claim",
-    "worker-subagent-context-brief.ts": "execution",
-    "worker-subagent-planner-handoff.ts": "execution",
-    "worker-subagent-spawn-authorization-request.ts": "execution"
+    "worker-self-assessment-capacity.ts": "claim"
   }
 }

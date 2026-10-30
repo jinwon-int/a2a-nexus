@@ -22,7 +22,7 @@ in `spec.md`.
 | Spawn gate decision | `packages/attestation/src/worker-subagent-spawn-gate-decision.ts` | none (broker-side) | unchanged | **reused as-is** |
 | Orchestration policy | `packages/attestation/src/worker-subagent-orchestration-policy.ts` | none (broker-side) | unchanged | **reused as-is** |
 | Dynamic runtime (packets → shrink-only authorization) | `packages/broker/src/workers/subagent-runtime.ts` (`buildDynamicSubagentRuntime`) | `fanoutEnabled` is keyed on `A2A_DOCKER_RUNNER_CLAUDE_CODE_FANOUT_ENABLED` and the authorized env re-emits that same key | piri needs a mirrored `A2A_DOCKER_RUNNER_PIRI_FANOUT_ENABLED` (same default 0, same single-flag rollback) and the flag key parametrized per lane — additive, broker-side only | **Phase-2 mirror** (no decider semantics change) |
-| Context brief | `packages/broker/src/core/worker-subagent-context-brief.ts` + runner `materializeSubagentContextBrief` (`packages/docker-runner/src/runner.ts`) | none — transport is lane-independent: full-redaction-checked brief written to `/work/artifacts/context-brief.md` + `A2A_SUBAGENT_CONTEXT_BRIEF` env | the piri script already shares `/work/artifacts`; the fanout prompt points helpers at the same file | **reused as-is** |
+| Context brief | `packages/broker/src/core/execution/worker-subagent-context-brief.ts` + runner `materializeSubagentContextBrief` (`packages/docker-runner/src/runner.ts`) | none — transport is lane-independent: full-redaction-checked brief written to `/work/artifacts/context-brief.md` + `A2A_SUBAGENT_CONTEXT_BRIEF` env | the piri script already shares `/work/artifacts`; the fanout prompt points helpers at the same file | **reused as-is** |
 | Redaction gate | `packages/attestation/src/worker-subagent-redaction-gate.ts` | none (broker-side, after return) | unchanged; `A2A_WORKER_SUBAGENT_REDACTION_MODE` (`redact` default / `reject`) unchanged | **reused as-is** |
 | Evidence assembly | `packages/attestation/src/worker-subagent-evidence-assembly.ts` | none (broker-side, after return) | unchanged | **reused as-is** |
 
@@ -88,14 +88,18 @@ checkout at `v0.83.0-piri.1` (`packages/coding-agent` 0.83.0).
 
 **Lane-agnostic — must keep passing unchanged (the reuse oracle):**
 
+_Path note (2026-10-30): the three broker `worker-subagent-*` tests moved to
+`packages/broker/src/core/execution/` in the #2453 step 5 domain move, with their
+content unchanged._
+
 - `packages/attestation/src/worker-subagent-budget-counter.test.ts`
 - `packages/attestation/src/worker-subagent-spawn-gate-decision.test.ts`
 - `packages/attestation/src/worker-subagent-orchestration-policy.test.ts`
 - `packages/attestation/src/worker-subagent-redaction-gate.test.ts`
 - `packages/attestation/src/worker-subagent-evidence-assembly.test.ts`
-- `packages/broker/src/core/worker-subagent-context-brief.test.ts`
-- `packages/broker/src/core/worker-subagent-planner-handoff.test.ts`
-- `packages/broker/src/core/worker-subagent-spawn-authorization-request.test.ts`
+- `packages/broker/src/core/execution/worker-subagent-context-brief.test.ts`
+- `packages/broker/src/core/execution/worker-subagent-planner-handoff.test.ts`
+- `packages/broker/src/core/execution/worker-subagent-spawn-authorization-request.test.ts`
 - `packages/broker/src/core/orchestration-intelligence-worker-subagent-spawn-bridge.test.ts`
 - broker `worker.test.ts` dynamic-runtime / finalize tests — the logic is
   lane-agnostic; only the env **key name** is claude-coupled, so Phase 2

@@ -5,8 +5,8 @@ import { buildA2AWorkerSelfAssessmentCapacity } from "./worker-self-assessment-c
 import { buildA2AWorkerSubagentOrchestrationPolicy } from "a2a-attestation";
 import {
   buildA2AWorkerSubagentPlannerHandoff,
-} from "./worker-subagent-planner-handoff.js";
-import { buildA2AWorkerSubagentSpawnAuthorizationRequest } from "./worker-subagent-spawn-authorization-request.js";
+} from "./execution/worker-subagent-planner-handoff.js";
+import { buildA2AWorkerSubagentSpawnAuthorizationRequest } from "./execution/worker-subagent-spawn-authorization-request.js";
 import {
   buildOIWorkerSubagentSpawnAuthorizationBridgePacket,
   buildOIWorkerSubagentSpawnAuthorizationBridgePacketFromInput,

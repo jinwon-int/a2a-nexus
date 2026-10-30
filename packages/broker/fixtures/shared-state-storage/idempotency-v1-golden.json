@@ -84,7 +84,7 @@
           ]
         },
         {
-          "path": "packages/broker/src/core/broker-task-cancellation.ts",
+          "path": "packages/broker/src/core/execution/broker-task-cancellation.ts",
           "symbol": "export function cancelTask(",
           "proves": [
             "domain-mutation",

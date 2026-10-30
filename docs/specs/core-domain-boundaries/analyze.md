@@ -14,6 +14,8 @@
 > **Step 4 implemented** (CLI-only retirement: 6 of 8 retired in #2481; the
 > other 2 are kept permanently by the 2026-10-30 owner decision): see
 > [Step 4: CLI-only retirement](#step-4-cli-only-retirement).
+> **Step 5 implemented** (execution pilot, the first physical move): see
+> [Step 5: execution pilot](#step-5-execution-pilot).
 
 ## Summary
 
@@ -728,6 +730,53 @@ any other module.
 |---|---|
 | `two-broker-safety-matrix` | `packages/broker/docs/a2a-2broker-safety-regression-readiness-matrix.md` names `node --test dist/core/two-broker-safety-matrix.test.js` as the no-live cutover GO/NO-GO gate. The module was deleted and then restored in the 2026-08-09 T2 cleanup round for exactly this reason. |
 | `orchestration-intelligence-worker-subagent-spawn-bridge` | `docs/specs/piri-lane-fanout-reuse/phase-1-mapping.md` §5 lists its test as a "must keep passing unchanged" reuse oracle. Its wrapper path is also hard-coded in the worker source-bundle lists (`hermes-a2a-analysis-bridge.mjs`, `piri-a2a-analysis-bridge.mjs`, `lib/analysis-source-bundle.mjs`), so retiring it changes worker artifacts. |
+
+## Step 5: execution pilot
+
+The first physical domain move. It proves the recipe for the later moves.
+
+**Moved:** 9 modules and 6 tests, from `packages/broker/src/core/` to
+`packages/broker/src/core/execution/`. The split-order table counted 5 tests;
+it missed `delegated-runtime-regression.test.ts`. File contents are unchanged
+except for relative import specifiers.
+
+- Modules: `a2a-execution-policy`, `broker-knowledge-injection`,
+  `broker-task-cancellation`, `broker-task-checkpoint`, `delegated-runtime`,
+  `task-retry-policy`, `worker-subagent-context-brief`,
+  `worker-subagent-planner-handoff`, `worker-subagent-spawn-authorization-request`.
+- Tests: `a2a-execution-policy`, `delegated-runtime`,
+  `delegated-runtime-regression`, and the three `worker-subagent-*` tests.
+
+**Recipe** (repeat it for each later domain):
+
+1. `git mv` the domain's files into `core/<domain>/`.
+2. Rewrite every relative `.js` specifier mechanically: resolve each one to its
+   real target, then recompute it from the file's new location. Here that was
+   47 specifiers in 23 files.
+3. Rewrite the `../dist/core/<module>.js` paths in
+   `packages/broker/scripts/*.mjs` (here, 5 wrappers).
+4. Update fixture data that names source paths and that a test opens (here, 2).
+5. Remove the moved modules from `docs/ops/broker-core-domain-map.json`. The
+   `core/<domain>/` directory is now authoritative, and a duplicate map entry
+   fails the gate. Re-key the moved modules' entries in the type baseline
+   (here, 2).
+6. Run `clean:dist` before building. `build` does not clean `dist/`, so a
+   checkout built before the move keeps stale `dist/core/<module>.js` files,
+   and those would run old code without any error.
+7. Compare the worker artifact closure before and after with
+   `worker-artifact-pack.mjs --out <tmp>`.
+
+**Results:** 175 core modules (`execution` 9, now assigned by directory), 166
+map entries. Value violations stay at 0 and type-only at 23 = baseline. The
+recursive test glob from PR-0 (`'dist/core/**/*.test.js'`) picks the moved
+tests up, so the broker test count is unchanged.
+
+**Worker artifact impact:** the worker closure includes
+`dist/core/worker-subagent-context-brief.js`, which is now under
+`dist/core/execution/`. Five payload scripts import execution modules by dist
+path. The source change merges normally, but rolling it out to workers is a
+separate deploy step with its own approval. Pack the artifact and run the
+`--deployed` guard first.
 
 ## Appendix: survey script
 

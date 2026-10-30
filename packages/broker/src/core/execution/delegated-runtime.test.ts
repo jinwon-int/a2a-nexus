@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import type { CreateTaskRequest, TaskRecord, TaskResult, TaskError } from "./types.js";
+import type { CreateTaskRequest, TaskRecord, TaskResult, TaskError } from "../types.js";
 import {
   DelegatedRunRuntime,
   type BrokerTaskBridge,

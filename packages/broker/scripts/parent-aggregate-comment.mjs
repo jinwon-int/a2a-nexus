@@ -128,7 +128,7 @@ export async function upsertManagedIssueCommentGuarded({
   github = defaultGithubClient(),
   executionPolicyInput,
 }) {
-  const { runGuardedGitHubAction } = await import('../dist/core/a2a-execution-policy.js');
+  const { runGuardedGitHubAction } = await import('../dist/core/execution/a2a-execution-policy.js');
   return runGuardedGitHubAction(
     executionPolicyInput ?? { intent: 'direct parent aggregate comment', requestedAction: 'issue_closeout_comment' },
     () => upsertManagedIssueComment({ repo, issue, body, marker, github }),

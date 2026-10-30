@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import type { CreateTaskRequest, TaskRecord, TaskResult, TaskError } from "./types.js";
-import { isTerminalTaskStatus } from "./broker-status-predicates.js";
+import type { CreateTaskRequest, TaskRecord, TaskResult, TaskError } from "../types.js";
+import { isTerminalTaskStatus } from "../broker-status-predicates.js";
 
 // ---------------------------------------------------------------------------
 // State enum

@@ -8,18 +8,18 @@
 // heartbeat-audit throttle state stays class-owned behind two callbacks;
 // InMemoryA2ABroker keeps all three public methods as delegators.
 import { randomUUID } from "node:crypto";
-import { BrokerError } from "./broker-error.js";
-import { isoNow } from "./broker-helpers.js";
-import { isTerminalTaskStatus } from "./broker-status-predicates.js";
-import { assertTaskStatus } from "./broker-transition-guards.js";
-import type { TaskUpdateReason } from "./broker-contracts.js";
+import { BrokerError } from "../broker-error.js";
+import { isoNow } from "../broker-helpers.js";
+import { isTerminalTaskStatus } from "../broker-status-predicates.js";
+import { assertTaskStatus } from "../broker-transition-guards.js";
+import type { TaskUpdateReason } from "../broker-contracts.js";
 import type {
   AuditAction,
   AuditEvent,
   TaskCheckpointState,
   TaskInterruptDecisionType,
   TaskRecord,
-} from "./types.js";
+} from "../types.js";
 
 /**
  * #2011 backstop grace: heartbeat progress reports older than

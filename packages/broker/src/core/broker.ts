@@ -151,7 +151,7 @@ import {
   resolveInjectedKnowledgeTaskClass,
   selectInjectedKnowledge,
   type InjectedKnowledgeSnapshot,
-} from "./broker-knowledge-injection.js";
+} from "./execution/broker-knowledge-injection.js";
 import type { FinalizerVerdictEnforcement } from "./finalizer-verdict-admission.js";
 import type { FinalizerKeyring } from "a2a-attestation";
 import * as taskAdmission from "./broker-task-admission.js";
@@ -160,12 +160,12 @@ import * as staleTaskRequeue from "./broker-stale-task-requeue.js";
 import type { StaleTaskRequeueContext } from "./broker-stale-task-requeue.js";
 import * as proposalWrite from "./broker-proposal-write.js";
 import * as taskApproval from "./broker-task-approval.js";
-import * as taskCancellation from "./broker-task-cancellation.js";
-import * as taskCheckpoint from "./broker-task-checkpoint.js";
+import * as taskCancellation from "./execution/broker-task-cancellation.js";
+import * as taskCheckpoint from "./execution/broker-task-checkpoint.js";
 import * as taskTerminal from "./broker-task-terminal.js";
 import type { TaskTerminalContext } from "./broker-task-terminal.js";
-import type { TaskCheckpointContext } from "./broker-task-checkpoint.js";
-import type { TaskCancellationContext } from "./broker-task-cancellation.js";
+import type { TaskCheckpointContext } from "./execution/broker-task-checkpoint.js";
+import type { TaskCancellationContext } from "./execution/broker-task-cancellation.js";
 import type { TaskApprovalContext } from "./broker-task-approval.js";
 import type { ProposalWriteContext } from "./broker-proposal-write.js";
 import {

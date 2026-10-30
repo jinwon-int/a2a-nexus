@@ -16,7 +16,7 @@ import {
   normalizeTaskRecord,
   normalizeTaskResult,
 } from "./broker-task-record-normalizers.js";
-import { planClassAwareTaskRetry } from "./task-retry-policy.js";
+import { planClassAwareTaskRetry } from "./execution/task-retry-policy.js";
 import { validateGithubTaskCompletionEvidence } from "./github-task-completion.js";
 import { extractReviewVerdict, validateReviewEvidence } from "../worker-review.js";
 import {

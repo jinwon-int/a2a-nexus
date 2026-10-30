@@ -1,5 +1,5 @@
 import { parseTaskAcceptance } from "./worker-acceptance.js";
-import { validateTaskRetryPolicy } from "./core/task-retry-policy.js";
+import { validateTaskRetryPolicy } from "./core/execution/task-retry-policy.js";
 import type { TaskRecord } from "./core/types.js";
 import { isRecord } from "./core/value-guards.js";
 

@@ -6,7 +6,7 @@ import {
   buildA2AWorkerSubagentPlannerHandoff,
   extractA2AWorkerSubagentPlannerHandoffInput,
   renderA2AWorkerSubagentPlannerHandoffMarkdown,
-} from "../dist/core/worker-subagent-planner-handoff.js";
+} from "../dist/core/execution/worker-subagent-planner-handoff.js";
 
 function readOption(argv, name) {
   const inline = argv.find((arg) => arg.startsWith(name + "="));
