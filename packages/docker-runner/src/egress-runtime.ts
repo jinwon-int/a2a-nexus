@@ -31,8 +31,8 @@ export const DEFAULT_EGRESS_NETWORK = "a2a-egress-internal";
 export const DEFAULT_EGRESS_PROXY_NAME = "a2a-egress-proxy";
 /**
  * #2395 design §5.2: per-profile base allowlist. Finalized from observe-mode
- * evidence, not guessed — only `claude-code` is measured so far (dungae PoC
- * A/B, 2026-10-20: a real claude-code patch run plus the read-only GitHub canary
+ * evidence, not guessed — only `claude-code` is measured so far (PoC A/B on
+ * one T2 worker, 2026-10-20: a real claude-code patch run plus the read-only GitHub canary
  * produced exactly these CONNECT targets, with
  * `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` and `DISABLE_AUTOUPDATER=1`).
  * The 2026-10-20 → 2026-11-02 observe soak added nothing because no patch task

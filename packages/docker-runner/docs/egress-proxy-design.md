@@ -106,8 +106,9 @@ in `egress-runtime.ts`, merged in `config.ts loadEgressConfig`).
 - Base sets live in code per profile (`claude-code`, `codex`, `danso`, …) and
   start from §2. They are finalized from observe-mode logs, not guessed.
 - **Measured so far (2026-11-02):** `claude-code` = `api.anthropic.com`,
-  `github.com`, `api.github.com` — the complete CONNECT set of the dungae PoC A
-  patch run and the PoC B read-only GitHub canary (2026-10-20, #2395), under
+  `github.com`, `api.github.com` — the complete CONNECT set of the PoC A
+  patch run and the PoC B read-only GitHub canary on the PoC node (2026-10-20,
+  #2395), under
   `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` + `DISABLE_AUTOUPDATER=1`. All
   other profiles are empty (unmeasured) and `enforce` keeps requiring the
   explicit env for them. `doctor` reports `egressProxy.detail.baseAllowlistSize`
@@ -256,24 +257,25 @@ with `wouldDeny` for a non-allowlisted host in observe.
 
 ### 6.1 Where the rollout stands (2026-11-02, #2395)
 
-- Step 1 shipped (#2415, #2416); step 2 passed on dungae (PoC A, 2026-10-20).
-- Step 3 was started on dungae only and **closed as "no traffic"** on
+- Step 1 shipped (#2415, #2416); step 2 passed on one T2 worker (the PoC node,
+  PoC A, 2026-10-20).
+- Step 3 was started on that PoC node only and **closed as "no traffic"** on
   2026-11-02: the proxy log held just the 8 PoC records, because no patch task
   ran anywhere in the fleet in that window. Broker records (read-only): the
-  gwakga (T2) broker has **0 patch-type tasks in its whole history** (193 tasks,
-  all `analyze` / `skills_intake_revise` / `chat`; every T2 worker is an
-  `analyst`), and the seoseo (T1) broker's `propose_patch` lane — 39 tasks, all
-  on **bangtong** (28) and **nosuk** (11) — has been dormant since 2026-10-06.
-  dungae was therefore structurally unable to observe patch traffic.
+  T2 broker has **0 patch-type tasks in its whole history** (193 tasks, all
+  `analyze` / `skills_intake_revise` / `chat`; every T2 worker is an
+  `analyst`), and the T1 broker's `propose_patch` lane — 39 tasks, all on the
+  same two T1 workers — has been dormant since 2026-10-06. The PoC node was
+  therefore structurally unable to observe patch traffic.
 - Consequence for step 3/4: the `claude-code` base set above is seeded from the
   PoC evidence, and **re-enabling `propose_patch` dispatch is gated on
-  `EGRESS_MODE=enforce` being applied and `doctor`-verified on the workers that
-  actually run it (bangtong, nosuk) first** — operator approval per worker, same
-  mechanics as the dungae PoC B deploy (runner install, env, `install --egress`,
-  idle restart, env backup for rollback). Until then the unrestricted
-  `--network bridge` path is latent, not exercised. dungae keeps `observe`
-  (harmless; switching it off is a separate decision).
-- `codex` (gongmyoung) and `danso` still have no measured set; their first
+  `EGRESS_MODE=enforce` being applied and `doctor`-verified on the two T1
+  workers that actually run it first** — operator approval per worker, same
+  mechanics as the PoC B deploy (runner install, env, `install --egress`, idle
+  restart, env backup for rollback). Until then the unrestricted
+  `--network bridge` path is latent, not exercised. The PoC node keeps
+  `observe` (harmless; switching it off is a separate decision).
+- `codex` and `danso` still have no measured set; their first
   real patch task must run in `observe` before `enforce` (or an operator
   supplies `A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST` explicitly).
 
