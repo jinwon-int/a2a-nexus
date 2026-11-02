@@ -23,12 +23,52 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { egressProxyRunTokenDigest, generateEgressProxyRunToken, normalizeEgressProxyAllowlist } from "./egress-proxy.js";
-import type { RunnerConfig, RunnerEngine } from "./types.js";
+import type { RunnerCommandProfile, RunnerConfig, RunnerEngine } from "./types.js";
 
 export type EgressMode = "off" | "observe" | "enforce";
 export const EGRESS_MODES: readonly EgressMode[] = ["off", "observe", "enforce"];
 export const DEFAULT_EGRESS_NETWORK = "a2a-egress-internal";
 export const DEFAULT_EGRESS_PROXY_NAME = "a2a-egress-proxy";
+/**
+ * #2395 design §5.2: per-profile base allowlist. Finalized from observe-mode
+ * evidence, not guessed — only `claude-code` is measured so far (PoC A/B on
+ * one T2 worker, 2026-10-20: a real claude-code patch run plus the read-only GitHub canary
+ * produced exactly these CONNECT targets, with
+ * `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` and `DISABLE_AUTOUPDATER=1`).
+ * The 2026-10-20 → 2026-11-02 observe soak added nothing because no patch task
+ * ran fleet-wide in that window (#2395 closure).
+ *
+ * The effective proxy allowlist is base ∪ `A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST`;
+ * a profile whose base set is empty still needs the explicit env in `enforce`.
+ * Model/auth hostnames for the other CLIs are chosen by the CLIs, so they stay
+ * empty until an observe run on that profile records them.
+ */
+export const EGRESS_PROXY_PROFILE_BASE_ALLOWLIST: Readonly<Record<RunnerCommandProfile, readonly string[]>> = Object.freeze({
+  "claude-code": Object.freeze(["api.anthropic.com", "github.com", "api.github.com"]),
+  codex: Object.freeze([]),
+  hermes: Object.freeze([]),
+  openclaw: Object.freeze([]),
+  piri: Object.freeze([]),
+  danso: Object.freeze([]),
+});
+
+/** Base allowlist for a patch-command profile (copy); empty when the profile is unset or unmeasured. */
+export function egressProxyBaseAllowlist(profile: RunnerCommandProfile | undefined): string[] {
+  return profile ? [...EGRESS_PROXY_PROFILE_BASE_ALLOWLIST[profile]] : [];
+}
+
+/**
+ * Effective proxy allowlist: base set first, then operator additions that are
+ * not already present. Only exact duplicates are folded here; case/format
+ * problems are still rejected by `normalizeEgressProxyAllowlist` at validation.
+ */
+export function mergeEgressProxyAllowlist(base: readonly string[], extra: readonly string[]): string[] {
+  const out = [...base];
+  for (const host of extra) {
+    if (!out.includes(host)) out.push(host);
+  }
+  return out;
+}
 export const EGRESS_PROXY_LISTEN_PORT = 3128;
 export const EGRESS_PROXY_LABEL_KEY = "a2a.egress.proxy";
 /** The staged proxy bundle (package.json + dist/) is mounted here so Node resolves `"type": "module"`. */

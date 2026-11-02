@@ -894,7 +894,12 @@ export async function doctor(config: RunnerConfig, options: DoctorOptions = {}):
 export async function checkEgressProxy(config: RunnerConfig, exec?: EgressExec): Promise<OpsCheck> {
   const readiness = await checkEgressProxyReady(config, exec);
   const paths = egressStatePaths(config);
-  const detail = { ...readiness.detail, stateDir: paths.base, allowlistSize: config.egressProxyAllowlist?.length ?? 0 };
+  const detail = {
+    ...readiness.detail,
+    stateDir: paths.base,
+    allowlistSize: config.egressProxyAllowlist?.length ?? 0,
+    baseAllowlistSize: config.egressProxyBaseAllowlist?.length ?? 0,
+  };
   if (!readiness.ready) {
     return { status: "fail", message: egressNotReadyMessage(readiness), detail: { ...detail, reason: readiness.reason } };
   }

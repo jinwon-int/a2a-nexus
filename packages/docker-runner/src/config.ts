@@ -28,7 +28,9 @@ import {
   DEFAULT_EGRESS_NETWORK,
   DEFAULT_EGRESS_PROXY_NAME,
   egressEnabled,
+  egressProxyBaseAllowlist,
   isValidEgressResourceName,
+  mergeEgressProxyAllowlist,
   parseEgressMode,
 } from "./egress-runtime.js";
 import { DEFAULT_FAILURE_LOG_KEEP, DEFAULT_FAILURE_LOG_MAX_BYTES } from "./failure-output-log.js";
@@ -222,7 +224,7 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
   validatePatchCommandProfileSelection({ profile, expectedProfile, image });
   const claudeHostRefresh = loadClaudeHostRefreshConfig(env);
   const claudeOauthToken = loadClaudeOauthTokenFileConfig(env);
-  const egress = loadEgressConfig(env);
+  const egress = loadEgressConfig(env, profile);
 
   const config: RunnerConfig = {
     rootDir: env.A2A_DOCKER_RUNNER_ROOT || DEFAULT_ROOT, // validated below; resolveRootDir() is the lite path
@@ -1024,9 +1026,14 @@ function parseOptionalPositiveInteger(value: string | undefined, fallback: numbe
  * #2395: patch-lane egress control. Returns undefined for mode `off` so the
  * resulting config is byte-identical to the pre-#2395 shape.
  */
-function loadEgressConfig(env: NodeJS.ProcessEnv): Pick<RunnerConfig, "egressMode" | "egressNetwork" | "egressProxyName" | "egressProxyAllowlist" | "egressStateDir"> | undefined {
+function loadEgressConfig(
+  env: NodeJS.ProcessEnv,
+  profile: RunnerCommandProfile | undefined,
+): Pick<RunnerConfig, "egressMode" | "egressNetwork" | "egressProxyName" | "egressProxyAllowlist" | "egressProxyBaseAllowlist" | "egressStateDir"> | undefined {
   const egressMode = parseEgressMode(env.A2A_DOCKER_RUNNER_EGRESS_MODE);
   if (egressMode === "off") return undefined;
+  // #2395 §5.2: effective allowlist = profile base set ∪ operator env.
+  const baseAllowlist = egressProxyBaseAllowlist(profile);
   const egressNetwork = (env.A2A_DOCKER_RUNNER_EGRESS_NETWORK ?? "").trim() || DEFAULT_EGRESS_NETWORK;
   const explicitNetwork = (env.A2A_DOCKER_RUNNER_NETWORK ?? "").trim();
   if (explicitNetwork && explicitNetwork !== egressNetwork) {
@@ -1040,7 +1047,8 @@ function loadEgressConfig(env: NodeJS.ProcessEnv): Pick<RunnerConfig, "egressMod
     egressMode,
     egressNetwork,
     egressProxyName: (env.A2A_DOCKER_RUNNER_EGRESS_PROXY_NAME ?? "").trim() || DEFAULT_EGRESS_PROXY_NAME,
-    egressProxyAllowlist: parseCommaList(env.A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST),
+    egressProxyAllowlist: mergeEgressProxyAllowlist(baseAllowlist, parseCommaList(env.A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST)),
+    egressProxyBaseAllowlist: baseAllowlist,
     ...(stateDir ? { egressStateDir: stateDir } : {}),
   };
 }
@@ -1074,7 +1082,10 @@ function validateEgressModeConfig(config: RunnerConfig, errors: string[]): void 
     errors.push(error instanceof EgressProxyConfigError ? error.message : String(error));
   }
   if (config.egressMode === "enforce" && allowlist.length === 0) {
-    errors.push("A2A_DOCKER_RUNNER_EGRESS_MODE=enforce requires A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST (derive it from observe logs)");
+    errors.push(
+      "A2A_DOCKER_RUNNER_EGRESS_MODE=enforce requires A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST " +
+        "(this patch-command profile has no measured base allowlist; derive it from observe logs)",
+    );
   }
 }
 

@@ -13,8 +13,11 @@ import {
   defaultEgressStateDir,
   EGRESS_PROXY_BUNDLE_FILES,
   EGRESS_PROXY_LABEL_KEY,
+  EGRESS_PROXY_PROFILE_BASE_ALLOWLIST,
+  egressProxyBaseAllowlist,
   egressStatePaths,
   installEgressProxy,
+  mergeEgressProxyAllowlist,
   parseEgressMode,
   prepareEgressRunCredentials,
   stageEgressProxyBundle,
@@ -118,27 +121,61 @@ test("observe routes the task network onto the managed internal network", async 
   assert.equal(config.egressMode, "observe");
   assert.equal(config.network, "a2a-egress-internal");
   assert.equal(config.egressProxyName, "a2a-egress-proxy");
-  assert.deepEqual(config.egressProxyAllowlist, []);
+  // #2395 §5.2: the claude-code base set applies even without the env.
+  assert.deepEqual(config.egressProxyAllowlist, ["api.anthropic.com", "github.com", "api.github.com"]);
+  assert.deepEqual(config.egressProxyBaseAllowlist, ["api.anthropic.com", "github.com", "api.github.com"]);
 
   const custom = await loadConfig({
     ...trustedClaude,
     A2A_DOCKER_RUNNER_EGRESS_MODE: "enforce",
     A2A_DOCKER_RUNNER_EGRESS_NETWORK: "lane-egress",
     A2A_DOCKER_RUNNER_EGRESS_PROXY_NAME: "lane-proxy",
-    A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST: "api.github.com,github.com",
+    A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST: "api.github.com,registry.npmjs.org,github.com",
     A2A_DOCKER_RUNNER_EGRESS_STATE_DIR: "/srv/egress",
     A2A_DOCKER_RUNNER_NETWORK: "lane-egress",
   });
   assert.equal(custom.network, "lane-egress");
-  assert.deepEqual(custom.egressProxyAllowlist, ["api.github.com", "github.com"]);
+  // base first, operator additions appended once, exact duplicates folded
+  assert.deepEqual(custom.egressProxyAllowlist, ["api.anthropic.com", "github.com", "api.github.com", "registry.npmjs.org"]);
   assert.equal(custom.egressStateDir, "/srv/egress");
+});
+
+test("profile base allowlist (#2395 §5.2): measured claude-code set, unmeasured profiles fail closed in enforce", async () => {
+  assert.deepEqual(EGRESS_PROXY_PROFILE_BASE_ALLOWLIST["claude-code"], ["api.anthropic.com", "github.com", "api.github.com"]);
+  for (const profile of ["codex", "hermes", "openclaw", "piri", "danso"] as const) {
+    assert.deepEqual(EGRESS_PROXY_PROFILE_BASE_ALLOWLIST[profile], [], profile);
+  }
+  assert.deepEqual(egressProxyBaseAllowlist(undefined), []);
+  assert.deepEqual(mergeEgressProxyAllowlist(["a.example", "b.example"], ["b.example", "c.example", "a.example"]), ["a.example", "b.example", "c.example"]);
+  // the returned base set is a copy: mutating it must not leak into the constant
+  const copy = egressProxyBaseAllowlist("claude-code");
+  copy.push("evil.example");
+  assert.deepEqual(EGRESS_PROXY_PROFILE_BASE_ALLOWLIST["claude-code"], ["api.anthropic.com", "github.com", "api.github.com"]);
+
+  // claude-code enforce needs no env; the proxy receives the base set verbatim.
+  const enforced = await loadConfig({ ...trustedClaude, A2A_DOCKER_RUNNER_EGRESS_MODE: "enforce" });
+  assert.equal(enforced.egressMode, "enforce");
+  assert.ok(buildEgressProxyRunArgs(enforced).includes("A2A_EGRESS_PROXY_ALLOWLIST=api.anthropic.com,github.com,api.github.com"));
+
+  // codex has no measured base set, so enforce still demands the explicit env.
+  const codexEnv = { ...trustedClaude, A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "codex", A2A_DOCKER_RUNNER_EGRESS_MODE: "enforce" };
+  await assert.rejects(loadConfig(codexEnv), /requires A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST/);
+  const codexObserve = await loadConfig({ ...codexEnv, A2A_DOCKER_RUNNER_EGRESS_MODE: "observe" });
+  assert.deepEqual(codexObserve.egressProxyAllowlist, []);
+  assert.deepEqual(codexObserve.egressProxyBaseAllowlist, []);
+
+  // a bad operator entry is still rejected even though the base set is valid
+  await assert.rejects(
+    loadConfig({ ...trustedClaude, A2A_DOCKER_RUNNER_EGRESS_MODE: "enforce", A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST: "API.GitHub.com" }),
+    /must be lowercase/,
+  );
 });
 
 test("egress config fails closed on conflicts and unsafe values", async () => {
   const cases: Array<[Record<string, string>, RegExp]> = [
     [{ A2A_DOCKER_RUNNER_EGRESS_MODE: "observe", A2A_DOCKER_RUNNER_NETWORK: "bridge" }, /conflicts with A2A_DOCKER_RUNNER_EGRESS_MODE/],
     [{ A2A_DOCKER_RUNNER_EGRESS_MODE: "sometimes" }, /off, observe, enforce/],
-    [{ A2A_DOCKER_RUNNER_EGRESS_MODE: "enforce" }, /requires A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST/],
+    [{ A2A_DOCKER_RUNNER_EGRESS_MODE: "enforce", A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "codex" }, /requires A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST/],
     [{ A2A_DOCKER_RUNNER_EGRESS_MODE: "enforce", A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST: "10.0.0.1" }, /IP literals/],
     [{ A2A_DOCKER_RUNNER_EGRESS_MODE: "observe", A2A_DOCKER_RUNNER_EGRESS_NETWORK: "bridge" }, /dedicated managed name/],
     [{ A2A_DOCKER_RUNNER_EGRESS_MODE: "observe", A2A_DOCKER_RUNNER_EGRESS_PROXY_NAME: "bad name" }, /invalid egress proxy name/],

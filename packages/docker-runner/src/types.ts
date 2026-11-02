@@ -309,8 +309,14 @@ export interface RunnerConfig {
   egressNetwork?: string;
   /** #2395: proxy container name; also its alias on the internal network. */
   egressProxyName?: string;
-  /** #2395: exact hostnames the proxy allows in `enforce` (separate from the K2 retrieval allowlist). */
+  /**
+   * #2395: exact hostnames the proxy allows in `enforce` (separate from the K2
+   * retrieval allowlist). Effective list = profile base set ∪
+   * `A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST`.
+   */
   egressProxyAllowlist?: string[];
+  /** #2395 §5.2: the measured per-profile base set that seeded `egressProxyAllowlist` (empty when unmeasured). */
+  egressProxyBaseAllowlist?: string[];
   /** #2395: host directory for proxy credentials, per-run env files, and proxy logs (outside rootDir). */
   egressStateDir?: string;
   /**
