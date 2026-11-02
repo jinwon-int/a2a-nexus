@@ -99,10 +99,19 @@ the Docker bridge ranges) are denied in **both** `observe` and `enforce`, using
 
 ### 5.2 Allowlist
 
-Effective allowlist = profile base set ∪ `A2A_DOCKER_RUNNER_EGRESS_ALLOWLIST_HOSTS`.
+Effective allowlist = profile base set ∪ `A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST`
+(env name corrected in §5.6; implemented as `EGRESS_PROXY_PROFILE_BASE_ALLOWLIST`
+in `egress-runtime.ts`, merged in `config.ts loadEgressConfig`).
 
 - Base sets live in code per profile (`claude-code`, `codex`, `danso`, …) and
   start from §2. They are finalized from observe-mode logs, not guessed.
+- **Measured so far (2026-11-02):** `claude-code` = `api.anthropic.com`,
+  `github.com`, `api.github.com` — the complete CONNECT set of the dungae PoC A
+  patch run and the PoC B read-only GitHub canary (2026-10-20, #2395), under
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` + `DISABLE_AUTOUPDATER=1`. All
+  other profiles are empty (unmeasured) and `enforce` keeps requiring the
+  explicit env for them. `doctor` reports `egressProxy.detail.baseAllowlistSize`
+  next to `allowlistSize` so a node shows which part came from code.
 - Exact hostnames only; no wildcards in v1. A suffix rule can be added later if
   observe data shows a CDN pattern that needs it.
 - Port 443 only (`CONNECT`). Plain HTTP and other ports are denied in `enforce`.
@@ -198,8 +207,10 @@ Differences from §5.3 found while wiring, all fail-closed:
 
 - **Proxy allowlist env:** `A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST`, not
   `A2A_DOCKER_RUNNER_EGRESS_ALLOWLIST_HOSTS` — the latter is validated as the K2
-  GitHub-retrieval list and rejects anything else. No profile base sets yet;
-  `enforce` requires the explicit list (derive it from observe logs).
+  GitHub-retrieval list and rejects anything else. Profile base sets landed
+  with the #2395 closure (§5.2, `EGRESS_PROXY_PROFILE_BASE_ALLOWLIST`); for a
+  profile without a measured set, `enforce` still requires the explicit list
+  (derive it from observe logs).
 - **Credentials never in argv:** the proxy URL with the per-run token goes into a
   0600 `--env-file` (docker `-e` values are visible in `ps`). The proxy reads
   only `<runToken>.sha256` digests. Modes are set with explicit `chmod` so a
@@ -242,6 +253,29 @@ with `wouldDeny` for a non-allowlisted host in observe.
 4. **Enforce on one node**, canary, then fleet (per-node approval). Rollback at any
    step = `EGRESS_MODE=off` (back to `--network bridge`); the proxy container can
    stay running harmlessly.
+
+### 6.1 Where the rollout stands (2026-11-02, #2395)
+
+- Step 1 shipped (#2415, #2416); step 2 passed on dungae (PoC A, 2026-10-20).
+- Step 3 was started on dungae only and **closed as "no traffic"** on
+  2026-11-02: the proxy log held just the 8 PoC records, because no patch task
+  ran anywhere in the fleet in that window. Broker records (read-only): the
+  gwakga (T2) broker has **0 patch-type tasks in its whole history** (193 tasks,
+  all `analyze` / `skills_intake_revise` / `chat`; every T2 worker is an
+  `analyst`), and the seoseo (T1) broker's `propose_patch` lane — 39 tasks, all
+  on **bangtong** (28) and **nosuk** (11) — has been dormant since 2026-10-06.
+  dungae was therefore structurally unable to observe patch traffic.
+- Consequence for step 3/4: the `claude-code` base set above is seeded from the
+  PoC evidence, and **re-enabling `propose_patch` dispatch is gated on
+  `EGRESS_MODE=enforce` being applied and `doctor`-verified on the workers that
+  actually run it (bangtong, nosuk) first** — operator approval per worker, same
+  mechanics as the dungae PoC B deploy (runner install, env, `install --egress`,
+  idle restart, env backup for rollback). Until then the unrestricted
+  `--network bridge` path is latent, not exercised. dungae keeps `observe`
+  (harmless; switching it off is a separate decision).
+- `codex` (gongmyoung) and `danso` still have no measured set; their first
+  real patch task must run in `observe` before `enforce` (or an operator
+  supplies `A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST` explicitly).
 
 ## 7. Open questions
 

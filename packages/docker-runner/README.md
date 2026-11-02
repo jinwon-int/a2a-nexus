@@ -137,7 +137,7 @@ CONNECT proxy instead (design: [egress-proxy-design](docs/egress-proxy-design.md
 | Env | Default | Meaning |
 | --- | --- | --- |
 | `A2A_DOCKER_RUNNER_EGRESS_MODE` | `off` | `off` = unchanged; `observe` = all public hosts allowed and logged; `enforce` = allowlist only. Internal ranges (RFC 1918, link-local incl. `169.254.169.254`, loopback, ULA) are denied in both. Trusted-operator mode only; conflicts with an explicit `A2A_DOCKER_RUNNER_NETWORK`. |
-| `A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST` | empty | Exact hostnames for `enforce` (required there). Separate from `A2A_DOCKER_RUNNER_EGRESS_ALLOWLIST_HOSTS`, which is the K2 retrieval allowlist. |
+| `A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST` | empty | Operator additions to the proxy allowlist (exact hostnames). Effective list = **profile base set ∪ this env**; the measured `claude-code` base set is `api.anthropic.com`, `github.com`, `api.github.com` (design §5.2), so `enforce` needs no env for that profile. Profiles without a measured base set (`codex`, `hermes`, `openclaw`, `piri`, `danso`) still require this env in `enforce`. Separate from `A2A_DOCKER_RUNNER_EGRESS_ALLOWLIST_HOSTS`, which is the K2 retrieval allowlist. |
 | `A2A_DOCKER_RUNNER_EGRESS_NETWORK` | `a2a-egress-internal` | Managed `--internal` network the task containers join. |
 | `A2A_DOCKER_RUNNER_EGRESS_PROXY_NAME` | `a2a-egress-proxy` | Proxy container name and its alias on that network. |
 | `A2A_DOCKER_RUNNER_EGRESS_STATE_DIR` | `<root>-egress` | Proxy bundle, per-run credential digests, 0600 per-run env files, proxy logs. Kept outside the task root so `cleanup` never expires it. |
