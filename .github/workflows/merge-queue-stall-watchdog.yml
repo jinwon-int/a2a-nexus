@@ -1,0 +1,42 @@
+# Read-only merge-queue stall watchdog (#2501 part 3).
+#
+# Fails when a merge-queue entry has been AWAITING_CHECKS for 5+ minutes with
+# zero merge_group workflow runs since admission — the state a GITHUB_TOKEN
+# enqueue produces, which the queue otherwise only surfaces as a
+# checks_timed_out removal 60 minutes later (#2500). Healthy entries get their
+# merge_group runs within seconds.
+#
+# The job never dequeues, re-enqueues, re-runs, or changes settings. See
+# docs/ops/repository-hygiene-watchdog.md#merge-queue-stall-watchdog.
+name: merge-queue-stall-watchdog
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+
+concurrency:
+  group: merge-queue-stall-watchdog
+  cancel-in-progress: true
+
+jobs:
+  merge-queue-stall:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version: '^22.23.4'
+      - name: Detect merge-queue entries without merge_group runs
+        run: node scripts/lib/check-merge-queue-stall.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

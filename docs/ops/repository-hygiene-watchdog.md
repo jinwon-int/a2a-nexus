@@ -92,4 +92,34 @@ node --test scripts/check-workflow-action-pinning.test.mjs
 Do not run the checker CLI merely as a local test: with `GITHUB_TOKEN` and
 `GITHUB_REPOSITORY` it reads current GitHub state. Use the fixture suite above.
 
+## Merge-queue stall watchdog
+
+`.github/workflows/merge-queue-stall-watchdog.yml` runs every 10 minutes (and
+on `workflow_dispatch`) with the same read-only permissions. It runs
+`scripts/lib/check-merge-queue-stall.mjs` ([#2501][issue-2501]).
+
+The checker fails when a merge-queue entry matches all three conditions:
+
+- The entry is in state `AWAITING_CHECKS`.
+- The entry is at least 5 minutes old (`MERGE_QUEUE_STALL_MINUTES`).
+- The entry has zero `merge_group` workflow runs created since admission.
+
+Healthy entries get their `merge_group` runs within seconds. Zero runs after
+5 minutes means no required check will ever report. The queue then removes the
+entry as `checks_timed_out` when `checkResponseTimeout` (3600 s) expires.
+
+The known cause is an enqueue performed with the workflow `GITHUB_TOKEN`.
+Events from that token do not start workflow runs. On 2026-11-06, PR #2500
+waited 63 minutes this way. A person-account re-enqueue started its four
+required runs in 18 seconds. When the enqueuer is `github-actions`, the
+failure names this cause. Remedy: re-enqueue with a person account.
+
+The checker sends one GraphQL query (no mutation) and `GET` requests for
+workflow runs. It never dequeues, re-enqueues, or re-runs anything.
+
+```bash
+node --test scripts/lib/check-merge-queue-stall.test.mjs
+```
+
 [issue-1507]: https://github.com/jinwon-int/a2a-nexus/issues/1507
+[issue-2501]: https://github.com/jinwon-int/a2a-nexus/issues/2501

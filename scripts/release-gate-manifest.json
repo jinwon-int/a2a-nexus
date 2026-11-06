@@ -290,6 +290,12 @@
       "note": "Dependency-free unit tests for the #1507 read-only weekly merged-branch residue watchdog."
     },
     {
+      "file": "scripts/lib/check-merge-queue-stall.test.mjs",
+      "class": "gate",
+      "round": null,
+      "note": "Dependency-free unit tests for the #2501 read-only merge-queue stall watchdog (AWAITING_CHECKS with zero merge_group runs)."
+    },
+    {
       "file": "scripts/lib/task-assign-entrypoint.test.mjs",
       "class": "gate",
       "round": null,
