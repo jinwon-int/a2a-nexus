@@ -12,8 +12,10 @@ was retired once they were.
 
 ## Why auto-merge needs this
 
-`auto-merge` runs after the `ci` workflow completes and merges only PRs that
-GitHub itself reports as `mergeStateStatus == "CLEAN"`. `CLEAN` means *required
+`auto-merge` runs after the `ci` workflow completes and reports the PRs that
+GitHub itself reports as `mergeStateStatus == "CLEAN"` as ready for merge-queue
+admission. Since #2501 it does not enqueue or merge anything (see "Merge queue"
+below); a person account enqueues the reported exact head. `CLEAN` means *required
 reviews are approved, required status checks pass, and there is no conflict*.
 
 That single gate is only meaningful when branch protection actually marks
@@ -21,7 +23,8 @@ reviews and checks as **required**. If `main` has no protection, GitHub can
 report `mergeStateStatus` values such as `UNSTABLE` or `HAS_HOOKS` — but it can
 also report `CLEAN` for a PR with **no approving review** and **no required
 checks**, because there is nothing to make those "required". In that state the
-workflow would merge unreviewed PRs. The workflow code calls this out inline
+workflow would report unreviewed PRs as ready, and the merge queue itself would
+accept them. The workflow code calls this out inline
 (`auto-merge.yml`, the `mergeStateStatus != "CLEAN"` filter): the gate assumes
 protection is present and is **not** a substitute for it.
 
@@ -144,13 +147,18 @@ the freshly read ruleset, preserving reviews, required checks, CodeQL, strictnes
 and bypass actors. Initial target: `ALLGREEN`, `SQUASH`, one entry per build/merge,
 60-minute check timeout. This document does not assert activation has occurred.
 
-`auto-merge` retains its conservative `CLEAN` filter and requests queue admission
-with `gh pr merge --auto --squash --match-head-commit`. A racing head update is
-rejected. It is a best-effort convenience, not a liveness guarantee: if review
-arrives after CI, or a PR is `BEHIND`, a maintainer may request admission with
-`gh pr merge NUMBER --auto --squash --match-head-commit REVIEWED_FULL_SHA`
-without bypassing required controls. Record that full SHA during review; if it
-moves, re-review rather than silently substituting the latest head.
+`auto-merge` retains its conservative `CLEAN` filter but no longer requests
+queue admission (#2501, owner decision 2026-11-06). An admission made with the
+workflow `GITHUB_TOKEN` never starts `merge_group` runs, so the entry waited
+for the 60-minute check timeout and was removed as `checks_timed_out` (#2500).
+The workflow now runs with read-only permissions and writes a notice plus a job
+summary naming each ready PR and its exact CI head. A maintainer (person
+account or the relay helper) requests admission for that exact head, for
+example with GraphQL `enqueuePullRequest` after confirming `headRefOid`.
+Record the reviewed full SHA; if it moves, re-review rather than silently
+substituting the latest head. The `merge-queue-stall-watchdog` workflow flags
+any entry that still sits in `AWAITING_CHECKS` without `merge_group` runs
+([repository-hygiene-watchdog.md](ops/repository-hygiene-watchdog.md)).
 Repository branch cleanup happens after actual merge, not enqueue.
 
 ### Queue verification checklist
