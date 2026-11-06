@@ -1735,3 +1735,125 @@ test("#2422 the lane skill root follows CLAUDE_CONFIG_DIR exactly like the hint 
   assert.equal(typeof isolation.materializeLaneSkill, "function");
   assert.equal(hints.claudeSkillsRoot({ CLAUDE_CONFIG_DIR: "/cfg" }), "/cfg/skills");
 });
+
+// ---------------------------------------------------------------------------
+// #2496: fixed per-slot analysis workspace (prompt-cache-stable cwd)
+// ---------------------------------------------------------------------------
+
+function slotWorkspaceHarness() {
+  const root = mkdtempSync(join(tmpdir(), "claude-a2a-slot-workspace-"));
+  const tmp = join(root, "tmp");
+  mkdirSync(tmp);
+  const fakeClaudePath = join(root, "fake-claude.mjs");
+  writeFileSync(fakeClaudePath, [
+    "#!/usr/bin/env node",
+    "import { readdirSync, writeFileSync } from 'node:fs';",
+    "writeFileSync(process.env.CAPTURE_CWD_PATH, JSON.stringify({",
+    "  cwd: process.cwd(),",
+    "  entries: readdirSync(process.cwd()).sort(),",
+    "  autoMemory: process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY ?? null,",
+    "}));",
+    "const analysis = { status: 'done', summary: 'slot workspace test', findings: [], risks: [], recommendations: [], evidenceRefs: [] };",
+    "console.log(JSON.stringify({ type: 'result', subtype: 'success', result: JSON.stringify(analysis) }));",
+  ].join("\n"));
+  chmodSync(fakeClaudePath, 0o755);
+  const uid = typeof process.getuid === "function" ? String(process.getuid()) : "u";
+  const slotPath = (n) => join(tmp, `a2a-analysis-slot-${uid}-${n}`);
+  let runs = 0;
+  const run = (sessionId, extraEnv = {}) => {
+    runs += 1;
+    const capture = join(root, `capture-${runs}.json`);
+    const result = spawnSync(bridgePath, [
+      "agent", "--local", "--agent", "main",
+      "--session-id", sessionId,
+      "--message", "Payload JSON:\n" + JSON.stringify({ mode: "analysis-only" }),
+      "--model", "claude-code/default", "--thinking", "low", "--timeout", "60", "--json",
+    ], {
+      encoding: "utf8",
+      env: { ...process.env, TMPDIR: tmp, A2A_CLAUDE_CODE_BIN: fakeClaudePath, CAPTURE_CWD_PATH: capture, ...extraEnv },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    return { ...JSON.parse(readFileSync(capture, "utf8")), stderr: result.stderr };
+  };
+  return { root, tmp, slotPath, run, cleanup: () => rmSync(root, { recursive: true, force: true }) };
+}
+
+test("#2496 slot mode reuses one fixed, empty cwd across tasks and removes it after each task", () => {
+  const h = slotWorkspaceHarness();
+  try {
+    const env = { A2A_ANALYSIS_WORKSPACE_MODE: "slot" };
+    const a = h.run("task-alpha", env);
+    const b = h.run("task-beta", env);
+    assert.equal(a.cwd, h.slotPath(0));
+    assert.equal(b.cwd, a.cwd, "different tasks must see the same cwd so the cache prefix is shared");
+    assert.deepEqual(a.entries, [".a2a-slot-owner"], "a task starts from an empty workspace");
+    assert.deepEqual(b.entries, [".a2a-slot-owner"], "no residue from the previous task");
+    assert.equal(existsSync(h.slotPath(0)), false, "the slot is released after the task");
+    assert.equal(a.autoMemory, "1", "auto memory is disabled when tasks share one project cwd");
+    assert.equal(a.stderr.includes("workspace"), false, "a free slot is silent");
+  } finally {
+    h.cleanup();
+  }
+});
+
+test("#2496 default mode keeps the per-session ephemeral workspace and does not touch auto memory", () => {
+  const h = slotWorkspaceHarness();
+  try {
+    const a = h.run("task-alpha");
+    assert.match(a.cwd, /a2a-analysis-task-alpha-/);
+    assert.equal(a.autoMemory, null);
+    assert.equal(existsSync(h.slotPath(0)), false);
+    assert.match(h.run("task-beta", { A2A_ANALYSIS_WORKSPACE_MODE: "SLOTTED" }).cwd, /a2a-analysis-task-beta-/, "unknown modes fall back to ephemeral");
+  } finally {
+    h.cleanup();
+  }
+});
+
+test("#2496 an explicit host CLAUDE_CODE_DISABLE_AUTO_MEMORY wins in slot mode", () => {
+  const h = slotWorkspaceHarness();
+  try {
+    const a = h.run("task-alpha", { A2A_ANALYSIS_WORKSPACE_MODE: "slot", CLAUDE_CODE_DISABLE_AUTO_MEMORY: "0" });
+    assert.equal(a.autoMemory, "0");
+  } finally {
+    h.cleanup();
+  }
+});
+
+test("#2496 a busy slot is skipped silently; when every slot is busy the task falls back to ephemeral", () => {
+  const h = slotWorkspaceHarness();
+  try {
+    mkdirSync(h.slotPath(0), { mode: 0o700 });
+    writeFileSync(join(h.slotPath(0), ".a2a-slot-owner"), `${process.pid}\n`);
+    const a = h.run("task-alpha", { A2A_ANALYSIS_WORKSPACE_MODE: "slot" });
+    assert.equal(a.cwd, h.slotPath(1), "a concurrent lane takes the next slot");
+    assert.equal(a.stderr.includes("slot 0"), false, "a live holder is not reported");
+    assert.equal(existsSync(h.slotPath(0)), true, "another holder's slot is never removed");
+
+    const b = h.run("task-beta", { A2A_ANALYSIS_WORKSPACE_MODE: "slot", A2A_ANALYSIS_WORKSPACE_SLOTS: "1" });
+    assert.match(b.cwd, /a2a-analysis-task-beta-/);
+    assert.match(b.stderr, /no free slot among 1; using an ephemeral workspace/);
+    assert.equal(b.autoMemory, null, "the ephemeral fallback keeps the default child env");
+  } finally {
+    h.cleanup();
+  }
+});
+
+test("#2496 a stale slot is reported and skipped, never reclaimed; a symlinked slot path is never used", () => {
+  const h = slotWorkspaceHarness();
+  try {
+    // A pid far above any real pid_max stands in for a bridge that was killed.
+    mkdirSync(h.slotPath(0), { mode: 0o700 });
+    writeFileSync(join(h.slotPath(0), ".a2a-slot-owner"), "2147483646\n");
+    const target = join(h.root, "elsewhere");
+    mkdirSync(target);
+    symlinkSync(target, h.slotPath(1));
+    const a = h.run("task-alpha", { A2A_ANALYSIS_WORKSPACE_MODE: "slot" });
+    assert.equal(a.cwd, h.slotPath(2));
+    assert.match(a.stderr, /slot 0 stale \(owner pid 2147483646 is gone; remove .* to reuse it\)/);
+    assert.match(a.stderr, /slot 1 foreign/);
+    assert.equal(existsSync(join(h.slotPath(0), ".a2a-slot-owner")), true, "the stale slot is left for the operator");
+    assert.equal(existsSync(target), true, "the symlink target is untouched");
+  } finally {
+    h.cleanup();
+  }
+});
