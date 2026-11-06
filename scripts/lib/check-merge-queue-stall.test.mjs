@@ -128,65 +128,87 @@ test('reportStalls exits 0 when clean and 1 with an annotation per stall', () =>
   assert.ok(errors.some((m) => /read-only/.test(m)));
 });
 
-test('readMergeQueueState sends one GraphQL query and GET-only run reads', async () => {
+const rulesBody = [{ type: 'pull_request' }, { type: 'merge_queue', parameters: { check_response_timeout_minutes: 60 } }];
+const queueData = (entries, extra = {}) => ({
+  data: {
+    repository: {
+      defaultBranchRef: { name: 'main' },
+      mergeQueue: entries === null ? null : { url: 'https://github.com/o/r/queue/main', entries: { nodes: entries } },
+    },
+  },
+  ...extra,
+});
+const fakeGithub = ({ gql, rules = () => Response.json(rulesBody), runs = () => Response.json({ workflow_runs: [run()] }) }) => {
   const calls = [];
   const fetchImpl = async (url, init) => {
-    calls.push({ url: String(url), method: init.method, body: init.body });
-    if (String(url).endsWith('/graphql')) {
-      return Response.json({
-        data: {
-          repository: {
-            defaultBranchRef: { name: 'main' },
-            mergeQueue: {
-              url: 'https://github.com/o/r/queue/main',
-              configuration: { checkResponseTimeout: 3600 },
-              entries: { nodes: [entry(2500)] },
-            },
-          },
-        },
-      });
-    }
-    return Response.json({ workflow_runs: [run()] });
+    const u = String(url);
+    calls.push({ url: u, method: init.method, body: init.body });
+    if (u.endsWith('/graphql')) return gql();
+    if (u.includes('/rules/branches/')) return rules();
+    return runs();
   };
-  const state = await readMergeQueueState({ repository: 'o/r', token: 't', branch: 'main', fetchImpl });
+  return { calls, fetchImpl };
+};
+
+test('readMergeQueueState sends one GraphQL query and GET-only reads', async () => {
+  const gh = fakeGithub({ gql: () => Response.json(queueData([entry(2500)])) });
+  const state = await readMergeQueueState({ repository: 'o/r', token: 't', branch: 'main', fetchImpl: gh.fetchImpl });
   assert.equal(state.queueEnabled, true);
-  assert.equal(state.timeoutSeconds, 3600);
+  assert.equal(state.timeoutSeconds, 3600, 'timeout comes from the REST merge_queue rule');
   assert.equal(state.entries.length, 1);
   assert.equal(state.runs.length, 1);
-  assert.equal(calls.length, 2);
-  assert.equal(calls[0].method, 'POST');
-  assert.doesNotMatch(JSON.parse(calls[0].body).query, /mutation/);
-  assert.equal(calls[1].method, 'GET');
-  const runsUrl = new URL(calls[1].url);
+  assert.equal(gh.calls.filter((c) => c.method === 'POST').length, 1);
+  assert.ok(gh.calls.every((c) => c.method === 'GET' || c.url.endsWith('/graphql')));
+  const query = JSON.parse(gh.calls[0].body).query;
+  assert.doesNotMatch(query, /mutation/);
+  // #2501 follow-up: the workflow GITHUB_TOKEN is refused mergeQueue.configuration
+  // (FORBIDDEN, probed 2026-11-06), so the query must never ask for it.
+  assert.doesNotMatch(query, /configuration/);
+  const runsUrl = new URL(gh.calls.find((c) => c.url.includes('/actions/runs')).url);
   assert.equal(runsUrl.searchParams.get('event'), 'merge_group');
   assert.equal(runsUrl.searchParams.get('created'), '>=2026-11-06T06:56:34.000Z');
 });
 
-test('readMergeQueueState skips run reads for an empty queue and reports a missing queue', async () => {
-  let runReads = 0;
-  const make = (mergeQueue) => async (url) => {
-    if (String(url).endsWith('/graphql')) {
-      return Response.json({ data: { repository: { defaultBranchRef: { name: 'main' }, mergeQueue } } });
-    }
-    runReads += 1;
-    return Response.json({ workflow_runs: [] });
-  };
-  const empty = await readMergeQueueState({
-    repository: 'o/r',
-    fetchImpl: make({ url: 'u', configuration: { checkResponseTimeout: 3600 }, entries: { nodes: [] } }),
-  });
-  assert.equal(empty.queueEnabled, true);
-  assert.deepEqual(empty.runs, []);
-  const none = await readMergeQueueState({ repository: 'o/r', fetchImpl: make(null) });
-  assert.equal(none.queueEnabled, false);
-  assert.equal(runReads, 0);
+test('an integration-token refusal of the optional enqueuer field is tolerated', async () => {
+  const forbidden = { type: 'FORBIDDEN', path: ['repository', 'mergeQueue', 'entries', 'nodes', 0, 'enqueuer'], message: 'Resource not accessible by integration' };
+  const gh = fakeGithub({ gql: () => Response.json(queueData([entry(2500, { enqueuer: null })], { errors: [forbidden] })) });
+  const state = await readMergeQueueState({ repository: 'o/r', branch: 'main', fetchImpl: gh.fetchImpl });
+  assert.equal(state.entries.length, 1);
+  const [finding] = findMergeQueueStalls({ entries: state.entries, runs: [], now: minutesAfter('2026-11-06T06:56:34Z', 6) });
+  assert.equal(finding.enqueuer, null);
+  assert.equal(finding.tokenEnqueue, false);
+  assert.match(formatStall(finding), /PR #2500 enqueued at .* 0 merge_group runs/);
 });
 
-test('readMergeQueueState surfaces GraphQL errors and HTTP failures', async () => {
+test('any other GraphQL error fails closed and names its path', async () => {
+  const forbidden = { type: 'FORBIDDEN', path: ['repository', 'mergeQueue', 'entries'], message: 'Resource not accessible by integration' };
+  const gh = fakeGithub({ gql: () => Response.json(queueData([], { errors: [forbidden] })) });
   await assert.rejects(
-    readMergeQueueState({ repository: 'o/r', fetchImpl: async () => Response.json({ errors: [{ message: 'boom' }] }) }),
-    /boom/,
+    readMergeQueueState({ repository: 'o/r', fetchImpl: gh.fetchImpl }),
+    /Resource not accessible by integration \(path repository\.mergeQueue\.entries\)/,
   );
+});
+
+test('an unreadable rules endpoint only drops the timeout from the message', async () => {
+  const gh = fakeGithub({ gql: () => Response.json(queueData([entry(1)])), rules: () => new Response('no', { status: 403 }) });
+  const state = await readMergeQueueState({ repository: 'o/r', fetchImpl: gh.fetchImpl });
+  assert.equal(state.timeoutSeconds, null);
+  const [finding] = findMergeQueueStalls({ entries: state.entries, runs: [], now: minutesAfter('2026-11-06T06:56:34Z', 6) });
+  assert.doesNotMatch(formatStall(finding, { timeoutSeconds: state.timeoutSeconds ?? undefined }), /removes it at/);
+});
+
+test('readMergeQueueState skips run reads for an empty queue and reports a missing queue', async () => {
+  const empty = fakeGithub({ gql: () => Response.json(queueData([])) });
+  const emptyState = await readMergeQueueState({ repository: 'o/r', fetchImpl: empty.fetchImpl });
+  assert.equal(emptyState.queueEnabled, true);
+  assert.deepEqual(emptyState.runs, []);
+  assert.equal(empty.calls.some((c) => c.url.includes('/actions/runs')), false);
+  const none = fakeGithub({ gql: () => Response.json(queueData(null)) });
+  assert.equal((await readMergeQueueState({ repository: 'o/r', fetchImpl: none.fetchImpl })).queueEnabled, false);
+  assert.equal(none.calls.some((c) => c.url.includes('/actions/runs')), false);
+});
+
+test('readMergeQueueState surfaces HTTP failures and bad repository names', async () => {
   await assert.rejects(
     readMergeQueueState({ repository: 'o/r', fetchImpl: async () => new Response('x', { status: 502 }) }),
     /502/,
