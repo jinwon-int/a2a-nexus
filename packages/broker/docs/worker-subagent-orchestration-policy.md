@@ -33,6 +33,18 @@ Subagents submit evidence packets only.
 
 Implementation subagents require disjoint file or module ownership. If write sets overlap, use one implementer and a verifier instead of multiple implementers.
 
+## Completion Rule
+
+A task is `done` only when every item in its feature list carries verification evidence. Anthropic's long-running-agent harness notes (2025-11, revised 2026-10) and this fleet's own phone-agent runs (Wiki TM-4299: a mis-tapped tile reported as success) show the same three failures: trying to finish everything in one context, a later session declaring the job done after seeing partial progress, and marking a feature complete without end-to-end testing. This rule closes them.
+
+- **Feature list first.** Before the first change, the finalizer writes `features.json` in the task workspace: one entry per deliverable with `id`, `description`, `status: pending`, `verify` (the command, test, or observable check that proves it), and `evidence: null`. Tasks with one deliverable still get a one-entry list.
+- **One feature at a time.** Each entry moves `pending -> in_progress -> verified` or `-> blocked`. An entry becomes `verified` only when the recorded `verify` step ran in this session and its output (exit code, test name, screenshot id, receipt id — never a body) is written to `evidence`.
+- **No done without evidence.** The terminal evidence packet / receipt must include `features.json`. A `done` with any entry still `pending`, `in_progress`, or with `evidence: null` is rejected by the finalizer self-check and reported as `partial` instead, listing the unverified ids. "Looks done" from reading prior progress is not evidence.
+- **Resume ritual.** A session that resumes a task reads `features.json` and the progress log before acting, and never re-marks an entry `verified` without re-running its `verify` step.
+- **Subagents.** Explorer/verifier subagents may fill `evidence` for an entry they verified; only the finalizer changes `status` (Finalizer Rule).
+
+Source-only: this rule constrains what a worker records and reports. It does not spawn subagents, mutate broker state, or change the lane's existing approval gates.
+
 ## Escape Hatch
 
 Direct execution with zero subagents is always allowed when the task is too small, too risky, too coupled, urgent, sensitive, or the host lacks capacity.
