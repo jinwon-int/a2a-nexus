@@ -268,6 +268,12 @@ import {
 } from "./broker-transition-guards.js";
 import { readExchange, readExchanges } from "./transport/broker-exchange-read.js";
 import {
+  GOAL_ID_PATTERN,
+  GOAL_OBJECTIVE_MAX_LENGTH,
+  GOAL_TITLE_MAX_LENGTH,
+  goalRecordSchema,
+} from "./store-schemas.js";
+import {
   resolveTerminalBriefParentOriginRoute,
   normalizeTerminalBriefTeamScope,
   type TerminalBriefBrokerTeamRegistration,
@@ -311,8 +317,11 @@ import type {
   BrokerDashboard,
   ChangeProposal,
   CleanupDryRunPlan,
+  CreateGoalRequest,
   CreateProposalRequest,
   CreateTaskRequest,
+  GoalListFilters,
+  GoalRecord,
   ProposalActorRequest,
   ProposalDetails,
   ProposalListFilters,
@@ -395,6 +404,8 @@ export type {
 } from "./broker-contracts.js";
 
 const HOT_PERSIST_FULL_RETENTION_INTERVAL_MS = 5 * 60_000;
+/** Default bound for goal listings on stores without a goal table (matches the SQLite hot-read default). */
+const DEFAULT_GOAL_LIST_LIMIT = 1_000;
 
 const DEFAULT_CHECKPOINT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
@@ -427,6 +438,12 @@ export class InMemoryA2ABroker {
   private readonly workers = new Map<string, WorkerRecord>();
   private readonly tasks = new Map<string, TaskRecord>();
   private readonly tombstones = new Map<string, TaskTombstone>();
+  /**
+   * Goals for stores without a goal table (#2499 slice 1). Stores that
+   * implement the goal methods (SQLite `broker_goals`) are the authority and
+   * this map stays empty.
+   */
+  private readonly goals = new Map<string, GoalRecord>();
   private readonly taskEvents: TaskEventDispatcher;
   private readonly pendingHot = new PendingHotStateBuffer();
   private readonly workerHeartbeatPersist = new HeartbeatPersistThrottle();
@@ -825,6 +842,179 @@ export class InMemoryA2ABroker {
 
   listWavePlans(): WavePlan[] {
     return this.wavePlans.list();
+  }
+
+  // --- Goals (#2499 slice 1) ---------------------------------------------------
+  // GoalRecord / GoalStatus from types.ts are the only goal model. A goal is
+  // created `pursuing`; tasks link to it through `goalId` at create time. No
+  // budget enforcement, spend, or status transition happens here yet.
+
+  /** The store's goal table when it has one (SQLite), else undefined. */
+  private goalStore(): Required<Pick<BrokerStateStore, "insertGoal" | "readGoal" | "listGoals" | "countGoalTasksByStatus">> | undefined {
+    const store = this.stateStore;
+    if (store?.insertGoal && store.readGoal && store.listGoals && store.countGoalTasksByStatus) {
+      return {
+        insertGoal: (goal) => store.insertGoal!(goal),
+        readGoal: (id) => store.readGoal!(id),
+        listGoals: (filters) => store.listGoals!(filters),
+        countGoalTasksByStatus: (goalId) => store.countGoalTasksByStatus!(goalId),
+      };
+    }
+    return undefined;
+  }
+
+  /**
+   * Create a `pursuing` goal (operator write). A caller-pinned `id` must match
+   * {@link GOAL_ID_PATTERN} exactly — it is never trimmed; an omitted id is a
+   * broker UUID. `title` (required) and `objective` (defaults to the title)
+   * are trimmed and bounded by GOAL_TITLE_MAX_LENGTH /
+   * GOAL_OBJECTIVE_MAX_LENGTH. Every violation is `bad_request` (400); an
+   * existing id is `invalid_transition` (409). The goal write, its
+   * `goal.created` audit event, and the persist run inside one
+   * `commitMutation` (a single transaction on the in-process SQLite store;
+   * on the worker-thread topology the insert runs first and a conflict
+   * throws before any audit event is appended).
+   */
+  createGoal(request: CreateGoalRequest): GoalRecord {
+    if (!request || typeof request !== "object") {
+      throw new BrokerError("bad_request", "goal create requires an object");
+    }
+    if (request.id !== undefined && (typeof request.id !== "string" || !GOAL_ID_PATTERN.test(request.id))) {
+      throw new BrokerError(
+        "bad_request",
+        `goal id must match ${GOAL_ID_PATTERN.source} (1-128 of A-Z a-z 0-9 . _ : -, no whitespace)`,
+      );
+    }
+    const title = typeof request.title === "string" ? request.title.trim() : "";
+    if (!title) {
+      throw new BrokerError("bad_request", "goal title is required");
+    }
+    if (title.length > GOAL_TITLE_MAX_LENGTH) {
+      throw new BrokerError("bad_request", `goal title must be at most ${GOAL_TITLE_MAX_LENGTH} characters`);
+    }
+    if (request.objective !== undefined && typeof request.objective !== "string") {
+      throw new BrokerError("bad_request", "goal objective must be a string");
+    }
+    const objective = request.objective?.trim() || title;
+    if (objective.length > GOAL_OBJECTIVE_MAX_LENGTH) {
+      throw new BrokerError("bad_request", `goal objective must be at most ${GOAL_OBJECTIVE_MAX_LENGTH} characters`);
+    }
+    if (!request.requester?.id) {
+      throw new BrokerError("bad_request", "goal requester.id is required");
+    }
+    const id = request.id ?? randomUUID();
+    if (this.getGoal(id)) {
+      throw new BrokerError("invalid_transition", `goal '${id}' already exists`, { goalId: id });
+    }
+    const now = isoNow();
+    const candidate: GoalRecord = {
+      id,
+      title,
+      objective,
+      requester: request.requester,
+      status: "pursuing",
+      createdAt: now,
+      updatedAt: now,
+      ...(request.budget !== undefined ? { budget: request.budget } : {}),
+      taskAttachments: [],
+      history: [
+        {
+          id: randomUUID(),
+          goalId: id,
+          to: "pursuing",
+          reason: "operator_requested",
+          createdAt: now,
+          actor: request.requester,
+        },
+      ],
+    };
+    const parsed = goalRecordSchema.safeParse(candidate);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new BrokerError(
+        "bad_request",
+        `invalid goal: ${issue?.path.join(".") || "record"}: ${issue?.message ?? "schema error"}`,
+      );
+    }
+    const goal = parsed.data as GoalRecord;
+    const store = this.goalStore();
+    this.commitMutation(() => {
+      if (store) {
+        // Create-only: a concurrent duplicate surfaces here as 409, before
+        // the audit event is appended.
+        store.insertGoal(goal);
+      } else {
+        this.goals.set(goal.id, goal);
+      }
+      this.appendAuditEvent({
+        actorId: goal.requester.id,
+        action: "goal.created",
+        targetType: "goal",
+        targetId: goal.id,
+        note: goal.title,
+      });
+      // Goals without a goal table live only in the canonical snapshot, so
+      // they need a full persist (like wave plans); the goal-table path only
+      // has the audit row left to stage.
+      if (store) {
+        this.persistState();
+      } else {
+        this.persistState(undefined, { forceFull: true });
+      }
+    });
+    return goal;
+  }
+
+  getGoal(goalId: string): GoalRecord | undefined {
+    const store = this.goalStore();
+    return store ? store.readGoal(goalId) : this.goals.get(goalId);
+  }
+
+  listGoals(filters: GoalListFilters = {}): GoalRecord[] {
+    const store = this.goalStore();
+    if (store) return store.listGoals(filters);
+    const limit = filters.limit !== undefined && filters.limit > 0 ? filters.limit : DEFAULT_GOAL_LIST_LIMIT;
+    return [...this.goals.values()]
+      .filter((goal) => !filters.status || goal.status === filters.status)
+      .sort((a, b) => (a.updatedAt === b.updatedAt ? a.id.localeCompare(b.id) : b.updatedAt.localeCompare(a.updatedAt)))
+      .slice(0, limit);
+  }
+
+  /** Per-status counts of tasks linked to a goal (read model only). */
+  countGoalTasksByStatus(goalId: string): Record<string, number> {
+    const store = this.goalStore();
+    if (store) return store.countGoalTasksByStatus(goalId);
+    const counts: Record<string, number> = {};
+    for (const task of this.tasks.values()) {
+      if (task.goalId === goalId) counts[task.status] = (counts[task.status] ?? 0) + 1;
+    }
+    return counts;
+  }
+
+  /**
+   * Create-time goal link check (#2499 slice 1, fail closed). Absent goalId
+   * keeps today's behaviour. An unknown goal is `not_found` (404), like the
+   * other referenced records checked at create (exchange, worker, proposal);
+   * a goal that exists but is not `pursuing` conflicts with the goal's current
+   * state and is `invalid_transition` (409). Spend therefore never attaches to
+   * a closed goal. The id's shape ({@link GOAL_ID_PATTERN}) was already
+   * checked by `assertTaskPayload` (createTaskRequestSchema), before the
+   * idempotent-replay branch, so a malformed goalId is 400 even on a replay.
+   */
+  private assertTaskGoalLink(goalId: string | undefined): string | undefined {
+    if (goalId === undefined) return undefined;
+    const goal = this.getGoal(goalId);
+    if (!goal) {
+      throw new BrokerError("not_found", "goal not found", { goalId });
+    }
+    if (goal.status !== "pursuing") {
+      throw new BrokerError(
+        "invalid_transition",
+        `goal '${goalId}' is ${goal.status}; tasks may only attach to a pursuing goal`,
+        { goalId, goalStatus: goal.status },
+      );
+    }
+    return goalId;
   }
 
   // --- WavePlanDagV2 rehearsal-evidence recording (#1800 slice 5) ------------
@@ -2277,6 +2467,11 @@ export class InMemoryA2ABroker {
     this.assertTaskPayload(normalizedRequest);
 
     // Idempotent create: if a task with the requested id already exists, return it as-is.
+    // #2499: `goalId` behaves like every other request field here. The legacy
+    // same-id check returns the stored task unchanged (a replay carrying a
+    // different goalId neither relinks nor is refused); the V1 authority
+    // fingerprints the whole normalized request, goalId included, so a
+    // differing goalId is an `idempotency_conflict` (409).
     if (normalizedRequest.id) {
       const existing = this.getTask(normalizedRequest.id);
       if (this.taskCreateIdempotencyAuthority) {
@@ -2312,6 +2507,7 @@ export class InMemoryA2ABroker {
     if (normalizedRequest.exchangeId) {
       this.requireExchange(normalizedRequest.exchangeId);
     }
+    const goalId = this.assertTaskGoalLink(normalizedRequest.goalId);
     this.requireWorker(normalizedRequest.target.id);
     if (normalizedRequest.assignedWorkerId) {
       this.requireWorker(normalizedRequest.assignedWorkerId);
@@ -2384,6 +2580,7 @@ export class InMemoryA2ABroker {
       taskOrigin: normalizedRequest.taskOrigin ?? "unknown",
       ...(brokerOfRecord ? { brokerOfRecord } : {}),
       ...(teamId ? { teamId } : {}),
+      ...(goalId ? { goalId } : {}),
     };
 
     this.commitMutation(() => {
@@ -3163,6 +3360,9 @@ export class InMemoryA2ABroker {
       parentRounds: this.parentRounds.snapshot(),
       wavePlans: this.wavePlans.snapshot(),
       reviewLineages: this.reviewLineages.snapshot(),
+      // Only stores without a goal table carry goals in the snapshot; the
+      // field is omitted when empty so existing snapshot shapes are unchanged.
+      ...(this.goals.size > 0 ? { goals: [...this.goals.values()] } : {}),
       ...this.snapshotExtensions.collectFields(),
     };
   }
@@ -3204,6 +3404,35 @@ export class InMemoryA2ABroker {
   }
 
   private loadSnapshot(snapshot: BrokerSnapshot): void {
+    if (!this.goalStore()) {
+      // #2499: `goals` rides through brokerSnapshotSchema's passthrough
+      // unvalidated, so each entry is validated here. An invalid entry is
+      // dropped with the same `broker.snapshot.record_quarantined` event the
+      // snapshot loader emits for its declared collections; the record is
+      // included because the next full save no longer carries it.
+      for (const [index, goal] of (snapshot.goals ?? []).entries()) {
+        const parsed = goalRecordSchema.safeParse(goal);
+        if (parsed.success) {
+          this.goals.set(parsed.data.id, parsed.data as GoalRecord);
+          continue;
+        }
+        const recordId = (goal as { id?: unknown } | null)?.id;
+        console.warn(
+          JSON.stringify({
+            event: "broker.snapshot.record_quarantined",
+            source: "loadSnapshot",
+            collection: "goals",
+            index,
+            recordId: typeof recordId === "string" ? recordId : undefined,
+            issues: parsed.error.issues
+              .slice(0, 5)
+              .map((issue) => `${issue.path.join(".") || "<root>"}: ${issue.message}`),
+            record: goal,
+          }),
+        );
+      }
+    }
+
     for (const exchange of snapshot.exchanges) {
       const normalizedExchange = normalizeExchangeState(exchange);
       this.exchanges.set(normalizedExchange.id, normalizedExchange);

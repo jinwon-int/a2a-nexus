@@ -198,6 +198,23 @@ export interface GoalRecord {
     artifactIds?: string[];
   };
 }
+
+/** Operator input for creating a goal (#2499 slice 1). Goals always start `pursuing`. */
+export interface CreateGoalRequest {
+  /** Optional caller-pinned id; a broker-generated UUID otherwise. */
+  id?: string;
+  title: string;
+  /** Defaults to the title when omitted. */
+  objective?: string;
+  requester: A2APartyRef;
+  budget?: GoalBudgetPolicy;
+}
+
+/** Read filters for goal listings. `limit` is bounded by the store. */
+export interface GoalListFilters {
+  status?: GoalStatus;
+  limit?: number;
+}
 export type AuditAction =
   | "proposal.created"
   | "artifact.attached"
@@ -243,7 +260,8 @@ export type AuditAction =
   | "conversation.message.processed"
   | "task.negative_verdict_preserved"
   | "task.review_gate_skipped"
-  | "task.finalizer_admission_skipped";
+  | "task.finalizer_admission_skipped"
+  | "goal.created";
 export type A2AWorkerEnvironment = "research" | "staging" | "live";
 export type WorkerStatus = "online" | "stale";
 export type WorkerPlaneStatus = "online" | "unknown";
@@ -445,6 +463,11 @@ export interface CreateTaskRequest extends Omit<A2ATaskRequest, "id" | "createdA
   brokerOfRecord?: string;
   /** Team/tenant boundary that owns lifecycle mutation authority for this task. */
   teamId?: string;
+  /**
+   * Optional link to a broker goal (#2499). When present it must name an
+   * existing goal whose status is `pursuing`, or creation is refused.
+   */
+  goalId?: string;
 }
 
 export interface TaskValidationPayload {
@@ -812,6 +835,12 @@ export interface TaskRecord extends A2ATaskRequest {
   /** Team/tenant boundary that owns claim/start/complete/fail authority. Optional for legacy tasks. */
   teamId?: string;
   /**
+   * Goal this task counts toward (#2499). Validated at create time (the goal
+   * must exist and be `pursuing`) and mirrored into the indexed
+   * `broker_tasks.goal_id` column on SQLite stores.
+   */
+  goalId?: string;
+  /**
    * Evidence submitted by the worker after the task was canceled.
    * Present only when a worker posts completion/fail evidence after
    * the broker already transitioned the task to canceled. Enables
@@ -988,7 +1017,7 @@ export interface AuditEvent {
   id: string;
   actorId: string;
   action: AuditAction;
-  targetType: "proposal" | "artifact" | "validation" | "worker" | "task" | "exchange" | "exchange-message" | "broker" | "wave-plan" | "conversation" | "conversation-message";
+  targetType: "proposal" | "artifact" | "validation" | "worker" | "task" | "exchange" | "exchange-message" | "broker" | "wave-plan" | "conversation" | "conversation-message" | "goal";
   targetId: string;
   proposalId?: string;
   note?: string;

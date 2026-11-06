@@ -361,6 +361,11 @@ export function failTask(
       retriedFromTaskId: task.id,
       ...(retryPlan.retryNotBeforeAt ? { retryNotBeforeAt: retryPlan.retryNotBeforeAt } : {}),
     };
+    // #2499: the retry inherits `goalId` through the spread on purpose. It is
+    // a re-attempt of an already-admitted task (same `retryOfTaskId` lineage),
+    // not a new admission, so the value is the one `createTask` validated for
+    // the root; dropping it would let retry spend escape the goal. Retries
+    // are not re-gated on goal status here (slice 1 has no goal transition).
     retryTask = normalizeTaskRecord({
       ...task,
       id: retryPlan.retryTaskId,

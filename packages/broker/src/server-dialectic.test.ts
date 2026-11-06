@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DECISION_DIALECTIC_KIND, DECISION_DIALECTIC_VERSION, type DecisionDialecticTaskInputV1, type DecisionDialecticTaskV1 } from "./decision-dialectic/types.js";
-import { DecisionDialecticExecutionError, extractDecisionDialecticTaskInput, applyDecisionDialecticPatch } from "./decision-dialectic/execution.js";
+import { DecisionDialecticExecutionError, extractDecisionDialecticTaskInput, applyDecisionDialecticPatch, buildDecisionDialecticPhaseTaskRequest } from "./decision-dialectic/execution.js";
+import { BrokerError, InMemoryA2ABroker } from "./core/broker.js";
+import type { TaskRecord } from "./core/types.js";
 import { TRADING_DIALECTIC_KIND, TRADING_DIALECTIC_VERSION, type TradingDialecticTaskInputV1, type TradingDialecticTaskV1 } from "./trading-dialectic/types.js";
 import { startTestServer, jsonHeaders, registerTestWorker } from "./server-test-helpers.js";
 
@@ -484,6 +486,58 @@ test("decision-dialectic read model returns generic stage rail and dynamic role 
   } finally {
     await server.close();
   }
+});
+
+test("decision-dialectic phase tasks carry the parent's goalId through createTask validation (#2499)", () => {
+  const broker = new InMemoryA2ABroker();
+  broker.registerWorker({
+    nodeId: "workerbeta",
+    role: "analyst",
+    capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["t"], environments: ["research"] },
+  });
+  broker.createGoal({ id: "goal-dialectic", title: "Dialectic goal", requester: { id: "op", kind: "user", role: "operator" } });
+  const parentPayload = buildDecisionDialecticPayload(
+    {
+      revision: 0,
+      state: "OPEN",
+      thesis: undefined,
+      antithesis: undefined,
+      rebuttal: undefined,
+      synthesis: undefined,
+      decision: undefined,
+      outcome: undefined,
+    },
+    "thesis",
+  ) as unknown as Record<string, unknown>;
+  const parent = (goalId?: string): TaskRecord => ({
+    id: "dd-parent",
+    intent: "analyze",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "workerbeta", kind: "node", role: "analyst" },
+    targetNodeId: "workerbeta",
+    payload: parentPayload,
+    status: "queued",
+    createdAt: "2026-05-18T00:00:00.000Z",
+    updatedAt: "2026-05-18T00:00:00.000Z",
+    taskOrigin: "api",
+    ...(goalId ? { goalId } : {}),
+  });
+
+  const withoutGoal = buildDecisionDialecticPhaseTaskRequest(parent());
+  assert.equal("goalId" in withoutGoal.request, false);
+
+  const linked = buildDecisionDialecticPhaseTaskRequest(parent("goal-dialectic"));
+  assert.equal(linked.request.goalId, "goal-dialectic");
+  assert.equal(broker.createTask(linked.request).goalId, "goal-dialectic");
+  assert.deepEqual(broker.countGoalTasksByStatus("goal-dialectic"), { queued: 1 });
+
+  // The propagated link is validated like any other create: an unknown goal is refused.
+  const orphan = buildDecisionDialecticPhaseTaskRequest(parent("goal-gone"), { id: "dd-orphan-phase" });
+  assert.throws(
+    () => broker.createTask(orphan.request),
+    (error: unknown) => error instanceof BrokerError && error.code === "not_found" && /goal not found/.test(error.message),
+  );
+  assert.equal(broker.getTask("dd-orphan-phase"), null);
 });
 
 test("decision-dialectic execution advances phase tasks and applies ordered patches", async () => {

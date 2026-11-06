@@ -35,12 +35,18 @@ Spec: [`spec.md`](spec.md) · Plan: [`plan.md`](plan.md) · Issue: [#2499](https
   - indexes on `goal_id`, `(period_key, agent_id)`, `(period_key, lane)`, `(period_key, goal_id)`.
 - [ ] Goal persistence reusing `GoalRecord` / `GoalStatus`; no second status enum.
 - [ ] Optional `goalId` on `TaskRecord` and the create-task input; refuse an unknown or non-`pursuing` goal at create.
-- [ ] `GET /goals`, `GET /goals/:id` (JSON, read-only).
+  - One goal id pattern, `^[A-Za-z0-9._:-]{1,128}$`, for goal ids and `goalId`; a padded or malformed id is 400, never trimmed.
+  - Idempotent create replays treat `goalId` like any other field (legacy: stored task returned unchanged; V1 idempotency authority: a differing `goalId` is 409 `idempotency_conflict`).
+  - Retry tasks inherit the root task's `goalId`; decision-dialectic phase tasks carry the parent's `goalId` through `createTask` validation; other create paths build requests without a goal.
+- [ ] `POST /goals` (hub/operator; creates a `pursuing` goal; `goal.created` audit event; id pattern, title ≤ 200 and objective ≤ 2000 characters, else 400; duplicate id 409).
+- [ ] `GET /goals`, `GET /goals/:id` (JSON, read-only). `linkedTasks` counts come from the hot task table (see the lifecycle doc).
+- [ ] Stores without a goal table (JSON file) carry goals in the snapshot `goals` field and survive a restart.
 - [ ] Tests:
-  - v13 → v14 upgrade keeps all task rows;
+  - v13 → v14 upgrade keeps all task rows; partially applied v14 re-runs to the full shape; a newer `schema_version` is refused;
   - goal create/attach;
   - unknown-goal refusal;
-  - routes.
+  - routes;
+  - JSON-file store restart keeps goals.
 
 ### Slice 2 — spend ledger (record only)
 

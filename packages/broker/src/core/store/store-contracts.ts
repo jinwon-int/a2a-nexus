@@ -4,6 +4,7 @@ import type {
   A2AExchangeMessageRecord,
   A2AExchangeState,
   ChangeProposal,
+  GoalListFilters,
   GoalRecord,
   TaskRecord,
   TaskTombstone,
@@ -118,6 +119,20 @@ export interface BrokerStateStore {
   getPersistenceInfo?(): BrokerPersistenceInfo;
   /** Atomically record first use of a live-approval scope key. Returns false on replay. */
   consumeLiveApprovalKey?(key: string, consumedAt: string): boolean;
+  /**
+   * Goal persistence (#2499 slice 1). SQLite stores keep one `broker_goals`
+   * row per goal and implement all four; a store that leaves them undefined
+   * gets broker-held goals carried in its snapshot instead.
+   *
+   * `insertGoal` is create-only: an existing id is a `BrokerError`
+   * `invalid_transition` (409), never an overwrite. Slice 1 has no goal
+   * update path, so there is no update method yet.
+   */
+  insertGoal?(goal: GoalRecord): void;
+  readGoal?(id: string): GoalRecord | undefined;
+  listGoals?(filters?: GoalListFilters): GoalRecord[];
+  /** Task counts per status for tasks linked to `goalId` (indexed `goal_id` column). */
+  countGoalTasksByStatus?(goalId: string): Record<string, number>;
 }
 
 export interface BrokerStateSaveHints {

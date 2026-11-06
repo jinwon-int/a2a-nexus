@@ -26,6 +26,7 @@ import type { A2AHttpSignatureVerifiedWorker } from "../server.js";
 import { handleA2AJsonRpcRouteIfMatched, type A2AJsonRpcRouteContext } from "./a2a-jsonrpc-route.js";
 import { handleComplexityOrchestrationRoutesIfMatched, type ComplexityOrchestrationRoutesContext } from "./complexity-orchestration-routes.js";
 import { handleWavePlanRoutesIfMatched, type WavePlanRouteContext } from "./wave-plan-routes.js";
+import { handleGoalRoutesIfMatched, type GoalRouteContext } from "./goal-routes.js";
 import { handleWavePlanDagV2RoutesIfMatched } from "./wave-plan-dag-v2-routes.js";
 import { handleReviewLineageRoutesIfMatched, type ReviewLineageRouteContext } from "./review-lineage-routes.js";
 import { handleNclexEvaluationRoutesIfMatched, type NclexEvaluationRouteContext } from "./nclex-evaluation-routes.js";
@@ -146,6 +147,19 @@ export function createWavePlanRouteEntries(deps: RouteDeps<WavePlanRouteContext>
     entry("GET", ["wave-plans"], "wave-plan", "wave-plan", dispatch),
     entry("GET", ["wave-plans", ":id"], "wave-plan", "wave-plan", dispatch),
     entry("POST", ["wave-plans", ":id", ":action"], "wave-plan", "wave-plan", dispatch),
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// 3b. Goals (#2499 slice 1): create + read-only listing/detail
+// ---------------------------------------------------------------------------
+
+export function createGoalRouteEntries(deps: RouteDeps<GoalRouteContext>): BrokerRouteEntry[] {
+  const dispatch = (rc: BrokerRequestContext) => handleGoalRoutesIfMatched({ ...rc, ...deps });
+  return [
+    entry("POST", ["goals"], "other", "other", dispatch),
+    entry("GET", ["goals"], "other", "other", dispatch),
+    entry("GET", ["goals", ":id"], "other", "other", dispatch),
   ];
 }
 

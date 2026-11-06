@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { BrokerError } from "./broker-error.js";
 import { SETTLED_TASK_STATUSES } from "./types.js";
+import type { GoalStatus, GoalTransitionReason } from "./types.js";
 
 /**
  * Persisted broker state version. Defined here, beside the snapshot schema that
@@ -301,6 +302,20 @@ export const taskLeaseStampV1Schema = z
   })
   .strict();
 
+/**
+ * Goal id grammar (#2499 slice 1). One pattern for every goal id the broker
+ * accepts or stores: a caller-pinned `POST /goals` id, `GoalRecord.id`, and
+ * `TaskRecord.goalId` / the create-task `goalId`. No whitespace, so a padded
+ * id is refused (400) instead of trimmed; broker-generated UUIDs match it.
+ */
+export const GOAL_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+export const goalIdSchema = z
+  .string()
+  .regex(GOAL_ID_PATTERN, `goal id must match ${GOAL_ID_PATTERN.source}`);
+/** Goal text limits (#2499 slice 1); applied to the trimmed values. */
+export const GOAL_TITLE_MAX_LENGTH = 200;
+export const GOAL_OBJECTIVE_MAX_LENGTH = 2_000;
+
 export const taskSchema = z
   .object({
     id: z.string().min(1),
@@ -338,6 +353,9 @@ export const taskSchema = z
     leaseV1: taskLeaseStampV1Schema.optional(),
     wake: taskWakeSchema.optional(),
     taskOrigin: taskOriginSchema,
+    // #2499: optional goal link. Absent stays absent (no default), so a task
+    // without a goal serializes exactly as before.
+    goalId: goalIdSchema.optional(),
   })
   .passthrough();
 
@@ -950,7 +968,9 @@ export const registerWorkerRequestSchema = workerSchema.omit({
  * input. Everything left is copied verbatim from the request into the record:
  * `intent`, `requester`/`target` party refs, `workspace`, `message`, `via`,
  * `proposalId`, `assignedWorkerId`, `exchangeId`, `parentTaskId`,
- * `policyContext`, `taskOrigin`.
+ * `policyContext`, `taskOrigin`, and the optional `goalId` (#2499: its
+ * {@link GOAL_ID_PATTERN} shape is checked here, before the idempotent-replay
+ * branch; existence and `pursuing` status are checked later in `createTask`).
  *
  * `id` and `artifactIds` are relaxed to optional: a caller may pin an id
  * (idempotent create) and `artifactIds` defaults to `[]`. `artifactIds` is
@@ -987,6 +1007,101 @@ export const createTaskRequestSchema = taskSchema
     id: z.string().min(1).optional(),
     artifactIds: z.array(z.string()).optional(),
   });
+
+/**
+ * Persisted goal record (#2499 slice 1). SQLite stores keep one row per goal
+ * in the `broker_goals` table (parsed with this schema on every read), so
+ * goals are queryable without loading the snapshot. Stores without a goal
+ * table (the JSON-file store, injected test stores) carry goals in the
+ * snapshot's optional `goals` field instead: {@link brokerSnapshotSchema}
+ * does not declare that field, so it survives a reload only through the
+ * schema's `.passthrough()`, and the broker validates each entry against
+ * this schema in `loadSnapshot` — an invalid entry is dropped and logged as
+ * `broker.snapshot.record_quarantined` (collection `goals`). The field is
+ * omitted when there are no goals, so existing snapshot shapes (and
+ * CURRENT_BROKER_STATE_VERSION) do not change.
+ *
+ * `status` and `reason` reuse the closed `GoalStatus` / `GoalTransitionReason`
+ * vocabularies from types.ts; there is no second goal status enum.
+ */
+export const GOAL_STATUS_VALUES = [
+  "pursuing",
+  "paused",
+  "achieved",
+  "blocked",
+  "unmet",
+  "budget_limited",
+  "cleared",
+] as const satisfies readonly GoalStatus[];
+
+const GOAL_TRANSITION_REASON_VALUES = [
+  "operator_requested",
+  "child_task_progress",
+  "child_task_terminal",
+  "dependency_blocked",
+  "budget_exhausted",
+  "objective_satisfied",
+  "objective_not_met",
+  "retention_cleared",
+] as const satisfies readonly GoalTransitionReason[];
+
+export const goalBudgetPolicySchema = z
+  .object({
+    maxChildAttempts: z.number().int().positive().optional(),
+    deadlineAt: z
+      .string()
+      .refine((value) => !Number.isNaN(Date.parse(value)), "deadlineAt must be an ISO timestamp")
+      .optional(),
+    maxResourceUnits: z.number().positive().optional(),
+  })
+  .strict();
+
+export const goalRecordSchema = z
+  .object({
+    id: goalIdSchema,
+    title: z.string().min(1).max(GOAL_TITLE_MAX_LENGTH),
+    objective: z.string().min(1).max(GOAL_OBJECTIVE_MAX_LENGTH),
+    requester: partyRefSchema,
+    status: z.enum(GOAL_STATUS_VALUES),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    completedAt: z.string().optional(),
+    budget: goalBudgetPolicySchema.optional(),
+    taskAttachments: z.array(
+      z
+        .object({
+          taskId: z.string().min(1),
+          role: z.string().optional(),
+          attachedAt: z.string(),
+          detachedAt: z.string().optional(),
+        })
+        .passthrough(),
+    ),
+    history: z.array(
+      z
+        .object({
+          id: z.string().min(1),
+          goalId: goalIdSchema,
+          from: z.enum(GOAL_STATUS_VALUES).optional(),
+          to: z.enum(GOAL_STATUS_VALUES),
+          reason: z.enum(GOAL_TRANSITION_REASON_VALUES),
+          createdAt: z.string(),
+          actor: partyRefSchema.optional(),
+          taskId: z.string().optional(),
+          note: z.string().optional(),
+        })
+        .passthrough(),
+    ),
+    outcome: z
+      .object({
+        summary: z.string(),
+        failed: z.boolean(),
+        artifactIds: z.array(z.string()).optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
 
 /**
  * The one caller-influenced field of a terminal-outbox payload that the store

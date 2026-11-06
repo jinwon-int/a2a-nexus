@@ -269,6 +269,9 @@ function isAuditEventProtected(
       return protectedIds.exchangeMessageIds.has(event.targetId);
     case "broker":
     case "wave-plan":
+    // Goal audit events (#2499) are ordinary audit rows: the goal itself
+    // lives in `broker_goals` (or the snapshot) and does not depend on them.
+    case "goal":
       // Conversation audit events are digest-first (#1862) and small; they are
       // not hot-table protected yet because conversations persist through the
       // snapshot blob, not hot tables.
