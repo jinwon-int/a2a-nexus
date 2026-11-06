@@ -1264,30 +1264,41 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
    * Spend totals for one period (#2499 slice 2). Each query is one indexed
    * aggregate over `broker_spend_events` (`(period_key, agent_id|lane|goal_id)`
    * indexes); nothing scans `broker_tasks.payload`. Rows whose scope column is
-   * NULL (a goal-less task, an unassigned cancel) count toward the period
+   * NULL (a goal-less task, an unattributed cancel) count toward the period
    * total but belong to no scope. Groups are ordered by scope id and bounded
    * by `limit` per scope type.
+   *
+   * Overflow: token sums are read as BigInt (`setReadBigInts`), so a period
+   * total above 2^53 stays exact instead of throwing ERR_OUT_OF_RANGE; SQLite's
+   * integer SUM itself is exact up to 2^63 - 1, i.e. at least ~9.2 million
+   * rows at the 1e12 per-row token cap in one period. USD uses TOTAL(), a
+   * float sum that cannot overflow. Counts are row counts and fit a number.
    */
   readSpendTotals(query: SpendTotalsQuery): SpendTotalsResult {
     const limit = normalizeBoundedSqliteLimit(query.limit);
     const aggregates = `
-      COALESCE(SUM(CASE WHEN cost_known = 1 THEN cost_usd ELSE 0 END), 0) AS usd,
+      TOTAL(CASE WHEN cost_known = 1 THEN cost_usd ELSE 0 END) AS usd,
       COALESCE(SUM(input_tokens), 0) AS input_tokens,
       COALESCE(SUM(output_tokens), 0) AS output_tokens,
       COUNT(*) AS task_count,
       COALESCE(SUM(CASE WHEN cost_known = 0 THEN 1 ELSE 0 END), 0) AS cost_unknown,
       COALESCE(SUM(CASE WHEN cost_known = 0 AND input_tokens = 0 AND output_tokens = 0 THEN 1 ELSE 0 END), 0) AS unmetered`;
     type Row = Record<string, unknown>;
+    const read = (sql: string): StatementSync => {
+      const statement = this.stmt(sql);
+      statement.setReadBigInts(true);
+      return statement;
+    };
     const toTotals = (row: Row | undefined): SpendTotals => ({
       usdKnownTotal: Math.round(sqliteNumber(row?.usd) * 1e6) / 1e6,
-      inputTokensTotal: sqliteNumber(row?.input_tokens),
-      outputTokensTotal: sqliteNumber(row?.output_tokens),
+      inputTokensTotal: sqliteBigInt(row?.input_tokens),
+      outputTokensTotal: sqliteBigInt(row?.output_tokens),
       taskCount: sqliteNumber(row?.task_count),
       costUnknownTaskCount: sqliteNumber(row?.cost_unknown),
       unmeteredTaskCount: sqliteNumber(row?.unmetered),
     });
     const total = toTotals(
-      this.stmt(`SELECT ${aggregates} FROM broker_spend_events WHERE period_key = ?`).get(query.periodKey) as Row | undefined,
+      read(`SELECT ${aggregates} FROM broker_spend_events WHERE period_key = ?`).get(query.periodKey) as Row | undefined,
     );
     const scopeTypes: readonly BudgetScopeType[] = query.scopeType ? [query.scopeType] : BUDGET_SCOPE_TYPES;
     const scopes: SpendScopeTotals[] = [];
@@ -1296,12 +1307,10 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       // Closed mapping from the validated scope type; never caller text.
       const column = SPEND_SCOPE_COLUMNS[scopeType];
       const rows = (query.scopeId !== undefined
-        ? this
-          .stmt(`SELECT ${column} AS scope_id, ${aggregates} FROM broker_spend_events
+        ? read(`SELECT ${column} AS scope_id, ${aggregates} FROM broker_spend_events
                  WHERE period_key = ? AND ${column} = ? GROUP BY ${column}`)
           .all(query.periodKey, query.scopeId)
-        : this
-          .stmt(`SELECT ${column} AS scope_id, ${aggregates} FROM broker_spend_events
+        : read(`SELECT ${column} AS scope_id, ${aggregates} FROM broker_spend_events
                  WHERE period_key = ? AND ${column} IS NOT NULL
                  GROUP BY ${column} ORDER BY ${column} ASC LIMIT ?`)
           .all(query.periodKey, limit + 1)) as Row[];
@@ -2532,6 +2541,24 @@ function sqliteNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+/** An INTEGER aggregate read with `setReadBigInts(true)`, exactly. */
+function sqliteBigInt(value: unknown): bigint {
+  if (typeof value === "bigint") return value;
+  return typeof value === "number" && Number.isSafeInteger(value) ? BigInt(value) : 0n;
+}
+
+/**
+ * Whether the hints carry hot-entity rows. `spendEvents` is deliberately not
+ * counted (#2499 slice 2): no write is gated on this — both save paths insert
+ * spend rows unconditionally (`insertSpendEventsUnsafe`), and the broker
+ * already routes a spend-only persist to `saveHotEntities` (its pending
+ * buffer counts spend). `save()` only receives spend-only hints when the
+ * broker asked for a full save (the retention cadence or `forceFull`);
+ * counting spend here would turn that into a hint-scoped save that skips the
+ * canonical snapshot and the hot-table retention prune on the
+ * repositories-on-write topology, where spend is often the only staged
+ * category.
+ */
 function hintsHasAnyEntries(hints: BrokerStateSaveHints | undefined): boolean {
   if (!hints) return false;
   return (

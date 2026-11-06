@@ -117,9 +117,10 @@ Conclusions:
   - `cost_known = false` when the runtime reported no cost. Those rows still carry
     tokens when present.
   - *Clarified in slice 2 (2026-11-06):*
-    - `agent_id` is the worker that did the work: `claimedBy`, else
-      `assignedWorkerId`. Cancellation clears `claimedBy`, so a cancel is
-      attributed to the assignee.
+    - `agent_id` is the worker that did the work: `claimedBy`, else the
+      worker that held the claim when a cancel cleared `claimedBy`, else
+      `assignedWorkerId`, else NULL. A NULL row counts toward the period
+      total but toward no agent scope.
     - `lane` is the task `intent`.
     - `input_tokens` is uncached input plus cache-creation tokens. Cache-read
       tokens are not counted: they are billed at a fraction of the input rate
@@ -129,7 +130,11 @@ Conclusions:
       with `cost_known = false` and zero tokens is unmetered.
     - Malformed or out-of-range telemetry (`costUsd` > 1e6, a token count
       > 1e12, a negative or non-numeric value, an unknown schema version) is
-      recorded unmetered, never clamped.
+      never clamped. The next carrier in precedence order with valid
+      telemetry is used instead; if none parses, the row is unmetered.
+    - Token totals are exact integers (BigInt) past 2^53; the status route
+      returns a number while a total is at most `Number.MAX_SAFE_INTEGER`,
+      else its decimal string.
     - Spend is SQLite-only. Other stores keep no ledger, and budget status
       reports `available: false` for them.
 - Monthly totals are derived from `broker_spend_events` by `period_key` instead of a

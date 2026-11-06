@@ -233,7 +233,7 @@ export interface SpendEventRecord {
   recordedAt: string;
   /** `YYYY-MM` of `recordedAt` in the broker's budget period time zone. */
   periodKey: string;
-  /** Worker that did the work: `claimedBy`, else `assignedWorkerId`. */
+  /** Worker that did the work: `claimedBy`, else the claimant a cancel cleared, else `assignedWorkerId`. */
   agentId: string | null;
   /** The task `intent` (the lane dimension: analyze, propose_patch, ...). */
   lane: string | null;
@@ -251,8 +251,13 @@ export interface SpendEventRecord {
 export interface SpendTotals {
   /** Sum of `costUsd` over rows with `costKnown` (Decision 4). */
   usdKnownTotal: number;
-  inputTokensTotal: number;
-  outputTokensTotal: number;
+  /**
+   * Token sums are BigInt: a period can exceed 2^53 tokens (per-row cap 1e12),
+   * and these feed slice-3 limit checks, which must not round. HTTP
+   * serializes them as a number when safe, else a decimal string.
+   */
+  inputTokensTotal: bigint;
+  outputTokensTotal: bigint;
   taskCount: number;
   /** Rows without a known cost (they may still carry tokens). */
   costUnknownTaskCount: number;
@@ -278,6 +283,7 @@ export interface SpendTotalsQuery {
 }
 
 export interface SpendTotalsResult {
+  /** The whole period, including rows with no agent, lane or goal. */
   total: SpendTotals;
   scopes: SpendScopeTotals[];
   /** True when a scope type had more groups than `limit`. */

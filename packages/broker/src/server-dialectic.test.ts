@@ -544,7 +544,10 @@ test("decision-dialectic phase tasks carry the parent's goalId through createTas
   assert.equal(broker.getTask("dd-orphan-phase"), null);
 });
 
-test("HTTP decision-dialectic advance refuses a closed or missing parent goal and does not advance (#2499)", async () => {
+// The refusal itself is slice 1's createTask goal gate (assertTaskGoalLink:
+// any non-`pursuing` goal is 409, a missing one 404); this pins it on the HTTP
+// dialectic advance path, with no phase task created.
+test("HTTP decision-dialectic advance refuses a non-pursuing (paused or closed) or missing parent goal and does not advance (#2499)", async () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-dialectic-goal-"));
   const dbFile = join(dir, "state.sqlite");
   const server = await startTestServer({
@@ -632,14 +635,16 @@ test("HTTP decision-dialectic advance refuses a closed or missing parent goal an
       });
     const parentBefore = JSON.stringify(server.runtime.broker.getTask(parent.id));
 
-    // Closed goal: 409 invalid_transition, no phase task.
-    goalStatus("paused");
-    const paused = await advance();
-    assert.equal(paused.status, 409);
-    const pausedBody = await paused.json();
-    assert.equal(pausedBody.error.code, "invalid_transition");
-    assert.deepEqual(pausedBody.error.details, { goalId: "goal-dd", goalStatus: "paused" });
-    assert.deepEqual(childrenOf(), []);
+    // Paused, and closed (`achieved`), goal: 409 invalid_transition, no phase task.
+    for (const status of ["paused", "achieved"]) {
+      goalStatus(status);
+      const refused = await advance();
+      assert.equal(refused.status, 409, status);
+      const refusedBody = await refused.json();
+      assert.equal(refusedBody.error.code, "invalid_transition");
+      assert.deepEqual(refusedBody.error.details, { goalId: "goal-dd", goalStatus: status });
+      assert.deepEqual(childrenOf(), [], status);
+    }
 
     // Missing goal: 404 not_found, no phase task.
     editGoal("DELETE FROM broker_goals WHERE id = ?", "goal-dd");

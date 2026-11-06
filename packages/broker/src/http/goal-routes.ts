@@ -170,11 +170,20 @@ const BUDGET_SCOPE_ID_PATTERN = /^[^\u0000-\u001f\u007f]{1,256}$/;
 /** Bound on scope groups returned per scope type. */
 const BUDGET_STATUS_SCOPE_LIMIT = 1_000;
 
+/**
+ * A BigInt token total as JSON: a number while it is a safe integer
+ * (<= Number.MAX_SAFE_INTEGER, the normal case), else its exact decimal
+ * string. Clients must accept both; a string means "above 2^53 - 1".
+ */
+function jsonSafeInteger(value: bigint): number | string {
+  return value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : value.toString();
+}
+
 function spendTotalsJson(totals: SpendTotals) {
   return {
     usd_known_total: totals.usdKnownTotal,
-    input_tokens_total: totals.inputTokensTotal,
-    output_tokens_total: totals.outputTokensTotal,
+    input_tokens_total: jsonSafeInteger(totals.inputTokensTotal),
+    output_tokens_total: jsonSafeInteger(totals.outputTokensTotal),
     task_count: totals.taskCount,
     cost_unknown_task_count: totals.costUnknownTaskCount,
     unmetered_task_count: totals.unmeteredTaskCount,
@@ -188,8 +197,8 @@ function scopeJson(scope: SpendScopeTotals) {
 
 const ZERO_TOTALS: SpendTotals = {
   usdKnownTotal: 0,
-  inputTokensTotal: 0,
-  outputTokensTotal: 0,
+  inputTokensTotal: 0n,
+  outputTokensTotal: 0n,
   taskCount: 0,
   costUnknownTaskCount: 0,
   unmeteredTaskCount: 0,
@@ -204,9 +213,14 @@ const ZERO_TOTALS: SpendTotals = {
  * - no `scope_type`: per-scope totals for every scope type; `scope_type`
  *   only: every scope of that type; plus `scope_id`: that one scope (zero
  *   totals when it spent nothing). `scope_id` without `scope_type` is 400;
+ * - `period_total` is always the whole period (every row, including rows
+ *   with no agent or goal), whatever the scope filter; `scope_total` is the
+ *   named scope's totals when `scope_type` and `scope_id` are both given
+ *   (equal to its one `scopes` entry), else null;
  * - `usd_known_total` sums only rows with a reported cost (Decision 4);
  *   `cost_unknown_task_count` counts the rest; `unmetered_task_count` counts
- *   rows with neither cost nor tokens;
+ *   rows with neither cost nor tokens. Token totals are numbers while
+ *   <= Number.MAX_SAFE_INTEGER, else exact decimal strings;
  * - `limits` is null until budgets exist (slice 3);
  * - the spend ledger is SQLite-only: other stores answer `available: false`.
  */
@@ -251,12 +265,20 @@ function handleBudgetStatus(ctx: GoalRouteContext): void {
     sendJson(
       ctx.res,
       200,
-      { ...base, available: false, reason: "the spend ledger requires the SQLite state store", total: null, scopes: [] },
+      {
+        ...base,
+        available: false,
+        reason: "the spend ledger requires the SQLite state store",
+        period_total: null,
+        scope_total: null,
+        scopes: [],
+      },
       { "cache-control": "no-store" },
     );
     return;
   }
-  const scopes = scopeType && scopeId !== undefined && result.scopes.length === 0
+  const named = scopeType !== undefined && scopeId !== undefined;
+  const scopes: SpendScopeTotals[] = scopeType !== undefined && scopeId !== undefined && result.scopes.length === 0
     ? [{ scopeType, scopeId, ...ZERO_TOTALS }]
     : result.scopes;
   sendJson(
@@ -265,7 +287,8 @@ function handleBudgetStatus(ctx: GoalRouteContext): void {
     {
       ...base,
       available: true,
-      total: spendTotalsJson(result.total),
+      period_total: spendTotalsJson(result.total),
+      scope_total: named && scopes[0] ? spendTotalsJson(scopes[0]) : null,
       scopes: scopes.map(scopeJson),
       truncated: result.truncated,
     },

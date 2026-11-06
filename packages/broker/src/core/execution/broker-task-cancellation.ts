@@ -46,6 +46,12 @@ export interface TaskCancellationContext {
    * transaction via the store's depth join.
    */
   commitMutation?<T>(fn: () => T): T;
+  /**
+   * #2499 slice 2: stage the task's spend-ledger row inside the record's
+   * batch (see TaskTerminalContext.stageTerminalSpend). `claimant` carries
+   * the pre-cancel `claimedBy`, which cancellation clears.
+   */
+  stageTerminalSpend?(task: TaskRecord, attribution?: { claimant?: string }): void;
 }
 
 function commitMutation<T>(context: TaskCancellationContext, fn: () => T): T {
@@ -142,6 +148,9 @@ function cancelTaskRecord(
   context: TaskCancellationContext,
 ): TaskRecord {
   const canceledAt = isoNow();
+  // The worker running the task when it was canceled; cancellation clears
+  // `claimedBy`, so the spend row's agent is taken from here.
+  const claimant = task.claimedBy;
   // Cancellation is one of the two contract-sanctioned exits from a
   // checkpoint (resume | cancel): clear the gate so terminal tasks never
   // carry stale checkpoint metadata.
@@ -176,6 +185,7 @@ function cancelTaskRecord(
       proposalId: task.proposalId,
       note: params.reason,
     });
+    context.stageTerminalSpend?.(task, { claimant });
     // Tombstone before persist so a crash between the two cannot lose it
     // (writeTombstone mutates state but does not persist on its own).
     context.writeTombstone(task, "canceled", { actorId: params.actorId, reason: params.reason });

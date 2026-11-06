@@ -408,12 +408,6 @@ export type {
 } from "./broker-contracts.js";
 
 const HOT_PERSIST_FULL_RETENTION_INTERVAL_MS = 5 * 60_000;
-/** Terminal audit action -> the status the task must be in for a spend row (#2499 slice 2). */
-const SPEND_TERMINAL_AUDIT_ACTIONS: Partial<Record<AuditAction, TaskRecord["status"]>> = {
-  "task.succeeded": "succeeded",
-  "task.failed": "failed",
-  "task.canceled": "canceled",
-};
 /** Default bound for goal listings on stores without a goal table (matches the SQLite hot-read default). */
 const DEFAULT_GOAL_LIST_LIMIT = 1_000;
 
@@ -951,6 +945,7 @@ export class InMemoryA2ABroker {
     }
     const goal = parsed.data as GoalRecord;
     const store = this.goalStore();
+    let inserted = false;
     try {
       this.commitMutation(() => {
         if (store) {
@@ -960,6 +955,7 @@ export class InMemoryA2ABroker {
         } else {
           this.goals.set(goal.id, goal);
         }
+        inserted = true;
         this.appendAuditEvent({
           actorId: goal.requester.id,
           action: "goal.created",
@@ -982,7 +978,20 @@ export class InMemoryA2ABroker {
       // memory — a retry would then be a misleading 409 and the next
       // unrelated full save would persist a goal the caller saw fail. Undo the
       // in-memory insert; SQLite rolls its own row back with the batch.
-      if (!store) this.goals.delete(goal.id);
+      // The `goal.created` audit event is undone too, on every store: the
+      // in-memory audit map is not transactional, and the next full save
+      // would otherwise persist an audit trail for a goal that does not exist.
+      // `inserted` means the id was free (create-only insert succeeded), so
+      // every `goal.created` event for it came from this attempt; a 409
+      // duplicate never reaches this branch with `inserted` set.
+      if (inserted) {
+        if (!store) this.goals.delete(goal.id);
+        for (const [eventId, event] of this.auditEvents) {
+          if (event.action === "goal.created" && event.targetType === "goal" && event.targetId === goal.id) {
+            this.auditEvents.delete(eventId);
+          }
+        }
+      }
       throw error;
     }
     return goal;
@@ -1031,16 +1040,23 @@ export class InMemoryA2ABroker {
 
   /**
    * Stage the task's spend-ledger row at its terminal transition (#2499
-   * slice 2). Called from `appendAuditEvent` for the terminal audit actions,
-   * which every terminal path (complete, fail, retry-scheduling fail,
-   * dead-letter, cancel, cancel cascade, checkpoint expiry) appends inside
-   * its `commitMutation` before `persistState`. The row rides the same save
+   * slice 2). Bound as `stageTerminalSpend` into the terminal, cancellation
+   * and stale-sweep contexts; the four writers of a terminal status
+   * (completeTask, failTask incl. a retry-scheduling fail, cancelTaskRecord
+   * for direct cancels, cascades and checkpoint expiry, and the stale-sweep
+   * dead-letter) call it inside their `commitMutation`, after the terminal
+   * task row is set and before `persistState`. The row rides the same save
    * hints as the terminal task row, so the store commits both in one
-   * transaction. Only stores with a spend ledger get rows.
+   * transaction. `claimant` is the pre-cancel `claimedBy` (cancellation
+   * clears it). Only stores with a spend ledger get rows; a non-terminal
+   * task is ignored.
    */
-  private stageTaskSpendEvent(task: TaskRecord): void {
-    if (!this.hasSpendLedger()) return;
-    const built = taskTerminal.buildTaskSpendEvent(task, { timeZone: this.budgetPeriodTimeZone });
+  private stageTaskSpendEvent(task: TaskRecord, attribution?: { claimant?: string }): void {
+    if (!this.hasSpendLedger() || !isTerminalTaskStatus(task.status)) return;
+    const built = taskTerminal.buildTaskSpendEvent(task, {
+      timeZone: this.budgetPeriodTimeZone,
+      claimant: attribution?.claimant,
+    });
     if (built.malformed) {
       // One content-free line per task: the row is recorded once, so this
       // fires once. Telemetry values are never echoed.
@@ -3038,6 +3054,7 @@ export class InMemoryA2ABroker {
       persistState: () => this.persistState(),
       emitTaskEvent: (task, reason) => this.taskEvents.emit(task, reason),
       commitMutation: (fn) => this.commitMutation(fn),
+      stageTerminalSpend: (task, attribution) => this.stageTaskSpendEvent(task, attribution),
     });
   }
 
@@ -3178,6 +3195,7 @@ export class InMemoryA2ABroker {
       submitValidationResult: (proposalId, request) => this.submitValidationResult(proposalId, request),
       applyProposalLocally: (proposalId, request) => this.applyProposalLocally(proposalId, request),
       commitMutation: (fn) => this.commitMutation(fn),
+      stageTerminalSpend: (task) => this.stageTaskSpendEvent(task),
     });
   }
 
@@ -3329,6 +3347,7 @@ export class InMemoryA2ABroker {
       emitTaskAttemptRecord: (task) => this.emitTaskAttemptRecord(task),
       cancelTask: (taskId, request) => this.cancelTask(taskId, request),
       commitMutation: (fn) => this.commitMutation(fn),
+      stageTerminalSpend: (task) => this.stageTaskSpendEvent(task),
     });
   }
 
@@ -3520,8 +3539,10 @@ export class InMemoryA2ABroker {
    * to be ignored and then dropped by the next full save. Now each valid goal
    * is imported create-only into the goal table — an id already there is
    * left untouched, never overwritten — in one batch, and one warning line
-   * reports the counts. Re-running (a crash before the next save rewrites the
-   * snapshot) imports nothing twice.
+   * reports the counts when anything was imported or quarantined. Re-running
+   * (every restart until a full save rewrites the canonical snapshot) imports
+   * nothing twice and logs nothing new. A failed import never aborts startup
+   * (`broker.snapshot.goals_import_failed`; the goals are carried forward).
    */
   private importSnapshotGoals(
     store: NonNullable<ReturnType<InMemoryA2ABroker["goalStore"]>>,
@@ -3530,16 +3551,38 @@ export class InMemoryA2ABroker {
     const valid = this.validSnapshotGoals(goals);
     let imported = 0;
     let alreadyPresent = 0;
-    this.commitMutation(() => {
-      for (const goal of valid) {
-        if (store.readGoal(goal.id)) {
-          alreadyPresent += 1;
-          continue;
+    try {
+      this.commitMutation(() => {
+        for (const goal of valid) {
+          if (store.readGoal(goal.id)) {
+            alreadyPresent += 1;
+            continue;
+          }
+          store.insertGoal(goal);
+          imported += 1;
         }
-        store.insertGoal(goal);
-        imported += 1;
-      }
-    });
+      });
+    } catch (error) {
+      // Non-fatal: a failed import must not abort broker startup. The batch
+      // rolled back, so nothing was imported; the valid goals are carried in
+      // this broker's snapshot `goals` field (exportSnapshot) so the next full
+      // save keeps them and the next start retries the import.
+      for (const goal of valid) this.goals.set(goal.id, goal);
+      console.warn(
+        JSON.stringify({
+          event: "broker.snapshot.goals_import_failed",
+          source: "loadSnapshot",
+          snapshotGoals: goals.length,
+          carriedForward: valid.length,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      return;
+    }
+    // The canonical snapshot keeps its `goals` until a full save rewrites it,
+    // so a restart re-runs this (one primary-key read per goal). Log only
+    // when something changed, not on every restart.
+    if (imported === 0 && valid.length === goals.length) return;
     console.warn(
       JSON.stringify({
         event: "broker.snapshot.goals_imported",
@@ -3835,13 +3878,6 @@ export class InMemoryA2ABroker {
             status: task.status,
             completedAt: task.completedAt ?? task.updatedAt,
           });
-        }
-        // #2499 slice 2: one spend-ledger row per terminal transition. Keyed
-        // on the terminal audit action matching the task's status, so late
-        // evidence, tombstone and other audits on an already-terminal task
-        // stage nothing new (and the store insert is once-only anyway).
-        if (SPEND_TERMINAL_AUDIT_ACTIONS[input.action] === task.status) {
-          this.stageTaskSpendEvent(task);
         }
       }
     }

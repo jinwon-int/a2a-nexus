@@ -89,6 +89,13 @@ export interface TaskTerminalContext {
    * join, so only the outermost batch commits.
    */
   commitMutation?<T>(fn: () => T): T;
+  /**
+   * #2499 slice 2: stage the task's spend-ledger row. Every terminal
+   * transition calls it inside its commitMutation, after the terminal task
+   * row is set and before persistState, so the row rides the same save.
+   * Absent on hand-built test contexts (no ledger).
+   */
+  stageTerminalSpend?(task: TaskRecord, attribution?: { claimant?: string }): void;
 }
 
 function commitMutation<T>(context: TaskTerminalContext, fn: () => T): T {
@@ -286,6 +293,7 @@ export function completeTask(
       proposalId: task.proposalId,
       note: normalizedResult.note ?? normalizedResult.summary ?? task.intent,
     });
+    context.stageTerminalSpend?.(task);
     context.persistState();
   });
   context.emitTaskEvent(task, "succeeded");
@@ -409,6 +417,9 @@ export function failTask(
       proposalId: task.proposalId,
       note: normalizedError.message,
     });
+    // The failed attempt's own row; a scheduled retry is a new task id that
+    // gets its row when it reaches a terminal status.
+    context.stageTerminalSpend?.(task);
     if (retryTask) {
       context.appendAuditEvent({
         actorId: "broker",
@@ -550,10 +561,14 @@ export interface TaskSpendEventBuild {
  * `error.details.bridgeFailure`, or the same nested under
  * `error.details.nestedError.details` when the worker wraps a nonzero handler
  * exit; a failed review verdict keeps its result on `negativeVerdictEvidence`.
- * A failed task prefers the failure carriers (the receipt precedence used by
- * task stats), every other status the result.
+ *
+ * Returns every present `executionTelemetry`, in precedence order. A failed
+ * task prefers the failure carriers (the receipt precedence used by task
+ * stats): bridgeFailure, nested bridgeFailure, result.output, negative
+ * verdict output. Every other status prefers the result: result.output,
+ * negative verdict output, bridgeFailure, nested bridgeFailure.
  */
-function spendTelemetryCarrier(task: TaskRecord): unknown {
+function spendTelemetryCandidates(task: TaskRecord): unknown[] {
   const details = isRecord(task.error?.details) ? task.error.details : undefined;
   const nestedDetails = isRecord(details?.nestedError) && isRecord(details.nestedError.details)
     ? details.nestedError.details
@@ -565,10 +580,8 @@ function spendTelemetryCarrier(task: TaskRecord): unknown {
     task.negativeVerdictEvidence?.result?.output,
   ];
   const ordered = task.status === "failed" ? carriers : [carriers[2], carriers[3], carriers[0], carriers[1]];
-  for (const carrier of ordered) {
-    if (isRecord(carrier) && carrier.executionTelemetry !== undefined) return carrier.executionTelemetry;
-  }
-  return undefined;
+  return ordered.flatMap((carrier) =>
+    isRecord(carrier) && carrier.executionTelemetry !== undefined ? [carrier.executionTelemetry] : []);
 }
 
 type SpendNumber = { ok: true; value: number | undefined } | { ok: false; reason: string };
@@ -622,25 +635,36 @@ function parseSpendTelemetry(raw: unknown): ParsedSpendTelemetry {
  * worker-reported data: missing telemetry is an unmetered row, malformed
  * telemetry is an unmetered row plus `malformed`.
  *
+ * - Usage: the first carrier (see spendTelemetryCandidates) whose telemetry
+ *   parses. A malformed higher-precedence carrier falls through to the next
+ *   one; only when no present carrier parses is the row unmetered and
+ *   `malformed` set (the reason of the highest-precedence carrier).
  * - `agentId`: `claimedBy` (the worker that completed or failed the task;
- *   completeTask/failTask stamp it), else `assignedWorkerId` — cancellation
- *   clears `claimedBy`, so a canceled task is attributed to its assignee, or
- *   to no agent.
+ *   completeTask/failTask stamp it), else `claimant` (the worker that held
+ *   the claim when a cancel cleared `claimedBy`), else `assignedWorkerId`,
+ *   else no agent.
  * - `lane`: the task `intent`, the closed lane vocabulary the broker already
  *   indexes (`broker_tasks.intent`) and that is known before claim.
  * - `recordedAt`: the terminal transition time; `periodKey` derives from it.
  */
 export function buildTaskSpendEvent(
   task: TaskRecord,
-  options: { timeZone: string; now?: () => string },
+  options: { timeZone: string; now?: () => string; claimant?: string },
 ): TaskSpendEventBuild {
   const candidate = task.completedAt ?? task.updatedAt;
   const recordedAt = typeof candidate === "string" && !Number.isNaN(Date.parse(candidate))
     ? candidate
     : (options.now ?? isoNow)();
-  const raw = spendTelemetryCarrier(task);
-  const parsed = raw === undefined ? undefined : parseSpendTelemetry(raw);
-  const usage = parsed?.ok ? parsed : undefined;
+  let usage: Extract<ParsedSpendTelemetry, { ok: true }> | undefined;
+  let malformed: string | undefined;
+  for (const raw of spendTelemetryCandidates(task)) {
+    const parsed = parseSpendTelemetry(raw);
+    if (parsed.ok) {
+      usage = parsed;
+      break;
+    }
+    malformed ??= parsed.reason;
+  }
   const costKnown = usage?.costUsd !== undefined;
   const nonEmpty = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
   return {
@@ -648,7 +672,7 @@ export function buildTaskSpendEvent(
       taskId: task.id,
       recordedAt,
       periodKey: budgetPeriodKey(recordedAt, options.timeZone),
-      agentId: nonEmpty(task.claimedBy) ?? nonEmpty(task.assignedWorkerId),
+      agentId: nonEmpty(task.claimedBy) ?? nonEmpty(options.claimant) ?? nonEmpty(task.assignedWorkerId),
       lane: nonEmpty(task.intent),
       goalId: nonEmpty(task.goalId),
       costUsd: costKnown ? usage!.costUsd! : 0,
@@ -656,6 +680,6 @@ export function buildTaskSpendEvent(
       outputTokens: usage?.outputTokens ?? 0,
       costKnown,
     },
-    ...(parsed && !parsed.ok ? { malformed: parsed.reason } : {}),
+    ...(!usage && malformed ? { malformed } : {}),
   };
 }
