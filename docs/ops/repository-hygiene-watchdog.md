@@ -115,7 +115,14 @@ required runs in 18 seconds. When the enqueuer is `github-actions`, the
 failure names this cause. Remedy: re-enqueue with a person account.
 
 The checker sends one GraphQL query (no mutation) and `GET` requests for
-workflow runs. It never dequeues, re-enqueues, or re-runs anything.
+workflow runs and the branch rules. It never dequeues, re-enqueues, or re-runs
+anything.
+
+The workflow `GITHUB_TOKEN` is refused `mergeQueue.configuration`
+(`FORBIDDEN`, probed 2026-11-06), so the query never asks for it. The check
+timeout in the message comes from the REST `merge_queue` branch rule instead.
+A refusal of the optional `enqueuer` field only drops the cause hint; any other
+GraphQL error fails the run and names the field path.
 
 ```bash
 node --test scripts/lib/check-merge-queue-stall.test.mjs

@@ -28,6 +28,9 @@ export const DEFAULT_STALL_MINUTES = 5;
 const RUNS_PER_PAGE = 100;
 const RUNS_MAX_PAGES = 5;
 
+/** GraphQL error path leaves that are optional for the verdict (see readMergeQueueState). */
+const OPTIONAL_ERROR_LEAVES = new Set(['enqueuer']);
+
 /** Actors whose enqueue is known not to trigger `merge_group` workflows. */
 const TOKEN_ACTOR_LOGINS = new Set(['github-actions', 'github-actions[bot]']);
 
@@ -36,7 +39,6 @@ const MERGE_QUEUE_QUERY = `query($owner: String!, $name: String!, $branch: Strin
     defaultBranchRef { name }
     mergeQueue(branch: $branch) {
       url
-      configuration { checkResponseTimeout }
       entries(first: 100) {
         nodes {
           state
@@ -172,6 +174,24 @@ async function readJson(response, what) {
 }
 
 /**
+ * The queue's check timeout from the branch rules (REST, readable with
+ * `contents: read`). Message decoration only: any failure returns null.
+ */
+async function readQueueTimeoutSeconds({ base, owner, name, branch, token, fetchImpl }) {
+  try {
+    const url = `${base}/repos/${owner}/${name}/rules/branches/${encodeURIComponent(branch)}`;
+    const response = await fetchImpl(url, { method: 'GET', headers: githubHeaders(token) });
+    if (!response.ok) return null;
+    const rules = await response.json();
+    const rule = Array.isArray(rules) ? rules.find((r) => r?.type === 'merge_queue') : null;
+    const minutes = rule?.parameters?.check_response_timeout_minutes;
+    return Number.isFinite(minutes) ? minutes * 60 : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Read the merge queue and the `merge_group` runs created since the oldest
  * entry was admitted.
  */
@@ -192,14 +212,23 @@ export async function readMergeQueueState({
     body: JSON.stringify({ query: MERGE_QUEUE_QUERY, variables: { owner, name, branch: branch ?? 'main' } }),
   });
   const gql = await readJson(gqlResponse, 'GraphQL merge queue query');
-  if (Array.isArray(gql.errors) && gql.errors.length > 0) {
-    throw new Error(`GitHub GraphQL errors: ${gql.errors.map((e) => e.message).join('; ')}`);
+  // An integration token (the workflow GITHUB_TOKEN) is refused some merge-queue
+  // fields: `configuration` is never queried for that reason (#2501 follow-up,
+  // probed 2026-11-06). `enqueuer` is optional: a refusal there leaves it null
+  // and only drops the GITHUB_TOKEN-cause hint. Any other error fails closed.
+  const errors = Array.isArray(gql.errors) ? gql.errors : [];
+  const fatal = errors.filter((e) => !OPTIONAL_ERROR_LEAVES.has(Array.isArray(e.path) ? e.path.at(-1) : null));
+  if (fatal.length > 0) {
+    const detail = fatal
+      .map((e) => (Array.isArray(e.path) ? `${e.message} (path ${e.path.join('.')})` : e.message))
+      .join('; ');
+    throw new Error(`GitHub GraphQL errors: ${detail}`);
   }
   const repo = gql.data?.repository;
   const resolvedBranch = branch ?? repo?.defaultBranchRef?.name ?? 'main';
   const queue = repo?.mergeQueue ?? null;
   const entries = queue?.entries?.nodes ?? [];
-  const timeoutSeconds = queue?.configuration?.checkResponseTimeout ?? null;
+  const timeoutSeconds = await readQueueTimeoutSeconds({ base, owner, name, branch: resolvedBranch, token, fetchImpl });
 
   const enqueuedTimes = entries.map((entry) => parseTime(entry?.enqueuedAt)).filter((t) => t !== null);
   if (enqueuedTimes.length === 0) {
