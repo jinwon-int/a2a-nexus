@@ -66,6 +66,16 @@ revision round. Task ids are unique per round
    runtime-specific couplings, no gate-avoidance wording. The publisher
    re-runs every machine gate on the returned files regardless — a revision
    that reintroduces a gated pattern is discarded as a handler failure.
+   Cite external documentation by title, never by a long URL: the
+   credential gate reads any run of 40+ characters from `[A-Za-z0-9+/]` as a
+   possible token, and a documentation link whose host-and-path tail is that
+   long trips it (jinwon-int/ccc-node#2694 — a CLI reference link voided an
+   otherwise valid round-2 revision). Write the document and the command or
+   section name (for example "Docker CLI reference — `docker container
+   exec`"), and if a link is useful give only the site root. A small
+   allowlist of public docs hosts is masked by the gate, but do not rely on
+   it: a URL that is not on that list, or that carries a query, fragment or
+   non-word path segment, still fails, and the whole revision is discarded.
 6. Keep the layout discipline: `scripts/` for deterministic steps,
    `references/` for on-demand docs, `templates/` for output resources
    (report/receipt/config templates). These three plus `SKILL.md` are the
