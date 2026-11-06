@@ -42,8 +42,11 @@ These require separate explicit operator approval naming the exact action, targe
 
 ## Branch protection and auto-merge
 
-The [`auto-merge`](.github/workflows/auto-merge.yml) workflow relies on `main`
-branch protection to keep merges gated on review and required checks. The
+The [`auto-merge`](.github/workflows/auto-merge.yml) workflow reports PRs that
+are ready for merge-queue admission; since #2501 it does not enqueue or merge,
+and a person account requests admission for the exact head. Its readiness
+signal relies on `main` branch protection to keep merges gated on review and
+required checks. The
 steady-state requirement is documented in
 [`docs/branch-protection.md`](docs/branch-protection.md); applying or changing
 the GitHub ruleset itself is an approval-sensitive action.

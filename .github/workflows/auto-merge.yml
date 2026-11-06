@@ -1,13 +1,21 @@
-# Safety invariant: this workflow merges only PRs GitHub reports as
-# mergeStateStatus == "CLEAN", which is only meaningful when `main` branch
-# protection marks reviews and required checks as required. See
-# docs/branch-protection.md for the required ruleset state and how to verify it.
+# Merge-readiness report (a2a-nexus#2501, option 2 — owner decision 2026-11-06).
 #
-# Second invariant (a2a-nexus#2428): only PRs authored by a fleet account or a
-# fleet dependency bot are auto-merged. An external fork PR stays open for an
-# explicit owner decision even after it is approved and green — on 2026-10-22
-# an unaffiliated account's PR to the worker artifact scripts was merged this
-# way after a single approval. Extend TRUSTED_AUTHORS only by PR.
+# This workflow used to request merge-queue admission with the workflow
+# GITHUB_TOKEN. Events performed with that token never start new workflow
+# runs, so the queue's merge_group checks never ran and the entry was removed
+# as checks_timed_out after 60 minutes (#2500). In the 25 merged PRs before the
+# change, every successful admission was made by a person account. The
+# workflow therefore no longer enqueues or merges anything. It reports which
+# open PRs at the successful CI head are ready, so a person account (or the
+# relay helper) can enqueue them with an exact-head admission.
+#
+# Selection is unchanged and stays conservative:
+# - GitHub reports mergeStateStatus == "CLEAN", which is only meaningful when
+#   `main` branch protection marks reviews and required checks as required
+#   (docs/branch-protection.md);
+# - the author is a fleet account or a fleet dependency bot (a2a-nexus#2428):
+#   an external fork PR is reported as needing an explicit owner decision.
+#   Extend TRUSTED_AUTHORS only by PR.
 name: auto-merge
 
 on:
@@ -17,9 +25,10 @@ on:
     types:
       - completed
 
+# Read-only: the job lists PRs and writes a notice + job summary.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+  pull-requests: read
 
 concurrency:
   group: auto-merge-${{ github.event.workflow_run.head_sha }}
@@ -27,14 +36,14 @@ concurrency:
 
 jobs:
   merge-successful-ci-pr:
-    name: merge successful CI PR
+    name: report merge-ready PR
     runs-on: ubuntu-latest
     timeout-minutes: 10
     if: >-
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion == 'success'
     steps:
-      - name: Merge open PRs matching successful CI head
+      - name: Report open PRs ready for merge-queue admission
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -94,12 +103,14 @@ jobs:
 
           while read -r pr; do
             [ -n "$pr" ] || continue
-            echo "Requesting merge/queue admission for PR #${pr}, CI head ${HEAD_SHA}."
-            # gh follows the base branch's queue requirement; --auto also works
-            # before rollout. Bind admission to the CI head to reject a push
-            # racing the list/read above. Never bypass protection with --admin.
-            # Keep squash for pre-queue linear-history compatibility. The queue
-            # ruleset owns the method once active. Repository branch cleanup
-            # runs only after actual merge, not when admission is requested.
-            gh pr merge "$pr" --repo "$REPO" --auto --squash --match-head-commit "$HEAD_SHA"
+            # No admission here (#2501): a GITHUB_TOKEN enqueue never starts
+            # merge_group runs. A person account must enqueue the exact head.
+            echo "::notice title=Ready for merge-queue admission::PR #${pr} is CLEAN at CI head ${HEAD_SHA}. Enqueue it with a person account (exact head); a GITHUB_TOKEN enqueue never starts merge_group checks (#2501)."
+            {
+              echo "### PR #${pr} is ready for merge-queue admission"
+              echo
+              echo "- Exact head: \`${HEAD_SHA}\`"
+              echo "- Enqueue with a person account or the relay helper, bound to this head."
+              echo "- This workflow does not enqueue: a \`GITHUB_TOKEN\` admission never starts \`merge_group\` checks (#2501)."
+            } >> "$GITHUB_STEP_SUMMARY"
           done < /tmp/auto-merge-prs.txt

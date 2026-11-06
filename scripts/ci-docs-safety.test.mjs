@@ -104,20 +104,21 @@ test('queue verdict workflow rejects skip conditions and swallowed verifier fail
   )));
 });
 
-test('auto-merge squashes, because main requires linear history (#2050)', () => {
+// a2a-nexus#2501 (option 2): a GITHUB_TOKEN admission never starts
+// merge_group runs, so the queue entry waited 60 min and was removed as
+// checks_timed_out (#2500). The workflow only reports readiness now; a person
+// account enqueues the exact head. Re-adding a merge/enqueue path, or write
+// permissions it would need, must fail this test.
+test('auto-merge only reports readiness: no merge, no enqueue, read-only token (#2501)', () => {
   const autoMerge = readFileSync(join(repoRoot, '.github/workflows/auto-merge.yml'), 'utf8');
-  const mergeCommands = autoMerge.match(/gh pr merge[^\n]*/g) ?? [];
-  assert.equal(mergeCommands.length, 1, 'expected exactly one gh pr merge invocation');
-  const [command] = mergeCommands;
-  assert.match(command, /--squash/);
-  assert.match(command, /--auto/);
-  assert.match(command, /--match-head-commit "\$HEAD_SHA"/);
-  assert.doesNotMatch(command, /--admin|--delete-branch/);
-  // `--merge` creates a merge commit, which main's required_linear_history
-  // rejects. The workflow shipped with `--merge` from its first commit and
-  // never hit the line, so nothing caught it until the repo review.
-  assert.doesNotMatch(command, /(^|\s)--merge(\s|$)/);
-  assert.doesNotMatch(command, /(^|\s)--rebase(\s|$)/);
+  const code = autoMerge.split('\n').filter((line) => !/^\s*#/.test(line)).join('\n');
+  assert.doesNotMatch(code, /gh pr merge/, 'the workflow must not request merge or queue admission');
+  assert.doesNotMatch(code, /enqueuePullRequest|mergePullRequest|\/merge\b/, 'no API merge/enqueue path either');
+  const permissions = autoMerge.match(/^permissions:\n((?:[ \t]+.*\n)+)/m);
+  assert.ok(permissions, 'expected a top-level permissions block');
+  assert.doesNotMatch(permissions[1], /:\s*write\b/, 'the token stays read-only');
+  assert.match(code, /::notice title=Ready for merge-queue admission::PR #\$\{pr\} is CLEAN at CI head \$\{HEAD_SHA\}/);
+  assert.match(code, /GITHUB_STEP_SUMMARY/);
 });
 
 // a2a-nexus#2428: an external fork PR was auto-merged after one approval.
