@@ -131,7 +131,7 @@ test("fresh sqlite store initializes and records known version markers", () => {
     const store = new SqliteBrokerStateStore(dbFile);
     store.save(emptyishSnapshot());
     store.close();
-    assert.equal(readMetadata(dbFile, "schema_version"), "13");
+    assert.equal(readMetadata(dbFile, "schema_version"), "14");
     assert.equal(readMetadata(dbFile, "state_version"), String(CURRENT_BROKER_STATE_VERSION));
     assert.ok(readMetadata(dbFile, "last_persist_at"), "a persist must leave a durable clock marker");
   } finally {
@@ -160,7 +160,7 @@ test("newer schema_version metadata refuses store construction", () => {
     const dbFile = join(tmp.dir, "state.sqlite");
     const store = new SqliteBrokerStateStore(dbFile);
     store.close();
-    writeMetadata(dbFile, "schema_version", "14");
+    writeMetadata(dbFile, "schema_version", "15");
     assert.throws(() => new SqliteBrokerStateStore(dbFile), (error: unknown) => {
       assertStartupCheckError(error, "schema_version_newer");
       return true;
@@ -209,7 +209,7 @@ test("last durable write in the future beyond tolerance refuses; within toleranc
     const inspected = new SqliteBrokerStateStore(dbFile, { startupClockCheck: "skip" });
     assert.equal(inspected.load().version, CURRENT_BROKER_STATE_VERSION);
     inspected.close();
-    writeMetadata(dbFile, "schema_version", "14");
+    writeMetadata(dbFile, "schema_version", "15");
     assert.throws(() => new SqliteBrokerStateStore(dbFile, { startupClockCheck: "skip" }), (error: unknown) => {
       assertStartupCheckError(error, "schema_version_newer");
       return true;
@@ -228,7 +228,7 @@ test("a pre-versioning database with an empty metadata table still opens (upgrad
     db.close();
     const store = new SqliteBrokerStateStore(dbFile);
     store.close();
-    assert.equal(readMetadata(dbFile, "schema_version"), "13");
+    assert.equal(readMetadata(dbFile, "schema_version"), "14");
   } finally {
     tmp.cleanup();
   }

@@ -98,7 +98,7 @@ test("a database written by a newer broker refuses to export (schema_version_new
     const store = new SqliteBrokerStateStore(dbFile);
     store.save(emptySnapshot());
     store.close();
-    tamperMetadata(dbFile, "schema_version", "14");
+    tamperMetadata(dbFile, "schema_version", "15");
     const res = spawnSync(process.execPath, [CLI, "--db", dbFile], { encoding: "utf8" });
     assert.notEqual(res.status, 0, "exporting a newer database must fail");
     assert.match(`${res.stderr}${res.stdout}`, /schema_version_newer/);

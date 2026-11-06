@@ -229,6 +229,7 @@ import {
   createA2AJsonRpcRouteEntries,
   createComplexityOrchestrationRouteEntries,
   createWavePlanRouteEntries,
+  createGoalRouteEntries,
   createWavePlanDagV2RouteEntries,
   createReviewLineageRouteEntries,
   createNclexEvaluationRouteEntries,
@@ -1464,6 +1465,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     }),
     ...createComplexityOrchestrationRouteEntries({}),
     ...createWavePlanRouteEntries({ broker, stateStore }),
+    ...createGoalRouteEntries({ broker, stateStore }),
     ...createWavePlanDagV2RouteEntries({ broker }),
     ...createReviewLineageRouteEntries({
       broker,

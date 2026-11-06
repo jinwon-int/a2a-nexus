@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { BrokerError } from "./broker-error.js";
 import { SETTLED_TASK_STATUSES } from "./types.js";
+import type { GoalStatus, GoalTransitionReason } from "./types.js";
 
 /**
  * Persisted broker state version. Defined here, beside the snapshot schema that
@@ -987,6 +988,94 @@ export const createTaskRequestSchema = taskSchema
     id: z.string().min(1).optional(),
     artifactIds: z.array(z.string()).optional(),
   });
+
+/**
+ * Persisted goal record (#2499 slice 1), stored one row per goal in the SQLite
+ * `broker_goals` table. Deliberately NOT part of {@link brokerSnapshotSchema}:
+ * goals are queryable without loading the snapshot, and the snapshot shape
+ * (and therefore CURRENT_BROKER_STATE_VERSION) does not change.
+ *
+ * `status` and `reason` reuse the closed `GoalStatus` / `GoalTransitionReason`
+ * vocabularies from types.ts; there is no second goal status enum.
+ */
+export const GOAL_STATUS_VALUES = [
+  "pursuing",
+  "paused",
+  "achieved",
+  "blocked",
+  "unmet",
+  "budget_limited",
+  "cleared",
+] as const satisfies readonly GoalStatus[];
+
+const GOAL_TRANSITION_REASON_VALUES = [
+  "operator_requested",
+  "child_task_progress",
+  "child_task_terminal",
+  "dependency_blocked",
+  "budget_exhausted",
+  "objective_satisfied",
+  "objective_not_met",
+  "retention_cleared",
+] as const satisfies readonly GoalTransitionReason[];
+
+export const goalBudgetPolicySchema = z
+  .object({
+    maxChildAttempts: z.number().int().positive().optional(),
+    deadlineAt: z
+      .string()
+      .refine((value) => !Number.isNaN(Date.parse(value)), "deadlineAt must be an ISO timestamp")
+      .optional(),
+    maxResourceUnits: z.number().positive().optional(),
+  })
+  .strict();
+
+export const goalRecordSchema = z
+  .object({
+    id: z.string().min(1),
+    title: z.string().min(1),
+    objective: z.string().min(1),
+    requester: partyRefSchema,
+    status: z.enum(GOAL_STATUS_VALUES),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    completedAt: z.string().optional(),
+    budget: goalBudgetPolicySchema.optional(),
+    taskAttachments: z.array(
+      z
+        .object({
+          taskId: z.string().min(1),
+          role: z.string().optional(),
+          attachedAt: z.string(),
+          detachedAt: z.string().optional(),
+        })
+        .passthrough(),
+    ),
+    history: z.array(
+      z
+        .object({
+          id: z.string().min(1),
+          goalId: z.string().min(1),
+          from: z.enum(GOAL_STATUS_VALUES).optional(),
+          to: z.enum(GOAL_STATUS_VALUES),
+          reason: z.enum(GOAL_TRANSITION_REASON_VALUES),
+          createdAt: z.string(),
+          actor: partyRefSchema.optional(),
+          taskId: z.string().optional(),
+          note: z.string().optional(),
+        })
+        .passthrough(),
+    ),
+    outcome: z
+      .object({
+        summary: z.string(),
+        failed: z.boolean(),
+        artifactIds: z.array(z.string()).optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
 
 /**
  * The one caller-influenced field of a terminal-outbox payload that the store

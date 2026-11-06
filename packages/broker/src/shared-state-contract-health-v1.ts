@@ -151,7 +151,7 @@ export function buildSharedStateHealthDeclarationV1(input: {
       lifecycle: "ready",
       durability: legacySqlite ? "durable" : "volatile",
       writerModel: "single",
-      schemaVersion: legacySqlite ? 13 : null,
+      schemaVersion: legacySqlite ? 14 : null,
       clockAuthority: null,
       migrationState: null,
     },

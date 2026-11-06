@@ -10,6 +10,8 @@ import type {
   A2AExchangeMessageRecord,
   A2AExchangeState,
   ChangeProposal,
+  GoalListFilters,
+  GoalRecord,
   TaskRecord,
   TaskTombstone,
   ValidationResult,
@@ -110,6 +112,7 @@ import {
   workerSchema,
   tombstoneSchema,
   terminalOutboxEventSchema,
+  goalRecordSchema,
 } from "../store-schemas.js";
 import type {
   ProjectedReviewLineageObservation,
@@ -396,7 +399,10 @@ export interface SqliteTerminalOutboxHotRetentionPlanOptions {
   maxAcknowledgedRecords: number;
 }
 
-const SQLITE_SCHEMA_VERSION = 13;
+// 14 (#2499 slice 1): additive broker_goals, broker_budgets,
+// broker_spend_events and broker_tasks.goal_id. A v13 store upgrades in place
+// on open; a v13 binary refuses a v14 store (schema_version_newer).
+const SQLITE_SCHEMA_VERSION = 14;
 export const DEFAULT_HOT_RUNTIME_MAX_NON_TERMINAL_TASKS = 500;
 export const DEFAULT_HOT_RUNTIME_MAX_TERMINAL_TASKS = 2_000;
 export const DEFAULT_HOT_RUNTIME_MAX_AUDIT_EVENTS = 5_000;
@@ -480,8 +486,9 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     this.journalMode = this.initializeDatabase();
     this.reviewLineageObservations =
       new SqliteReviewLineageObservationStore(this.db);
-    // Publish schema 13 only after the canonical lineage/ledger and Phase 14
-    // authenticated source-event tables initialize on the same connection.
+    // Publish the schema version only after the canonical lineage/ledger and
+    // Phase 14 authenticated source-event tables initialize on the same
+    // connection.
     this.writeMetadata("schema_version", String(SQLITE_SCHEMA_VERSION));
   }
 
@@ -1156,6 +1163,55 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   /**
+   * Goal persistence (#2499 slice 1): one `broker_goals` row per GoalRecord.
+   * A single autocommit UPSERT on this connection, like
+   * {@link consumeLiveApprovalKey}; on the worker-thread topology the proxy
+   * inherits it, so the row is durable when this returns.
+   */
+  upsertGoal(goal: GoalRecord): void {
+    this
+      .stmt(
+        `INSERT INTO broker_goals (id, status, created_at, updated_at, payload)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           status = excluded.status,
+           created_at = excluded.created_at,
+           updated_at = excluded.updated_at,
+           payload = excluded.payload`,
+      )
+      .run(goal.id, goal.status, goal.createdAt, goal.updatedAt, JSON.stringify(goal));
+  }
+
+  readGoal(id: string): GoalRecord | undefined {
+    const row = this.stmt("SELECT payload FROM broker_goals WHERE id = ?").get(id);
+    if (!row) return undefined;
+    return parseHotEntityPayloadSafe(row, goalRecordSchema, "broker_goals")[0] as GoalRecord | undefined;
+  }
+
+  /** Newest first (`updated_at DESC, id ASC`), bounded like the other hot reads. */
+  listGoals(filters: GoalListFilters = {}): GoalRecord[] {
+    const limit = normalizeBoundedSqliteLimit(filters.limit);
+    const rows = filters.status
+      ? this
+        .stmt("SELECT payload FROM broker_goals WHERE status = ? ORDER BY updated_at DESC, id ASC LIMIT ?")
+        .all(filters.status, limit)
+      : this
+        .stmt("SELECT payload FROM broker_goals ORDER BY updated_at DESC, id ASC LIMIT ?")
+        .all(limit);
+    return rows.flatMap((row) => parseHotEntityPayloadSafe(row, goalRecordSchema, "broker_goals")) as GoalRecord[];
+  }
+
+  /** Linked task counts per status: one query over the `(goal_id, status)` index. */
+  countGoalTasksByStatus(goalId: string): Record<string, number> {
+    const rows = this
+      .stmt("SELECT status, COUNT(*) AS count FROM broker_tasks WHERE goal_id = ? GROUP BY status")
+      .all(goalId) as Array<{ status: string; count: number | bigint }>;
+    const counts: Record<string, number> = {};
+    for (const row of rows) counts[row.status] = coerceSqliteCount(row);
+    return counts;
+  }
+
+  /**
    * #1504 §4: fail-closed startup checks over the EXISTING database, run before
    * `initializeDatabase` can create or rewrite anything. Reads the version
    * markers and the last durable write only when the metadata table already
@@ -1346,11 +1402,65 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       );
       CREATE INDEX IF NOT EXISTS broker_terminal_outbox_unacked_idx
         ON broker_terminal_outbox(acknowledged_at, created_at);
+      -- Schema 14 (#2499 slice 1). Goals: one row per GoalRecord; the record
+      -- JSON lives in payload, status/updated_at are indexed projections.
+      CREATE TABLE IF NOT EXISTS broker_goals (
+        id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        payload TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS broker_goals_status_updated_idx
+        ON broker_goals(status, updated_at DESC, id ASC);
+      CREATE INDEX IF NOT EXISTS broker_goals_updated_id_idx
+        ON broker_goals(updated_at DESC, id ASC);
+      -- Monthly spend budgets (table only in slice 1; no reader or writer yet).
+      -- At least one of the two limits is set (spec Decision 1).
+      CREATE TABLE IF NOT EXISTS broker_budgets (
+        id TEXT PRIMARY KEY,
+        scope_type TEXT NOT NULL,
+        scope_id TEXT NOT NULL,
+        period TEXT NOT NULL,
+        limit_usd REAL,
+        limit_tokens INTEGER,
+        warn_pct INTEGER NOT NULL DEFAULT 80,
+        enforce TEXT NOT NULL DEFAULT 'refuse',
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        CHECK (limit_usd IS NOT NULL OR limit_tokens IS NOT NULL)
+      );
+      CREATE INDEX IF NOT EXISTS broker_budgets_scope_idx
+        ON broker_budgets(scope_type, scope_id, period);
+      -- Spend ledger (table only in slice 1). One row per task, keyed by
+      -- task_id so a replayed terminal transition can never count twice.
+      CREATE TABLE IF NOT EXISTS broker_spend_events (
+        task_id TEXT PRIMARY KEY,
+        recorded_at TEXT NOT NULL,
+        period_key TEXT NOT NULL,
+        agent_id TEXT,
+        lane TEXT,
+        goal_id TEXT,
+        cost_usd REAL NOT NULL DEFAULT 0,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        cost_known INTEGER NOT NULL DEFAULT 0 CHECK (cost_known IN (0, 1))
+      );
+      CREATE INDEX IF NOT EXISTS broker_spend_events_period_agent_idx
+        ON broker_spend_events(period_key, agent_id);
+      CREATE INDEX IF NOT EXISTS broker_spend_events_period_lane_idx
+        ON broker_spend_events(period_key, lane);
+      CREATE INDEX IF NOT EXISTS broker_spend_events_period_goal_idx
+        ON broker_spend_events(period_key, goal_id);
     `);
     this.ensureColumn("broker_tasks", "task_origin", "TEXT NOT NULL DEFAULT 'unknown'");
+    // Schema 14: nullable goal link; v13 rows keep NULL (no v13 task had a goal).
+    this.ensureColumn("broker_tasks", "goal_id", "TEXT");
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS broker_tasks_origin_status_idx
         ON broker_tasks(task_origin, status);
+      CREATE INDEX IF NOT EXISTS broker_tasks_goal_status_idx
+        ON broker_tasks(goal_id, status);
     `);
     // Expression indexes for the payload-derived task filters. Without them the
     // pushed-down predicates would still scan every row (they would just scan it
@@ -1826,14 +1936,15 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   private upsertHotTasksUnsafe(tasks: TaskRecord[]): void {
     const upsertTask = this.stmt(
       `INSERT INTO broker_tasks
-        (id, status, intent, target_node_id, assigned_worker_id, task_origin, updated_at, payload)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (id, status, intent, target_node_id, assigned_worker_id, task_origin, goal_id, updated_at, payload)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          status = excluded.status,
          intent = excluded.intent,
          target_node_id = excluded.target_node_id,
          assigned_worker_id = excluded.assigned_worker_id,
          task_origin = excluded.task_origin,
+         goal_id = excluded.goal_id,
          updated_at = excluded.updated_at,
          payload = excluded.payload`,
     );
@@ -1845,6 +1956,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
         task.targetNodeId,
         task.assignedWorkerId ?? null,
         task.taskOrigin ?? "unknown",
+        typeof task.goalId === "string" && task.goalId ? task.goalId : null,
         task.updatedAt,
         JSON.stringify(task),
       );
