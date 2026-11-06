@@ -260,6 +260,13 @@ export interface InMemoryA2ABrokerOptions {
    * to A2A_FAST_LANE_SINGLE_WORKER_FINALIZE.
    */
   fastLaneSingleWorkerFinalize?: boolean;
+  /**
+   * #2499 slice 2: IANA time zone for spend-ledger periods (`YYYY-MM` of the
+   * terminal transition time). Default `Asia/Seoul` (spec Decision 3); an
+   * invalid zone throws at construction. The server resolves it from
+   * A2A_BUDGET_PERIOD_TIME_ZONE.
+   */
+  budgetPeriodTimeZone?: string;
   /** Optional lightweight profiling hook for broker internals. Listener errors are ignored. */
   profilingListener?: BrokerProfilingListener;
   /**

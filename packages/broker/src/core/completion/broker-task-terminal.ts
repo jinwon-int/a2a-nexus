@@ -25,6 +25,7 @@ import {
   type FinalizerVerdictEnforcement,
 } from "./finalizer-verdict-admission.js";
 import { isRecord } from "../value-guards.js";
+import { budgetPeriodKey, SPEND_MAX_COST_USD, SPEND_MAX_TOKENS } from "../store-schemas.js";
 import type { FinalizerKeyring } from "a2a-attestation";
 import type { TaskUpdateReason } from "../broker-contracts.js";
 import type {
@@ -33,6 +34,7 @@ import type {
   AuditAction,
   AuditEvent,
   ChangeProposal,
+  SpendEventRecord,
   SubmitValidationRequest,
   TaskError,
   TaskRecord,
@@ -523,4 +525,137 @@ function applyTaskCompletion(task: TaskRecord, workerId: string, result: TaskRes
       context.setProposalRecord(proposal);
     }
   }
+}
+
+// --- Spend ledger row (#2499 slice 2) ----------------------------------------
+// Built by the broker at every terminal transition (succeeded, failed,
+// canceled) and written once per task (`broker_spend_events`, primary key
+// task_id, INSERT ... ON CONFLICT DO NOTHING). Record only: nothing here
+// refuses, limits or alerts.
+
+const SPEND_TELEMETRY_SCHEMA_VERSION = "a2a.analysis-execution-telemetry.v1";
+
+export interface TaskSpendEventBuild {
+  event: SpendEventRecord;
+  /**
+   * Set when telemetry was present but unusable; the row is then recorded
+   * unmetered. A short, content-free reason code for the broker's one log line.
+   */
+  malformed?: string;
+}
+
+/**
+ * Where `executionTelemetry` travels (spec "Usage and cost in terminal
+ * results"): `result.output` on success; on a bridge failure
+ * `error.details.bridgeFailure`, or the same nested under
+ * `error.details.nestedError.details` when the worker wraps a nonzero handler
+ * exit; a failed review verdict keeps its result on `negativeVerdictEvidence`.
+ * A failed task prefers the failure carriers (the receipt precedence used by
+ * task stats), every other status the result.
+ */
+function spendTelemetryCarrier(task: TaskRecord): unknown {
+  const details = isRecord(task.error?.details) ? task.error.details : undefined;
+  const nestedDetails = isRecord(details?.nestedError) && isRecord(details.nestedError.details)
+    ? details.nestedError.details
+    : undefined;
+  const carriers: unknown[] = [
+    details?.bridgeFailure,
+    nestedDetails?.bridgeFailure,
+    task.result?.output,
+    task.negativeVerdictEvidence?.result?.output,
+  ];
+  const ordered = task.status === "failed" ? carriers : [carriers[2], carriers[3], carriers[0], carriers[1]];
+  for (const carrier of ordered) {
+    if (isRecord(carrier) && carrier.executionTelemetry !== undefined) return carrier.executionTelemetry;
+  }
+  return undefined;
+}
+
+type SpendNumber = { ok: true; value: number | undefined } | { ok: false; reason: string };
+
+/** Absent (undefined/null) is fine; anything else must be a finite number in [0, max]. */
+function readSpendNumber(telemetry: Record<string, unknown>, field: string, max: number): SpendNumber {
+  const value = telemetry[field];
+  if (value === undefined || value === null) return { ok: true, value: undefined };
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return { ok: false, reason: `${field}_invalid` };
+  }
+  if (value > max) return { ok: false, reason: `${field}_exceeds_cap` };
+  return { ok: true, value };
+}
+
+type ParsedSpendTelemetry =
+  | { ok: true; costUsd: number | undefined; inputTokens: number; outputTokens: number }
+  | { ok: false; reason: string };
+
+/**
+ * Validate one telemetry object. Token semantics (documented in the spec):
+ * `inputTokens` is the runtime's uncached input; cache-creation tokens are
+ * added to it (billed at or above the input rate), cache-read tokens are not
+ * counted (billed at a fraction of it, and they dominate raw counts on cached
+ * runs). Tokens are floored to integers. Any present-but-invalid field, or a
+ * value above SPEND_MAX_*, makes the whole object malformed.
+ */
+function parseSpendTelemetry(raw: unknown): ParsedSpendTelemetry {
+  if (!isRecord(raw)) return { ok: false, reason: "not_object" };
+  if (raw.schemaVersion !== SPEND_TELEMETRY_SCHEMA_VERSION) return { ok: false, reason: "schema_version" };
+  const cost = readSpendNumber(raw, "costUsd", SPEND_MAX_COST_USD);
+  const input = readSpendNumber(raw, "inputTokens", SPEND_MAX_TOKENS);
+  const cacheCreation = readSpendNumber(raw, "cacheCreationInputTokens", SPEND_MAX_TOKENS);
+  const output = readSpendNumber(raw, "outputTokens", SPEND_MAX_TOKENS);
+  for (const parsed of [cost, input, cacheCreation, output]) {
+    if (!parsed.ok) return { ok: false, reason: parsed.reason };
+  }
+  const value = (parsed: SpendNumber): number => (parsed.ok && parsed.value !== undefined ? Math.floor(parsed.value) : 0);
+  const inputTokens = value(input) + value(cacheCreation);
+  if (inputTokens > SPEND_MAX_TOKENS) return { ok: false, reason: "inputTokens_exceeds_cap" };
+  return {
+    ok: true,
+    costUsd: cost.ok ? cost.value : undefined,
+    inputTokens,
+    outputTokens: value(output),
+  };
+}
+
+/**
+ * Project a terminal task onto its spend-ledger row. Never throws on
+ * worker-reported data: missing telemetry is an unmetered row, malformed
+ * telemetry is an unmetered row plus `malformed`.
+ *
+ * - `agentId`: `claimedBy` (the worker that completed or failed the task;
+ *   completeTask/failTask stamp it), else `assignedWorkerId` — cancellation
+ *   clears `claimedBy`, so a canceled task is attributed to its assignee, or
+ *   to no agent.
+ * - `lane`: the task `intent`, the closed lane vocabulary the broker already
+ *   indexes (`broker_tasks.intent`) and that is known before claim.
+ * - `recordedAt`: the terminal transition time; `periodKey` derives from it.
+ */
+export function buildTaskSpendEvent(
+  task: TaskRecord,
+  options: { timeZone: string; now?: () => string },
+): TaskSpendEventBuild {
+  const candidate = task.completedAt ?? task.updatedAt;
+  const recordedAt = typeof candidate === "string" && !Number.isNaN(Date.parse(candidate))
+    ? candidate
+    : (options.now ?? isoNow)();
+  const raw = spendTelemetryCarrier(task);
+  const parsed = raw === undefined ? undefined : parseSpendTelemetry(raw);
+  const usage = parsed?.ok ? parsed : undefined;
+  const costKnown = usage?.costUsd !== undefined;
+  const nonEmpty = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
+  return {
+    event: {
+      taskId: task.id,
+      recordedAt,
+      periodKey: budgetPeriodKey(recordedAt, options.timeZone),
+      agentId: nonEmpty(task.claimedBy) ?? nonEmpty(task.assignedWorkerId),
+      lane: nonEmpty(task.intent),
+      goalId: nonEmpty(task.goalId),
+      costUsd: costKnown ? usage!.costUsd! : 0,
+      inputTokens: usage?.inputTokens ?? 0,
+      outputTokens: usage?.outputTokens ?? 0,
+      costKnown,
+    },
+    ...(parsed && !parsed.ok ? { malformed: parsed.reason } : {}),
+  };
 }

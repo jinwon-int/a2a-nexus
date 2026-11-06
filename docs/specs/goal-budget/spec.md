@@ -116,6 +116,22 @@ Conclusions:
     replays idempotent: spend is never counted twice.
   - `cost_known = false` when the runtime reported no cost. Those rows still carry
     tokens when present.
+  - *Clarified in slice 2 (2026-11-06):*
+    - `agent_id` is the worker that did the work: `claimedBy`, else
+      `assignedWorkerId`. Cancellation clears `claimedBy`, so a cancel is
+      attributed to the assignee.
+    - `lane` is the task `intent`.
+    - `input_tokens` is uncached input plus cache-creation tokens. Cache-read
+      tokens are not counted: they are billed at a fraction of the input rate
+      and dominate raw counts on cached runs.
+    - "Not reported" is stored as `0`, not NULL: the slice 1 columns are
+      `NOT NULL DEFAULT 0`, and a NULL would need a second migration. A row
+      with `cost_known = false` and zero tokens is unmetered.
+    - Malformed or out-of-range telemetry (`costUsd` > 1e6, a token count
+      > 1e12, a negative or non-numeric value, an unknown schema version) is
+      recorded unmetered, never clamped.
+    - Spend is SQLite-only. Other stores keep no ledger, and budget status
+      reports `available: false` for them.
 - Monthly totals are derived from `broker_spend_events` by `period_key` instead of a
   mutable running counter. This keeps the ledger auditable and avoids a second write
   path that could drift.

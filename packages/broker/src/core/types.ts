@@ -215,6 +215,74 @@ export interface GoalListFilters {
   status?: GoalStatus;
   limit?: number;
 }
+
+/** Budget scope dimensions (#2499, spec "Budgets and spend"). */
+export type BudgetScopeType = "agent" | "lane" | "goal";
+
+/**
+ * One spend-ledger row (#2499 slice 2): `broker_spend_events`, one per task,
+ * written once at the task's terminal transition (succeeded, failed or
+ * canceled) and never updated. Values come from the unsigned, worker-reported
+ * `a2a.analysis-execution-telemetry.v1` sidecar, validated and bounded by the
+ * broker; a task without usable telemetry gets `costKnown: false` and zero
+ * tokens (an "unmetered" row).
+ */
+export interface SpendEventRecord {
+  taskId: string;
+  /** Terminal transition time (`completedAt`, else `updatedAt`). */
+  recordedAt: string;
+  /** `YYYY-MM` of `recordedAt` in the broker's budget period time zone. */
+  periodKey: string;
+  /** Worker that did the work: `claimedBy`, else `assignedWorkerId`. */
+  agentId: string | null;
+  /** The task `intent` (the lane dimension: analyze, propose_patch, ...). */
+  lane: string | null;
+  goalId: string | null;
+  /** Reported USD cost; 0 when `costKnown` is false. */
+  costUsd: number;
+  /** Uncached input plus cache-creation input tokens; 0 when not reported. */
+  inputTokens: number;
+  outputTokens: number;
+  /** True iff the runtime reported a finite, in-range `costUsd`. */
+  costKnown: boolean;
+}
+
+/** Spend totals for one scope (or a whole period) from the spend ledger. */
+export interface SpendTotals {
+  /** Sum of `costUsd` over rows with `costKnown` (Decision 4). */
+  usdKnownTotal: number;
+  inputTokensTotal: number;
+  outputTokensTotal: number;
+  taskCount: number;
+  /** Rows without a known cost (they may still carry tokens). */
+  costUnknownTaskCount: number;
+  /** Rows with neither a known cost nor any tokens. */
+  unmeteredTaskCount: number;
+}
+
+export interface SpendScopeTotals extends SpendTotals {
+  scopeType: BudgetScopeType;
+  scopeId: string;
+}
+
+/**
+ * Spend ledger read. Without `scopeType` every scope type is grouped; with
+ * `scopeType` only that one; with `scopeId` too only that scope. `limit`
+ * bounds the groups per scope type.
+ */
+export interface SpendTotalsQuery {
+  periodKey: string;
+  scopeType?: BudgetScopeType;
+  scopeId?: string;
+  limit?: number;
+}
+
+export interface SpendTotalsResult {
+  total: SpendTotals;
+  scopes: SpendScopeTotals[];
+  /** True when a scope type had more groups than `limit`. */
+  truncated: boolean;
+}
 export type AuditAction =
   | "proposal.created"
   | "artifact.attached"

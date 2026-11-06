@@ -268,10 +268,12 @@ import {
 } from "./broker-transition-guards.js";
 import { readExchange, readExchanges } from "./transport/broker-exchange-read.js";
 import {
+  budgetPeriodKey,
   GOAL_ID_PATTERN,
   GOAL_OBJECTIVE_MAX_LENGTH,
   GOAL_TITLE_MAX_LENGTH,
   goalRecordSchema,
+  resolveBudgetPeriodTimeZone,
 } from "./store-schemas.js";
 import {
   resolveTerminalBriefParentOriginRoute,
@@ -326,6 +328,8 @@ import type {
   ProposalDetails,
   ProposalListFilters,
   RegisterWorkerRequest,
+  SpendTotalsQuery,
+  SpendTotalsResult,
   SubmitValidationRequest,
   TaskCancelRequest,
   TaskError,
@@ -404,6 +408,12 @@ export type {
 } from "./broker-contracts.js";
 
 const HOT_PERSIST_FULL_RETENTION_INTERVAL_MS = 5 * 60_000;
+/** Terminal audit action -> the status the task must be in for a spend row (#2499 slice 2). */
+const SPEND_TERMINAL_AUDIT_ACTIONS: Partial<Record<AuditAction, TaskRecord["status"]>> = {
+  "task.succeeded": "succeeded",
+  "task.failed": "failed",
+  "task.canceled": "canceled",
+};
 /** Default bound for goal listings on stores without a goal table (matches the SQLite hot-read default). */
 const DEFAULT_GOAL_LIST_LIMIT = 1_000;
 
@@ -518,6 +528,8 @@ export class InMemoryA2ABroker {
   private readonly finalizerVerdictEnforcement: FinalizerVerdictEnforcement;
   private readonly finalizerKeyring?: FinalizerKeyring;
   private readonly fastLaneSkipReviewRound: boolean;
+  /** #2499 slice 2: validated IANA zone for spend-ledger `period_key`. */
+  private readonly budgetPeriodTimeZone: string;
   private readonly fastLaneSingleWorkerFinalize: boolean;
   private readonly workerHeartbeatPersistIntervalMs: number;
   private lastFullRetentionPersistAtMs = Date.now();
@@ -596,6 +608,7 @@ export class InMemoryA2ABroker {
     this.finalizerVerdictEnforcement = options.finalizerVerdictEnforcement ?? "off";
     this.finalizerKeyring = options.finalizerKeyring;
     this.fastLaneSkipReviewRound = options.fastLaneSkipReviewRound ?? false;
+    this.budgetPeriodTimeZone = resolveBudgetPeriodTimeZone(options.budgetPeriodTimeZone);
     this.fastLaneSingleWorkerFinalize = options.fastLaneSingleWorkerFinalize ?? false;
     this.workerHeartbeatPersistIntervalMs = Math.max(0, options.workerHeartbeatPersistIntervalMs ?? DEFAULT_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS);
     this.retentionPolicy = normalizeBrokerRetentionPolicy(options.retention);
@@ -938,30 +951,40 @@ export class InMemoryA2ABroker {
     }
     const goal = parsed.data as GoalRecord;
     const store = this.goalStore();
-    this.commitMutation(() => {
-      if (store) {
-        // Create-only: a concurrent duplicate surfaces here as 409, before
-        // the audit event is appended.
-        store.insertGoal(goal);
-      } else {
-        this.goals.set(goal.id, goal);
-      }
-      this.appendAuditEvent({
-        actorId: goal.requester.id,
-        action: "goal.created",
-        targetType: "goal",
-        targetId: goal.id,
-        note: goal.title,
+    try {
+      this.commitMutation(() => {
+        if (store) {
+          // Create-only: a concurrent duplicate surfaces here as 409, before
+          // the audit event is appended.
+          store.insertGoal(goal);
+        } else {
+          this.goals.set(goal.id, goal);
+        }
+        this.appendAuditEvent({
+          actorId: goal.requester.id,
+          action: "goal.created",
+          targetType: "goal",
+          targetId: goal.id,
+          note: goal.title,
+        });
+        // Goals without a goal table live only in the canonical snapshot, so
+        // they need a full persist (like wave plans); the goal-table path only
+        // has the audit row left to stage.
+        if (store) {
+          this.persistState();
+        } else {
+          this.persistState(undefined, { forceFull: true });
+        }
       });
-      // Goals without a goal table live only in the canonical snapshot, so
-      // they need a full persist (like wave plans); the goal-table path only
-      // has the audit row left to stage.
-      if (store) {
-        this.persistState();
-      } else {
-        this.persistState(undefined, { forceFull: true });
-      }
-    });
+    } catch (error) {
+      // #2499 slice 2 (review follow-up): a store without a goal table has no
+      // transaction to roll back, so a failed save would leave the goal in
+      // memory — a retry would then be a misleading 409 and the next
+      // unrelated full save would persist a goal the caller saw fail. Undo the
+      // in-memory insert; SQLite rolls its own row back with the batch.
+      if (!store) this.goals.delete(goal.id);
+      throw error;
+    }
     return goal;
   }
 
@@ -978,6 +1001,59 @@ export class InMemoryA2ABroker {
       .filter((goal) => !filters.status || goal.status === filters.status)
       .sort((a, b) => (a.updatedAt === b.updatedAt ? a.id.localeCompare(b.id) : b.updatedAt.localeCompare(a.updatedAt)))
       .slice(0, limit);
+  }
+
+  // --- Spend ledger (#2499 slice 2, record only) -------------------------------
+
+  /** The validated IANA zone spend periods are computed in. */
+  getBudgetPeriodTimeZone(): string {
+    return this.budgetPeriodTimeZone;
+  }
+
+  /** `YYYY-MM` for `at` (default: now) in the budget period time zone. */
+  budgetPeriodKey(at: string | Date = new Date()): string {
+    return budgetPeriodKey(at, this.budgetPeriodTimeZone);
+  }
+
+  /** Whether the store keeps a spend ledger (SQLite `broker_spend_events`). */
+  hasSpendLedger(): boolean {
+    return typeof this.stateStore?.readSpendTotals === "function";
+  }
+
+  /**
+   * Spend totals for a period from the ledger, or undefined when the store
+   * has none (JSON-file and injected snapshot stores: spend is SQLite-only).
+   * No limits are evaluated here; budgets arrive in slice 3.
+   */
+  readSpendTotals(query: SpendTotalsQuery): SpendTotalsResult | undefined {
+    return this.stateStore?.readSpendTotals?.(query);
+  }
+
+  /**
+   * Stage the task's spend-ledger row at its terminal transition (#2499
+   * slice 2). Called from `appendAuditEvent` for the terminal audit actions,
+   * which every terminal path (complete, fail, retry-scheduling fail,
+   * dead-letter, cancel, cancel cascade, checkpoint expiry) appends inside
+   * its `commitMutation` before `persistState`. The row rides the same save
+   * hints as the terminal task row, so the store commits both in one
+   * transaction. Only stores with a spend ledger get rows.
+   */
+  private stageTaskSpendEvent(task: TaskRecord): void {
+    if (!this.hasSpendLedger()) return;
+    const built = taskTerminal.buildTaskSpendEvent(task, { timeZone: this.budgetPeriodTimeZone });
+    if (built.malformed) {
+      // One content-free line per task: the row is recorded once, so this
+      // fires once. Telemetry values are never echoed.
+      console.warn(
+        JSON.stringify({
+          event: "broker.spend.telemetry_malformed",
+          taskId: task.id,
+          status: task.status,
+          reason: built.malformed,
+        }),
+      );
+    }
+    this.pendingHot.stageSpendEvent(built.event);
   }
 
   /** Per-status counts of tasks linked to a goal (read model only). */
@@ -3403,34 +3479,87 @@ export class InMemoryA2ABroker {
     this.taskEvents.prune(retained.taskIds, prunedTaskIds);
   }
 
-  private loadSnapshot(snapshot: BrokerSnapshot): void {
-    if (!this.goalStore()) {
-      // #2499: `goals` rides through brokerSnapshotSchema's passthrough
-      // unvalidated, so each entry is validated here. An invalid entry is
-      // dropped with the same `broker.snapshot.record_quarantined` event the
-      // snapshot loader emits for its declared collections; the record is
-      // included because the next full save no longer carries it.
-      for (const [index, goal] of (snapshot.goals ?? []).entries()) {
-        const parsed = goalRecordSchema.safeParse(goal);
-        if (parsed.success) {
-          this.goals.set(parsed.data.id, parsed.data as GoalRecord);
+  /**
+   * Validate snapshot-carried goals. `goals` rides through
+   * brokerSnapshotSchema's passthrough unvalidated, so each entry is checked
+   * here; an invalid entry is dropped with the same
+   * `broker.snapshot.record_quarantined` event the snapshot loader emits for
+   * its declared collections (the record is included because the next full
+   * save no longer carries it).
+   */
+  private validSnapshotGoals(goals: readonly unknown[]): GoalRecord[] {
+    const valid: GoalRecord[] = [];
+    for (const [index, goal] of goals.entries()) {
+      const parsed = goalRecordSchema.safeParse(goal);
+      if (parsed.success) {
+        valid.push(parsed.data as GoalRecord);
+        continue;
+      }
+      const recordId = (goal as { id?: unknown } | null)?.id;
+      console.warn(
+        JSON.stringify({
+          event: "broker.snapshot.record_quarantined",
+          source: "loadSnapshot",
+          collection: "goals",
+          index,
+          recordId: typeof recordId === "string" ? recordId : undefined,
+          issues: parsed.error.issues
+            .slice(0, 5)
+            .map((issue) => `${issue.path.join(".") || "<root>"}: ${issue.message}`),
+          record: goal,
+        }),
+      );
+    }
+    return valid;
+  }
+
+  /**
+   * #2499 slice 2 (review follow-up): a snapshot that carries `goals` (written
+   * by a store without a goal table, e.g. a JSON state file imported into
+   * SQLite) loaded into a broker whose store HAS a goal table. The goals used
+   * to be ignored and then dropped by the next full save. Now each valid goal
+   * is imported create-only into the goal table — an id already there is
+   * left untouched, never overwritten — in one batch, and one warning line
+   * reports the counts. Re-running (a crash before the next save rewrites the
+   * snapshot) imports nothing twice.
+   */
+  private importSnapshotGoals(
+    store: NonNullable<ReturnType<InMemoryA2ABroker["goalStore"]>>,
+    goals: readonly unknown[],
+  ): void {
+    const valid = this.validSnapshotGoals(goals);
+    let imported = 0;
+    let alreadyPresent = 0;
+    this.commitMutation(() => {
+      for (const goal of valid) {
+        if (store.readGoal(goal.id)) {
+          alreadyPresent += 1;
           continue;
         }
-        const recordId = (goal as { id?: unknown } | null)?.id;
-        console.warn(
-          JSON.stringify({
-            event: "broker.snapshot.record_quarantined",
-            source: "loadSnapshot",
-            collection: "goals",
-            index,
-            recordId: typeof recordId === "string" ? recordId : undefined,
-            issues: parsed.error.issues
-              .slice(0, 5)
-              .map((issue) => `${issue.path.join(".") || "<root>"}: ${issue.message}`),
-            record: goal,
-          }),
-        );
+        store.insertGoal(goal);
+        imported += 1;
       }
+    });
+    console.warn(
+      JSON.stringify({
+        event: "broker.snapshot.goals_imported",
+        source: "loadSnapshot",
+        snapshotGoals: goals.length,
+        imported,
+        alreadyPresent,
+        quarantined: goals.length - valid.length,
+      }),
+    );
+  }
+
+  private loadSnapshot(snapshot: BrokerSnapshot): void {
+    const goalStore = this.goalStore();
+    if (!goalStore) {
+      for (const goal of this.validSnapshotGoals(snapshot.goals ?? [])) {
+        this.goals.set(goal.id, goal);
+      }
+    } else if ((snapshot.goals?.length ?? 0) > 0) {
+      this.importSnapshotGoals(goalStore, snapshot.goals ?? []);
     }
 
     for (const exchange of snapshot.exchanges) {
@@ -3706,6 +3835,13 @@ export class InMemoryA2ABroker {
             status: task.status,
             completedAt: task.completedAt ?? task.updatedAt,
           });
+        }
+        // #2499 slice 2: one spend-ledger row per terminal transition. Keyed
+        // on the terminal audit action matching the task's status, so late
+        // evidence, tombstone and other audits on an already-terminal task
+        // stage nothing new (and the store insert is once-only anyway).
+        if (SPEND_TERMINAL_AUDIT_ACTIONS[input.action] === task.status) {
+          this.stageTaskSpendEvent(task);
         }
       }
     }

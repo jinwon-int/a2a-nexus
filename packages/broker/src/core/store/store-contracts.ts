@@ -6,6 +6,9 @@ import type {
   ChangeProposal,
   GoalListFilters,
   GoalRecord,
+  SpendEventRecord,
+  SpendTotalsQuery,
+  SpendTotalsResult,
   TaskRecord,
   TaskTombstone,
   ValidationResult,
@@ -133,6 +136,13 @@ export interface BrokerStateStore {
   listGoals?(filters?: GoalListFilters): GoalRecord[];
   /** Task counts per status for tasks linked to `goalId` (indexed `goal_id` column). */
   countGoalTasksByStatus?(goalId: string): Record<string, number>;
+  /**
+   * Spend ledger read (#2499 slice 2): period totals from
+   * `broker_spend_events` over the `(period_key, <scope>)` indexes. A store
+   * that leaves this undefined has no spend ledger: the broker stages no
+   * spend rows for it and `GET /budgets/status` reports `available: false`.
+   */
+  readSpendTotals?(query: SpendTotalsQuery): SpendTotalsResult;
 }
 
 export interface BrokerStateSaveHints {
@@ -147,6 +157,15 @@ export interface BrokerStateSaveHints {
   hotWorkers?: WorkerRecord[];
   /** Dirty terminal-outbox rows whose ack/receipt state must be table-persisted immediately. */
   hotTerminalOutboxEvents?: TerminalTaskOutboxEvent[];
+  /**
+   * Spend-ledger rows staged at terminal transitions (#2499 slice 2). Not a
+   * hot entity mirror: the snapshot carries no spend, retention never prunes
+   * it, and stores insert each row once (`ON CONFLICT(task_id) DO NOTHING`)
+   * in the same transaction as the rest of these hints, so the row commits
+   * with the terminal task write it was staged beside. Stores without a
+   * spend ledger ignore the field.
+   */
+  spendEvents?: SpendEventRecord[];
 }
 
 export interface BrokerPersistenceInfo {

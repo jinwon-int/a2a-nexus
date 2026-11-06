@@ -1,8 +1,9 @@
-// Goal routes (#2499 slice 1, spec docs/specs/goal-budget/spec.md):
+// Goal and budget routes (#2499, spec docs/specs/goal-budget/spec.md):
 //
-// POST /goals       create a goal (status `pursuing`)           hub/operator
-// GET  /goals       list goals, newest first (?status=&limit=)  read roles
-// GET  /goals/:id   one goal plus linked-task counts            read roles
+// POST /goals           create a goal (status `pursuing`)           hub/operator
+// GET  /goals           list goals, newest first (?status=&limit=)  read roles
+// GET  /goals/:id       one goal plus linked-task counts            read roles
+// GET  /budgets/status  spend-ledger totals for a period (slice 2)  read roles
 //
 // Auth mirrors the wave-plan routes, the closest supervisory record: writes
 // are hub/operator only; reads are open to the broader observer set. Both
@@ -16,9 +17,22 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
 import type { BrokerStateStore } from "../core/store/store.js";
-import { GOAL_ID_PATTERN, GOAL_STATUS_VALUES } from "../core/store-schemas.js";
+import {
+  BUDGET_PERIOD_KEY_PATTERN,
+  BUDGET_SCOPE_TYPES,
+  GOAL_ID_PATTERN,
+  GOAL_STATUS_VALUES,
+} from "../core/store-schemas.js";
 import { assertRequesterHasRole, type RequesterIdentity } from "../core/transport/request-security.js";
-import type { A2APartyRole, GoalBudgetPolicy, GoalListFilters, GoalStatus } from "../core/types.js";
+import type {
+  A2APartyRole,
+  BudgetScopeType,
+  GoalBudgetPolicy,
+  GoalListFilters,
+  GoalStatus,
+  SpendScopeTotals,
+  SpendTotals,
+} from "../core/types.js";
 import { awaitDurablePersistenceAck } from "./error-mapping.js";
 import { readJson } from "./body.js";
 import { sendJson } from "./response.js";
@@ -151,8 +165,123 @@ function handleGet(ctx: GoalRouteContext, goalId: string): void {
   );
 }
 
-/** Route dispatcher for the goal routes. Returns true only when handled. */
+/** Agent and lane scope ids: 1-256 characters, no control characters, never trimmed. */
+const BUDGET_SCOPE_ID_PATTERN = /^[^\u0000-\u001f\u007f]{1,256}$/;
+/** Bound on scope groups returned per scope type. */
+const BUDGET_STATUS_SCOPE_LIMIT = 1_000;
+
+function spendTotalsJson(totals: SpendTotals) {
+  return {
+    usd_known_total: totals.usdKnownTotal,
+    input_tokens_total: totals.inputTokensTotal,
+    output_tokens_total: totals.outputTokensTotal,
+    task_count: totals.taskCount,
+    cost_unknown_task_count: totals.costUnknownTaskCount,
+    unmetered_task_count: totals.unmeteredTaskCount,
+  };
+}
+
+function scopeJson(scope: SpendScopeTotals) {
+  // Budgets (and so limits) arrive in slice 3.
+  return { scope_type: scope.scopeType, scope_id: scope.scopeId, ...spendTotalsJson(scope), limits: null };
+}
+
+const ZERO_TOTALS: SpendTotals = {
+  usdKnownTotal: 0,
+  inputTokensTotal: 0,
+  outputTokensTotal: 0,
+  taskCount: 0,
+  costUnknownTaskCount: 0,
+  unmeteredTaskCount: 0,
+};
+
+/**
+ * GET /budgets/status?scope_type=agent|lane|goal&scope_id=…&period=YYYY-MM
+ * (#2499 slice 2, record only). Totals come from the spend ledger
+ * (`broker_spend_events`), one row per terminal task:
+ * - `period` defaults to the current `YYYY-MM` in the broker's budget period
+ *   time zone (A2A_BUDGET_PERIOD_TIME_ZONE, default Asia/Seoul);
+ * - no `scope_type`: per-scope totals for every scope type; `scope_type`
+ *   only: every scope of that type; plus `scope_id`: that one scope (zero
+ *   totals when it spent nothing). `scope_id` without `scope_type` is 400;
+ * - `usd_known_total` sums only rows with a reported cost (Decision 4);
+ *   `cost_unknown_task_count` counts the rest; `unmetered_task_count` counts
+ *   rows with neither cost nor tokens;
+ * - `limits` is null until budgets exist (slice 3);
+ * - the spend ledger is SQLite-only: other stores answer `available: false`.
+ */
+function handleBudgetStatus(ctx: GoalRouteContext): void {
+  assertRoles(ctx, GOAL_READ_ROLES, "budget.status");
+  const params = ctx.url.searchParams;
+  const rawScopeType = params.get("scope_type");
+  const scopeId = params.get("scope_id") ?? undefined;
+  const rawPeriod = params.get("period");
+  let scopeType: BudgetScopeType | undefined;
+  if (rawScopeType !== null) {
+    if (!(BUDGET_SCOPE_TYPES as readonly string[]).includes(rawScopeType)) {
+      throw new BrokerError("bad_request", `scope_type must be one of ${BUDGET_SCOPE_TYPES.join(", ")}`);
+    }
+    scopeType = rawScopeType as BudgetScopeType;
+  }
+  if (scopeId !== undefined) {
+    if (!scopeType) throw new BrokerError("bad_request", "scope_id requires scope_type");
+    const pattern = scopeType === "goal" ? GOAL_ID_PATTERN : BUDGET_SCOPE_ID_PATTERN;
+    if (!pattern.test(scopeId)) {
+      throw new BrokerError("bad_request", `scope_id must match ${pattern.source}`);
+    }
+  }
+  if (rawPeriod !== null && !BUDGET_PERIOD_KEY_PATTERN.test(rawPeriod)) {
+    throw new BrokerError("bad_request", "period must be YYYY-MM");
+  }
+  const period = rawPeriod ?? ctx.broker.budgetPeriodKey();
+  const base = {
+    kind: "budget-status",
+    period,
+    timeZone: ctx.broker.getBudgetPeriodTimeZone(),
+    scopeType: scopeType ?? null,
+    scopeId: scopeId ?? null,
+  };
+  const result = ctx.broker.readSpendTotals({
+    periodKey: period,
+    ...(scopeType ? { scopeType } : {}),
+    ...(scopeId !== undefined ? { scopeId } : {}),
+    limit: BUDGET_STATUS_SCOPE_LIMIT,
+  });
+  if (!result) {
+    sendJson(
+      ctx.res,
+      200,
+      { ...base, available: false, reason: "the spend ledger requires the SQLite state store", total: null, scopes: [] },
+      { "cache-control": "no-store" },
+    );
+    return;
+  }
+  const scopes = scopeType && scopeId !== undefined && result.scopes.length === 0
+    ? [{ scopeType, scopeId, ...ZERO_TOTALS }]
+    : result.scopes;
+  sendJson(
+    ctx.res,
+    200,
+    {
+      ...base,
+      available: true,
+      total: spendTotalsJson(result.total),
+      scopes: scopes.map(scopeJson),
+      truncated: result.truncated,
+    },
+    { "cache-control": "no-store" },
+  );
+}
+
+/** Route dispatcher for the goal and budget routes. Returns true only when handled. */
 export async function handleGoalRoutesIfMatched(ctx: GoalRouteContext): Promise<boolean> {
+  if (ctx.segments[0] === "budgets") {
+    if (ctx.method === "GET" && ctx.segments.length === 2 && ctx.segments[1] === "status") {
+      handleBudgetStatus(ctx);
+      return true;
+    }
+    return false;
+  }
   const [resource, id, ...rest] = ctx.segments;
   if (resource !== "goals" || rest.length > 0) return false;
   if (id === undefined) {

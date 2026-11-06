@@ -422,3 +422,201 @@ test("server (V1 idempotency authority): a create replay differing only in goalI
     await server.close();
   }
 });
+
+// --- GET /budgets/status (#2499 slice 2) -------------------------------------
+
+const TELEMETRY = {
+  schemaVersion: "a2a.analysis-execution-telemetry.v1",
+  source: "claude_cli_envelope",
+  inputTokens: 100,
+  outputTokens: 40,
+  cacheReadInputTokens: 5_000,
+  cacheCreationInputTokens: 20,
+  costUsd: 0.5,
+};
+
+test("handler: budget status validates its query and reports available:false without a spend ledger", async () => {
+  const { route } = makeRouter();
+  const ok = await route("GET", "/budgets/status");
+  assert.equal(ok.handled, true);
+  assert.equal(ok.status, 200);
+  assert.equal(ok.json.kind, "budget-status");
+  assert.equal(ok.json.available, false, "no SQLite store: the spend ledger is SQLite-only");
+  assert.match(ok.json.period, /^\d{4}-\d{2}$/);
+  assert.equal(ok.json.timeZone, "Asia/Seoul");
+  assert.deepEqual(ok.json.scopes, []);
+
+  await assert.rejects(() => route("GET", "/budgets/status?scope_type=team"), rejectsWith("bad_request", /scope_type must be one of agent, lane, goal/));
+  await assert.rejects(() => route("GET", "/budgets/status?scope_id=worker-a"), rejectsWith("bad_request", /scope_id requires scope_type/));
+  for (const period of ["2026-13", "2026-1", "202611", "2026-11-01", "26-11"]) {
+    await assert.rejects(() => route("GET", `/budgets/status?period=${period}`), rejectsWith("bad_request", /period must be YYYY-MM/));
+  }
+  await assert.rejects(() => route("GET", "/budgets/status?scope_type=goal&scope_id=bad%20id"), rejectsWith("bad_request", /scope_id must match/));
+  await assert.rejects(() => route("GET", `/budgets/status?scope_type=agent&scope_id=${"a".repeat(257)}`), rejectsWith("bad_request", /scope_id must match/));
+  await assert.rejects(() => route("GET", "/budgets/status?scope_type=lane&scope_id="), rejectsWith("bad_request", /scope_id must match/));
+
+  // Auth: the GET /goals read posture.
+  const analyst = { id: "an-1", kind: "node" as const, role: "analyst" as const };
+  assert.equal((await route("GET", "/budgets/status", { identity: analyst })).status, 200);
+  await assert.rejects(() => route("GET", "/budgets/status", { identity: null }), rejectsWith("unauthorized"));
+  const publisher = { id: "pub-1", kind: "node" as const, role: "publisher" as const };
+  await assert.rejects(() => route("GET", "/budgets/status", { identity: publisher }), rejectsWith("unauthorized", /budget\.status/));
+  assert.equal((await route("GET", "/budgets/status", { identity: null, enforce: false })).status, 200);
+
+  // Unmatched shapes fall through.
+  assert.equal((await route("POST", "/budgets/status")).handled, false);
+  assert.equal((await route("GET", "/budgets")).handled, false);
+  assert.equal((await route("GET", "/budgets/status/x")).handled, false);
+});
+
+const WORKER_A = { "x-a2a-requester-id": "worker-a", "x-a2a-requester-role": "analyst" };
+
+async function exerciseBudgetServer(baseUrl: string): Promise<void> {
+  await registerTestWorker(baseUrl, "worker-a", "analyst");
+  assert.equal(
+    (await fetch(`${baseUrl}/goals`, { method: "POST", headers: jsonHeaders(HUB), body: JSON.stringify({ id: "goal-spend", title: "Spend" }) })).status,
+    201,
+  );
+  const run = async (id: string, intent: string, goalId: string | undefined, terminal: "complete" | "fail") => {
+    const created = await fetch(`${baseUrl}/tasks`, {
+      method: "POST",
+      headers: jsonHeaders(HUB),
+      body: JSON.stringify({
+        id,
+        intent,
+        requester: { id: "test-hub", kind: "node", role: "hub" },
+        target: { id: "worker-a", kind: "node", role: "analyst" },
+        assignedWorkerId: "worker-a",
+        message: id,
+        taskOrigin: "api",
+        ...(goalId ? { goalId } : {}),
+      }),
+    });
+    assert.equal(created.status, 201, await created.clone().text());
+    const claimed = await fetch(`${baseUrl}/tasks/${id}/claim`, { method: "POST", headers: jsonHeaders(WORKER_A), body: JSON.stringify({ workerId: "worker-a" }) });
+    assert.equal(claimed.status, 200, await claimed.clone().text());
+    const body = terminal === "complete"
+      ? { workerId: "worker-a", result: { summary: "done", output: { executionTelemetry: TELEMETRY } } }
+      : { workerId: "worker-a", error: { code: "openclaw_analysis_failed", message: "bridge", details: { bridgeFailure: { code: "x", executionTelemetry: { ...TELEMETRY, costUsd: 0.25 } } } } };
+    const finished = await fetch(`${baseUrl}/tasks/${id}/${terminal}`, { method: "POST", headers: jsonHeaders(WORKER_A), body: JSON.stringify(body) });
+    assert.equal(finished.status, 200, await finished.clone().text());
+  };
+  await run("spend-1", "analyze", "goal-spend", "complete");
+  await run("spend-2", "chat", undefined, "fail");
+
+  const anonymous = await fetch(`${baseUrl}/budgets/status`);
+  assert.equal(anonymous.status, 401);
+
+  const status = await fetch(`${baseUrl}/budgets/status`, { headers: HUB });
+  assert.equal(status.status, 200);
+  assert.equal(status.headers.get("cache-control"), "no-store");
+  const all = await status.json();
+  assert.equal(all.available, true);
+  assert.equal(all.timeZone, "Asia/Seoul");
+  assert.match(all.period, /^\d{4}-\d{2}$/);
+  assert.deepEqual(all.total, {
+    usd_known_total: 0.75,
+    input_tokens_total: 240,
+    output_tokens_total: 80,
+    task_count: 2,
+    cost_unknown_task_count: 0,
+    unmetered_task_count: 0,
+  });
+  assert.deepEqual(
+    all.scopes.map((scope: { scope_type: string; scope_id: string; task_count: number; limits: unknown }) =>
+      `${scope.scope_type}:${scope.scope_id}:${scope.task_count}:${String(scope.limits)}`),
+    ["agent:worker-a:2:null", "lane:analyze:1:null", "lane:chat:1:null", "goal:goal-spend:1:null"],
+  );
+  assert.equal(all.truncated, false);
+
+  const goal = await (await fetch(`${baseUrl}/budgets/status?scope_type=goal&scope_id=goal-spend&period=${all.period}`, { headers: HUB })).json();
+  assert.equal(goal.scopeType, "goal");
+  assert.deepEqual(goal.scopes, [{
+    scope_type: "goal",
+    scope_id: "goal-spend",
+    usd_known_total: 0.5,
+    input_tokens_total: 120,
+    output_tokens_total: 40,
+    task_count: 1,
+    cost_unknown_task_count: 0,
+    unmetered_task_count: 0,
+    limits: null,
+  }]);
+
+  const idle = await (await fetch(`${baseUrl}/budgets/status?scope_type=agent&scope_id=worker-idle`, { headers: HUB })).json();
+  assert.equal(idle.scopes.length, 1, "a named scope with no spend reports zero totals");
+  assert.equal(idle.scopes[0].task_count, 0);
+  assert.equal(idle.scopes[0].scope_id, "worker-idle");
+
+  const otherMonth = await (await fetch(`${baseUrl}/budgets/status?period=1999-01`, { headers: HUB })).json();
+  assert.equal(otherMonth.total.task_count, 0);
+  assert.deepEqual(otherMonth.scopes, []);
+
+  const bad = await fetch(`${baseUrl}/budgets/status?scope_type=team`, { headers: HUB });
+  assert.equal(bad.status, 400);
+  assert.equal((await bad.json()).error.code, "bad_request");
+  assert.equal((await fetch(`${baseUrl}/budgets/status?period=2026-13`, { headers: HUB })).status, 400);
+}
+
+test("server (SQLite backend): terminal transitions feed GET /budgets/status", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-broker-budget-status-"));
+  const server = await startTestServer({
+    stateStore: undefined,
+    persistenceBackend: "sqlite",
+    stateFile: join(dir, "state.json"),
+    sqliteFile: join(dir, "state.sqlite"),
+  });
+  try {
+    await exerciseBudgetServer(server.baseUrl);
+  } finally {
+    await server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("server (SQLite worker-thread persistence): spend rows ride the queued terminal write", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-broker-budget-status-wt-"));
+  await withEnv({ BROKER_PERSISTENCE_QUEUE_WORKER_THREAD: "1" }, async () => {
+    const server = await startTestServer({
+      stateStore: undefined,
+      persistenceBackend: "sqlite",
+      stateFile: join(dir, "state.json"),
+      sqliteFile: join(dir, "state.sqlite"),
+    });
+    try {
+      await exerciseBudgetServer(server.baseUrl);
+    } finally {
+      await server.close();
+    }
+  });
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("server (injected snapshot store): GET /budgets/status reports available:false", async () => {
+  const server = await startTestServer();
+  try {
+    const res = await fetch(`${server.baseUrl}/budgets/status?scope_type=lane`, { headers: HUB });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.available, false);
+    assert.equal(body.scopeType, "lane");
+    assert.deepEqual(body.scopes, []);
+  } finally {
+    await server.close();
+  }
+});
+
+test("server: the budget period zone comes from A2A_BUDGET_PERIOD_TIME_ZONE and an invalid zone fails startup", async () => {
+  await withEnv({ A2A_BUDGET_PERIOD_TIME_ZONE: "UTC" }, async () => {
+    const server = await startTestServer();
+    try {
+      const body = await (await fetch(`${server.baseUrl}/budgets/status`, { headers: HUB })).json();
+      assert.equal(body.timeZone, "UTC");
+    } finally {
+      await server.close();
+    }
+  });
+  await withEnv({ A2A_BUDGET_PERIOD_TIME_ZONE: "Mars/Olympus" }, async () => {
+    await assert.rejects(() => startTestServer(), /invalid A2A_BUDGET_PERIOD_TIME_ZONE='Mars\/Olympus'/);
+  });
+});

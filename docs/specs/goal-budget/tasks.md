@@ -50,17 +50,28 @@ Spec: [`spec.md`](spec.md) · Plan: [`plan.md`](plan.md) · Issue: [#2499](https
 
 ### Slice 2 — spend ledger (record only)
 
-- [ ] On every terminal transition, insert one `broker_spend_events` row keyed by `task_id`; conflicts are ignored.
-- [ ] Read `executionTelemetry` from `result.output` or `error.details.bridgeFailure`; set `cost_known` from the presence of `costUsd`.
-- [ ] `period_key` in the configured zone (default `Asia/Seoul`), as a broker setting.
-- [ ] `GET /budgets/status?scope_type=&scope_id=&period=`:
+- [x] On every terminal transition, insert one `broker_spend_events` row keyed by `task_id`; conflicts are ignored.
+  - Terminal transitions covered: complete, fail (including retry-scheduling fails and stale-sweep dead-letters), and cancel (including cascades and checkpoint expiry).
+  - The row is staged with the terminal task row and committed in the same store transaction, on both the in-process and the worker-thread SQLite topologies.
+- [x] Read `executionTelemetry` from `result.output` or `error.details.bridgeFailure`; set `cost_known` from the presence of `costUsd`.
+  - Also read from `error.details.nestedError.details.bridgeFailure` (wrapped handler exit) and from a preserved negative review verdict.
+  - Values are validated and bounded (`costUsd` ≤ 1e6, tokens ≤ 1e12). Malformed telemetry is recorded unmetered with one `broker.spend.telemetry_malformed` log line.
+  - Token, `agent_id` and `lane` semantics are recorded in the spec ("Budgets and spend", clarified in slice 2).
+- [x] `period_key` in the configured zone (default `Asia/Seoul`), as a broker setting: `A2A_BUDGET_PERIOD_TIME_ZONE`. An invalid zone fails startup.
+- [x] `GET /budgets/status?scope_type=&scope_id=&period=`:
   - spend totals (USD known, tokens, unmetered task count);
   - limits shown as none until slice 3.
-- [ ] Tests:
+  - Same read auth as `GET /goals`; 400 on a bad `scope_type`, `scope_id` or `period`.
+  - Spend is SQLite-only: other stores report `available: false`.
+- [x] Tests:
   - replay idempotency;
   - failed and `partial` results recorded;
   - KST month boundary (00:00 KST = 15:00 UTC on the last day);
   - runtimes without cost or tokens.
+- [x] Slice 1 review follow-ups:
+  - `createGoal` on a store without a goal table rolls the goal back when the save throws.
+  - Snapshot `goals` loaded into a SQLite-backed broker are imported into `broker_goals` (create-only, counted in one log line).
+  - HTTP decision-dialectic advance with a closed (409) or missing (404) parent goal creates no phase task.
 
 ### Slice 3 — budgets and enforcement (default off)
 
