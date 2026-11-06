@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -761,9 +761,13 @@ async function runClaude(prompt, flags, env = process.env, laneSkillHint = null)
   const maxBuffer = positiveInteger(env.A2A_CLAUDE_CODE_MAX_OUTPUT_BYTES, 8 * 1024 * 1024);
   const sessionId = safeText(flags["session-id"], "default");
 
-  // Session-scoped isolation (#1129): each task session gets its own temp dir
-  // so that any file artifacts (logs, tool outputs) stay confined.
-  const sessionWorkspace = mkdtempSync(join(tmpdir(), `a2a-analysis-${sanitizeSessionSegment(sessionId)}-`));
+  // Session-scoped isolation (#1129): each task session gets its own empty
+  // workspace so that any file artifacts (logs, tool outputs) stay confined.
+  // #2496: in `slot` mode the path is a fixed per-slot directory, so the cwd in
+  // Claude Code's system prompt is stable and the prompt-cache prefix survives.
+  const workspace = acquireAnalysisWorkspace(sessionId, env);
+  if (workspace.note) process.stderr.write(`claude-a2a-analysis-bridge: ${workspace.note}\n`);
+  const sessionWorkspace = workspace.path;
 
   try {
     // #2422: under the isolated setting sources the user skills root is not
@@ -787,8 +791,15 @@ async function runClaude(prompt, flags, env = process.env, laneSkillHint = null)
       }
     }
     const args = buildReadOnlyClaudeArgs(prompt, maxTurns, flags, env, effectiveLaneSkillHint);
+    const childEnv = buildClaudeChildEnv(env);
+    // #2496: a fixed slot cwd maps every task to the same Claude Code project,
+    // so auto memory (loaded regardless of --setting-sources) would carry
+    // across tasks. An explicit host value still wins.
+    if (workspace.mode === "slot") {
+      childEnv.CLAUDE_CODE_DISABLE_AUTO_MEMORY = env.CLAUDE_CODE_DISABLE_AUTO_MEMORY || "1";
+    }
     const child = await spawnWithProcessGroupKill(claudeBin, args, {
-      env: buildClaudeChildEnv(env),
+      env: childEnv,
       cwd: sessionWorkspace,
       encoding: "utf8",
       maxBuffer,
@@ -812,6 +823,100 @@ async function runClaude(prompt, flags, env = process.env, laneSkillHint = null)
   } finally {
     rmSync(sessionWorkspace, { recursive: true, force: true });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Analysis workspace (#1129, #2496)
+//
+// `ephemeral` (default): a fresh mkdtemp directory per task, as before.
+// `slot` (A2A_ANALYSIS_WORKSPACE_MODE=slot): the first free fixed directory
+// `<tmp>/a2a-analysis-slot-<uid>-<n>` (n < A2A_ANALYSIS_WORKSPACE_SLOTS,
+// default 4, max 16). Claude Code puts the cwd into its system prompt, so a
+// per-task path re-writes the prompt-cache tail on every task (~6K tokens,
+// measured in #2496); a stable path lets it be read from cache instead.
+//
+// The slot directory is its own lock: it is created with an exclusive mkdir
+// (0700) and removed when the task ends, so every task starts from an empty
+// directory and concurrent lanes never share one. An existing path that is a
+// symlink, not a directory, or owned by another user is never used. A slot
+// left behind by a killed bridge is reported and skipped, not reclaimed
+// (path-based reclaim races with a concurrent acquirer). When no slot is
+// free the bridge falls back to the ephemeral directory.
+// ---------------------------------------------------------------------------
+const ANALYSIS_WORKSPACE_DEFAULT_SLOTS = 4;
+const ANALYSIS_WORKSPACE_MAX_SLOTS = 16;
+const ANALYSIS_WORKSPACE_OWNER_FILE = ".a2a-slot-owner";
+
+function analysisWorkspaceSlotCount(env) {
+  const parsed = Number.parseInt(safeText(env.A2A_ANALYSIS_WORKSPACE_SLOTS, ""), 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return ANALYSIS_WORKSPACE_DEFAULT_SLOTS;
+  return Math.min(parsed, ANALYSIS_WORKSPACE_MAX_SLOTS);
+}
+
+function processIsAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
+function describeHeldSlot(path) {
+  const uid = typeof process.getuid === "function" ? process.getuid() : null;
+  let stat;
+  try {
+    stat = lstatSync(path);
+  } catch {
+    return "vanished";
+  }
+  if (stat.isSymbolicLink() || !stat.isDirectory() || (uid !== null && stat.uid !== uid)) return "foreign";
+  let owner = null;
+  try {
+    owner = Number.parseInt(readFileSync(join(path, ANALYSIS_WORKSPACE_OWNER_FILE), "utf8").trim(), 10);
+  } catch {
+    return "busy";
+  }
+  return processIsAlive(owner) ? "busy" : `stale (owner pid ${owner} is gone; remove ${path} to reuse it)`;
+}
+
+function acquireAnalysisWorkspace(sessionId, env = process.env) {
+  const ephemeral = (note) => ({
+    mode: "ephemeral",
+    path: mkdtempSync(join(tmpdir(), `a2a-analysis-${sanitizeSessionSegment(sessionId)}-`)),
+    note,
+  });
+  const requested = safeText(env.A2A_ANALYSIS_WORKSPACE_MODE, "ephemeral").toLowerCase();
+  if (requested !== "slot") return ephemeral(null);
+
+  const uidSegment = typeof process.getuid === "function" ? String(process.getuid()) : "u";
+  const slots = analysisWorkspaceSlotCount(env);
+  const notes = [];
+  for (let slot = 0; slot < slots; slot += 1) {
+    const path = join(tmpdir(), `a2a-analysis-slot-${uidSegment}-${slot}`);
+    try {
+      mkdirSync(path, { mode: 0o700 });
+    } catch (error) {
+      if (error?.code !== "EEXIST") {
+        notes.push(`slot ${slot} unavailable (${error?.code || "error"})`);
+        continue;
+      }
+      const state = describeHeldSlot(path);
+      if (state !== "busy") notes.push(`slot ${slot} ${state}`);
+      continue;
+    }
+    try {
+      writeFileSync(join(path, ANALYSIS_WORKSPACE_OWNER_FILE), `${process.pid}\n`, { flag: "wx", mode: 0o600 });
+    } catch (error) {
+      rmSync(path, { recursive: true, force: true });
+      notes.push(`slot ${slot} owner record failed (${error?.code || "error"})`);
+      continue;
+    }
+    return { mode: "slot", path, note: notes.length ? `workspace ${notes.join("; ")}` : null };
+  }
+  notes.push(`no free slot among ${slots}; using an ephemeral workspace`);
+  return ephemeral(`workspace ${notes.join("; ")}`);
 }
 
 // Sanitize the session id into a safe directory segment (alphanumeric + hyphens).

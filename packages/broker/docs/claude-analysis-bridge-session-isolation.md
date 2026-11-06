@@ -60,8 +60,44 @@ model to continue without it.
 | `A2A_CLAUDE_SETTING_SOURCES` | `project` | Comma list of `user`, `project`, `local` passed to `--setting-sources` (canonical order, de-duplicated). An invalid value is ignored with a stderr note and the default applies. |
 | `A2A_CLAUDE_SETTING_SOURCES=user,project,local` | — | Pre-#2422 behaviour: host hooks, CLAUDE.md, skills visible again; the lane skill is then not copied (it is already visible). `CCC_DISTILL_RESUME_POLICY=skip:a2a-lane` (#2383) still protects the owner's resume.md in that mode. |
 
+| `A2A_ANALYSIS_WORKSPACE_MODE` | `ephemeral` | `slot` runs each task in the first free fixed directory `<tmp>/a2a-analysis-slot-<uid>-<n>` instead of a per-task `mkdtemp` directory (#2496). Any other value means `ephemeral`. |
+| `A2A_ANALYSIS_WORKSPACE_SLOTS` | `4` | Number of fixed slots in `slot` mode (1–16). |
+
 `--strict-mcp-config` is not configurable: the lane tool policy never allows
 an MCP tool, so loading the servers only costs tokens.
+
+### Fixed-slot workspace (#2496)
+
+Claude Code writes the cwd into its system prompt. A per-task `mkdtemp` path
+therefore breaks the prompt-cache prefix at that point. In #2496, about 6.1K
+tokens per task were re-written as cache writes instead of cache reads. With
+the same cwd, the prefix was read from cache in full.
+
+In `slot` mode the bridge keeps the isolation properties of the ephemeral
+workspace:
+
+- The slot directory is its own lock. The bridge creates it with an exclusive
+  `mkdir` (mode 0700) and removes it when the task ends. Every task starts from
+  an empty directory, and concurrent lanes never share a slot.
+- The bridge never uses an existing path that is a symlink, is not a
+  directory, or belongs to another user.
+- A slot left by a killed bridge is reported on stderr as `stale` and skipped.
+  The bridge does not reclaim it, because a path-based reclaim races with a
+  concurrent acquirer. Remove the named directory to reuse the slot.
+- When no slot is free, the task uses an ephemeral workspace and the bridge
+  writes one stderr note.
+- Auto memory (`~/.claude/projects/<project>/memory/`) loads regardless of
+  `--setting-sources`. A fixed cwd maps every task to one project, so the
+  bridge sets `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` for the child in `slot` mode.
+  An explicit host value wins.
+
+Lane transcripts in `slot` mode live under
+`~/.claude/projects/-tmp-a2a-analysis-slot-*/`. To measure the effect, compare
+`cache_read_input_tokens` and `cache_creation_input_tokens` of the first API
+call per task before and after the switch.
+
+Rollback: unset `A2A_ANALYSIS_WORKSPACE_MODE` (or set `ephemeral`) in the
+worker env file and restart the worker (idle gate applies).
 
 ## Verifying on a node (read-only)
 
