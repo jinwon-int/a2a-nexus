@@ -2,7 +2,7 @@
 
 > **Issue:** [#2499](https://github.com/jinwon-int/a2a-nexus/issues/2499)
 > **Phase:** Spec-first. This document changes no code, schema, or runtime behaviour.
-> **Status:** Proposed — needs the owner decisions in [Open questions](#open-questions) before a plan and task list are written.
+> **Status:** Accepted for planning — owner decisions recorded 2026-11-06 in [Decisions](#decisions). Plan: [`plan.md`](plan.md), tasks: [`tasks.md`](tasks.md).
 > **Related:** [`docs/specs/a2a-goal-mode/`](../a2a-goal-mode/spec.md), [`packages/broker/docs/goal-objective-lifecycle.md`](../../../packages/broker/docs/goal-objective-lifecycle.md)
 
 ## Problem
@@ -105,11 +105,11 @@ Conclusions:
 
 ### Budgets and spend
 
-- `broker_budgets(id, scope_type, scope_id, period, limit, unit, warn_pct, enforce, created_by, created_at)`
+- `broker_budgets(id, scope_type, scope_id, period, limit_usd, limit_tokens, warn_pct, enforce, created_by, created_at)`
   - `scope_type`: `agent | lane | goal`; `period`: `month` only in the first slice.
-  - `unit` is an owner decision (question 2): `usd`, `tokens`, or both.
+  - `limit_usd` and `limit_tokens` are both nullable; at least one is set (Decision 1).
   - `warn_pct` defaults to 80.
-  - `enforce`: `refuse | pause` (question 3).
+  - `enforce`: `refuse | pause`, default `refuse` (Decision 2).
 - `broker_spend_events(task_id PRIMARY KEY, recorded_at, period_key, agent_id, lane, goal_id, cost_usd, input_tokens, output_tokens, cost_known)`
   - One row per task, written once when the task reaches any terminal state
     (including failed and `partial`). The primary key makes terminal retries and
@@ -132,11 +132,17 @@ Conclusions:
   can overshoot by at most the tasks already claimed. The spec accepts this, as the
   issue draft does.
 - No new `TaskStatus`. The draft's "stays in the queue" is today's `queued` state.
-- **To verify — claim loop:** if workers poll for claimable tasks and retry refused
-  claims, a refused task could cause a hot loop. Before implementation, check how the
-  claim routes (`http/tasks-worker-routes.ts:202,220`, `a2a/json-rpc.ts:1016,1033`) list
-  claimable work, and filter budget-exhausted scopes out of that list rather than only
-  refusing at claim.
+- **Claim retry loop (verified 2026-11-06).** Workers poll
+  `GET /tasks?assignedWorkerId=<id>&status=queued`
+  (`workers/broker-worker-client.ts:395-402`), and the worker SSE stream sends the same
+  queued set as `worker-assignment-snapshot` (`http/task-event-streams.ts:74`).
+  `policy_denied` maps to HTTP 403 (`http/error-mapping.ts:102`), which the worker treats as
+  a skippable claim error (`workers/external-handler.ts:323-324`). A refused task
+  therefore stays in the next poll result and is re-claimed on every poll for as long as
+  the budget stays exhausted. This is not a CPU spin, but it is a month-long stream of
+  refused claims and log lines. **Requirement:** the claim-time refusal stays the
+  authority, and the queued listing for a worker (poll route and SSE snapshot) must also
+  omit tasks whose scope is exhausted, with the omitted count exposed in budget status.
 
 ### Alerts and read surfaces
 
@@ -172,20 +178,26 @@ Conclusions:
   - File names must avoid ceremony markers (`approval`, `rehearsal`, `preflight`, …).
 - **Trust model:** unchanged. No signed artifact gains or loses fields.
 
-## Open questions
+## Decisions
 
-Owner decisions, needed before the plan:
+Owner decisions, 2026-11-06 (recorded on #2499). The former open questions are kept as the
+question each decision answers.
 
-1. *(Draft Q2)* **Budget unit:** USD only, tokens only, or both? USD covers Claude
-   analysis lanes only; tokens cover more runtimes but not Codex or Hermes. Recommended:
-   both, with enforcement on USD where `cost_known` and on tokens otherwise.
-2. *(Draft Q3)* **Default `enforce`:** `refuse` at claim, or `pause` at dispatch?
-   Recommended: `refuse`, the draft's own default, because it leaves dispatched work
-   visible in the queue.
-3. **Period boundary:** calendar month in UTC or in the owner's local time zone?
-4. **Unknown-cost runtimes:** should tasks on runtimes that report neither cost nor
-   tokens be refused once a scope with a USD-only budget is exhausted, or ignored?
-5. **Goal persistence:** confirm a `broker_goals` table rather than snapshot JSON.
+1. *(Draft Q2)* **Budget unit — both USD and tokens.** A budget row may set a USD limit, a
+   token limit, or both. A task's spend counts toward the USD limit when `cost_known` is
+   true and toward the token limit whenever tokens were reported.
+2. *(Draft Q3)* **Default `enforce` — `refuse` at claim.** The task stays `queued` and is
+   visible. `pause` (refuse at create time) remains available per budget row but is not
+   the default.
+3. **Period boundary — calendar month in `Asia/Seoul`.** `period_key` is `YYYY-MM` computed
+   in that time zone. The zone is a broker setting so it can change without a schema
+   change; the default is `Asia/Seoul`.
+4. **Unknown-cost runtimes — never refused by a USD limit.** A task whose runtime reports
+   no cost is not blocked because a USD limit is exhausted. It is governed by the token
+   limit when tokens are reported, and by warn alerts. A runtime that reports neither
+   cost nor tokens is recorded with `cost_known = false` and zero tokens, and appears in
+   budget status as unmetered spend.
+5. **Goal persistence — dedicated `broker_goals` table.**
 
 *(Draft Q1 is answered above: usage is present for some runtimes only, as an unsigned
 sidecar in `task.result.output.executionTelemetry`.)*
@@ -202,9 +214,4 @@ sidecar in `task.result.output.executionTelemetry`.)*
 ## Follow-ups
 
 - Reconcile or retire `docs/specs/a2a-goal-mode/schema.json` states against `GoalStatus`.
-- After the owner decides the open questions: write `plan.md` and `tasks.md` in this
-  directory (medium/large change rule, `CONTRIBUTING.md`), then implement in slices:
-  1. Goal table and `goalId` link.
-  2. Spend ledger (record only, no enforcement).
-  3. Enforcement behind a default-off flag.
-  4. Alerts and read routes.
+- Implementation follows [`plan.md`](plan.md) and [`tasks.md`](tasks.md), in slices.
