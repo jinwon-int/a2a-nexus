@@ -8,11 +8,15 @@
 // are hub/operator only; reads are open to the broader observer set. Both
 // apply only when requester identity is enforced, like every other route.
 // Read-only projections: no route here creates, requeues, or approves tasks.
+//
+// Input limits (400 bad_request): a goal id must match GOAL_ID_PATTERN
+// (`^[A-Za-z0-9._:-]{1,128}$`, never trimmed) on POST and on GET /goals/:id;
+// title <= 200 and objective <= 2000 characters after trimming.
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
 import type { BrokerStateStore } from "../core/store/store.js";
-import { GOAL_STATUS_VALUES } from "../core/store-schemas.js";
+import { GOAL_ID_PATTERN, GOAL_STATUS_VALUES } from "../core/store-schemas.js";
 import { assertRequesterHasRole, type RequesterIdentity } from "../core/transport/request-security.js";
 import type { A2APartyRole, GoalBudgetPolicy, GoalListFilters, GoalStatus } from "../core/types.js";
 import { awaitDurablePersistenceAck } from "./error-mapping.js";
@@ -115,9 +119,24 @@ function handleList(ctx: GoalRouteContext): void {
   sendJson(ctx.res, 200, { kind: "goals", count: goals.length, goals }, { "cache-control": "no-store" });
 }
 
-/** GET /goals/:id — one goal plus per-status counts of its linked tasks. */
+/**
+ * GET /goals/:id — one goal plus per-status counts of its linked tasks.
+ *
+ * `linkedTasks` (`{ total, byStatus }`) is a read model over the HOT task
+ * table (`broker_tasks.goal_id` on SQLite, the in-memory task map otherwise),
+ * not a ledger:
+ * - on the worker-thread persistence topology task writes reach SQLite
+ *   through the persistence queue while this count reads the main-thread
+ *   connection, so a just-created or just-transitioned task can lag;
+ * - tasks removed from the hot table by retention (terminal caps, tombstoned
+ *   or pruned tasks) are no longer counted.
+ * Durable per-goal spend accounting is the spend ledger's job (slice 2).
+ */
 function handleGet(ctx: GoalRouteContext, goalId: string): void {
   assertRoles(ctx, GOAL_READ_ROLES, "goal.get");
+  if (!GOAL_ID_PATTERN.test(goalId)) {
+    throw new BrokerError("bad_request", `goal id must match ${GOAL_ID_PATTERN.source}`);
+  }
   const goal = ctx.broker.getGoal(goalId);
   if (!goal) {
     throw new BrokerError("not_found", "goal not found", { goalId });

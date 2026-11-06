@@ -4,6 +4,7 @@ import { DatabaseSync, type StatementSync } from "node:sqlite";
 
 import { z } from "zod";
 
+import { BrokerError } from "../broker-error.js";
 import type {
   ArtifactRecord,
   AuditEvent,
@@ -1163,23 +1164,26 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   /**
-   * Goal persistence (#2499 slice 1): one `broker_goals` row per GoalRecord.
-   * A single autocommit UPSERT on this connection, like
-   * {@link consumeLiveApprovalKey}; on the worker-thread topology the proxy
-   * inherits it, so the row is durable when this returns.
+   * Goal persistence (#2499 slice 1): create one `broker_goals` row per
+   * GoalRecord. Create-only — an existing id is never overwritten; the
+   * primary-key conflict surfaces as `invalid_transition` (HTTP 409), the
+   * same code the broker's own duplicate check uses. One statement on this
+   * connection, like {@link consumeLiveApprovalKey}: it joins an open
+   * `runBatch` transaction, otherwise it autocommits, and on the
+   * worker-thread topology the proxy inherits it, so the row is durable
+   * when this returns.
    */
-  upsertGoal(goal: GoalRecord): void {
-    this
+  insertGoal(goal: GoalRecord): void {
+    const result = this
       .stmt(
         `INSERT INTO broker_goals (id, status, created_at, updated_at, payload)
          VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET
-           status = excluded.status,
-           created_at = excluded.created_at,
-           updated_at = excluded.updated_at,
-           payload = excluded.payload`,
+         ON CONFLICT(id) DO NOTHING`,
       )
       .run(goal.id, goal.status, goal.createdAt, goal.updatedAt, JSON.stringify(goal));
+    if (Number(result.changes) !== 1) {
+      throw new BrokerError("invalid_transition", `goal '${goal.id}' already exists`, { goalId: goal.id });
+    }
   }
 
   readGoal(id: string): GoalRecord | undefined {

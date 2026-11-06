@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
+import { BrokerError } from "../broker-error.js";
 import { CURRENT_BROKER_STATE_VERSION, SqliteBrokerStateStore } from "./store.js";
 import type { GoalRecord, TaskRecord } from "../types.js";
 
@@ -208,13 +209,13 @@ test("a schema 13 store opens, upgrades to 14 in place, and keeps every task row
   }
 });
 
-test("goal rows: upsert, read, list (newest first, status filter, limit), invalid rows skipped", () => {
+test("goal rows: create-only insert, read, list (newest first, status filter, limit), invalid rows skipped", () => {
   const { dbFile, cleanup } = tempDb();
   const store = new SqliteBrokerStateStore(dbFile);
   try {
-    store.upsertGoal(goal("goal-a", "pursuing", "2026-11-01T00:00:00.000Z"));
-    store.upsertGoal(goal("goal-b", "paused", "2026-11-03T00:00:00.000Z"));
-    store.upsertGoal(goal("goal-c", "pursuing", "2026-11-02T00:00:00.000Z"));
+    store.insertGoal(goal("goal-a", "pursuing", "2026-11-01T00:00:00.000Z"));
+    store.insertGoal(goal("goal-b", "paused", "2026-11-03T00:00:00.000Z"));
+    store.insertGoal(goal("goal-c", "pursuing", "2026-11-02T00:00:00.000Z"));
 
     assert.equal(store.readGoal("goal-a")?.title, "Goal goal-a");
     assert.equal(store.readGoal("missing"), undefined);
@@ -222,10 +223,19 @@ test("goal rows: upsert, read, list (newest first, status filter, limit), invali
     assert.deepEqual(store.listGoals({ status: "pursuing" }).map((row) => row.id), ["goal-c", "goal-a"]);
     assert.deepEqual(store.listGoals({ limit: 1 }).map((row) => row.id), ["goal-b"]);
 
-    // Upsert replaces the record and its indexed status projection.
-    store.upsertGoal(goal("goal-a", "achieved", "2026-11-04T00:00:00.000Z"));
-    assert.equal(store.readGoal("goal-a")?.status, "achieved");
-    assert.deepEqual(store.listGoals({ status: "pursuing" }).map((row) => row.id), ["goal-c"]);
+    // Insert is create-only: an existing id is a 409-class conflict and the
+    // stored row (record and indexed status) is left untouched.
+    assert.throws(
+      () => store.insertGoal(goal("goal-a", "achieved", "2026-11-04T00:00:00.000Z")),
+      (error: unknown) =>
+        error instanceof BrokerError &&
+        error.code === "invalid_transition" &&
+        /goal 'goal-a' already exists/.test(error.message) &&
+        (error.details as { goalId?: string } | undefined)?.goalId === "goal-a",
+    );
+    assert.equal(store.readGoal("goal-a")?.status, "pursuing");
+    assert.equal(store.readGoal("goal-a")?.updatedAt, "2026-11-01T00:00:00.000Z");
+    assert.deepEqual(store.listGoals({ status: "pursuing" }).map((row) => row.id), ["goal-c", "goal-a"]);
 
     // A row that does not parse as a GoalRecord is skipped, never thrown.
     const db = new DatabaseSync(dbFile);
@@ -236,7 +246,7 @@ test("goal rows: upsert, read, list (newest first, status filter, limit), invali
       db.close();
     }
     assert.equal(store.readGoal("goal-bad"), undefined);
-    assert.deepEqual(store.listGoals().map((row) => row.id), ["goal-a", "goal-b", "goal-c"]);
+    assert.deepEqual(store.listGoals().map((row) => row.id), ["goal-b", "goal-c", "goal-a"]);
   } finally {
     store.close();
     cleanup();
@@ -274,6 +284,118 @@ test("task goal_id column mirrors TaskRecord.goalId and feeds per-status counts"
     }
   } finally {
     store.close();
+    cleanup();
+  }
+});
+
+function assertFullSchema14(dbFile: string): void {
+  const db = new DatabaseSync(dbFile);
+  try {
+    assert.equal(readSchemaVersion(db), "14");
+    const tables = names(db, "table");
+    for (const table of SCHEMA_14_TABLES) assert.ok(tables.has(table), `missing table ${table}`);
+    const indexes = names(db, "index");
+    for (const index of SCHEMA_14_INDEXES) assert.ok(indexes.has(index), `missing index ${index}`);
+    assert.ok(columns(db, "broker_tasks").has("goal_id"), "missing broker_tasks.goal_id");
+  } finally {
+    db.close();
+  }
+}
+
+test("a partially applied v14 upgrade (goal_id column present, tables and indexes missing, schema_version 13) re-runs to the full v14 shape", () => {
+  const { dbFile, cleanup } = tempDb();
+  try {
+    const seed = new SqliteBrokerStateStore(dbFile);
+    seed.upsertHotTasks([task("task-1", "queued", { goalId: "goal-x" }), task("task-2", "succeeded")]);
+    seed.close();
+    // Simulate an interrupted upgrade: the column (and its value) landed, the
+    // tables and the goal index did not, and the version was never published.
+    const db = new DatabaseSync(dbFile);
+    try {
+      db.exec("DROP INDEX broker_tasks_goal_status_idx");
+      for (const table of SCHEMA_14_TABLES) db.exec(`DROP TABLE ${table}`);
+      db.prepare("UPDATE broker_metadata SET value = '13' WHERE key = 'schema_version'").run();
+      assert.ok(columns(db, "broker_tasks").has("goal_id"));
+    } finally {
+      db.close();
+    }
+
+    const reopened = new SqliteBrokerStateStore(dbFile);
+    try {
+      assert.equal(reopened.getPersistenceInfo().schemaVersion, 14);
+      assert.equal(reopened.readHotTasks().length, 2);
+      // ensureColumn is a no-op on the existing column: its values survive.
+      assert.deepEqual(reopened.countGoalTasksByStatus("goal-x"), { queued: 1 });
+      reopened.insertGoal(goal("goal-x", "pursuing", "2026-11-01T00:00:00.000Z"));
+      assert.equal(reopened.readGoal("goal-x")?.id, "goal-x");
+    } finally {
+      reopened.close();
+    }
+    assertFullSchema14(dbFile);
+  } finally {
+    cleanup();
+  }
+});
+
+test("a partially applied v14 upgrade (tables and column present, indexes missing, schema_version 13) re-runs to the full v14 shape", () => {
+  const { dbFile, cleanup } = tempDb();
+  try {
+    const seed = new SqliteBrokerStateStore(dbFile);
+    seed.insertGoal(goal("goal-kept", "pursuing", "2026-11-01T00:00:00.000Z"));
+    seed.upsertHotTasks([task("task-1", "queued", { goalId: "goal-kept" })]);
+    seed.close();
+    const db = new DatabaseSync(dbFile);
+    try {
+      db.exec("DROP INDEX broker_goals_status_updated_idx");
+      db.exec("DROP INDEX broker_spend_events_period_lane_idx");
+      db.exec("DROP INDEX broker_tasks_goal_status_idx");
+      db.prepare("UPDATE broker_metadata SET value = '13' WHERE key = 'schema_version'").run();
+    } finally {
+      db.close();
+    }
+
+    const reopened = new SqliteBrokerStateStore(dbFile);
+    try {
+      assert.equal(reopened.getPersistenceInfo().schemaVersion, 14);
+      // Existing goal rows and task links are untouched by the re-run.
+      assert.equal(reopened.readGoal("goal-kept")?.status, "pursuing");
+      assert.deepEqual(reopened.countGoalTasksByStatus("goal-kept"), { queued: 1 });
+    } finally {
+      reopened.close();
+    }
+    assertFullSchema14(dbFile);
+  } finally {
+    cleanup();
+  }
+});
+
+test("a store whose schema_version is newer than this binary (15 > 14) is refused with schema_version_newer", () => {
+  const { dbFile, cleanup } = tempDb();
+  try {
+    const seed = new SqliteBrokerStateStore(dbFile);
+    seed.insertGoal(goal("goal-future", "pursuing", "2026-11-01T00:00:00.000Z"));
+    seed.close();
+    const db = new DatabaseSync(dbFile);
+    try {
+      db.prepare("UPDATE broker_metadata SET value = '15' WHERE key = 'schema_version'").run();
+    } finally {
+      db.close();
+    }
+
+    assert.throws(
+      () => new SqliteBrokerStateStore(dbFile),
+      /shared-state startup check failed: schema_version_newer/,
+    );
+
+    // Fail closed before initialization: nothing was rewritten.
+    const after = new DatabaseSync(dbFile);
+    try {
+      assert.equal(readSchemaVersion(after), "15");
+      assert.equal((after.prepare("SELECT COUNT(*) AS n FROM broker_goals").get() as { n: number }).n, 1);
+    } finally {
+      after.close();
+    }
+  } finally {
     cleanup();
   }
 });

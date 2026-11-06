@@ -302,6 +302,20 @@ export const taskLeaseStampV1Schema = z
   })
   .strict();
 
+/**
+ * Goal id grammar (#2499 slice 1). One pattern for every goal id the broker
+ * accepts or stores: a caller-pinned `POST /goals` id, `GoalRecord.id`, and
+ * `TaskRecord.goalId` / the create-task `goalId`. No whitespace, so a padded
+ * id is refused (400) instead of trimmed; broker-generated UUIDs match it.
+ */
+export const GOAL_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+export const goalIdSchema = z
+  .string()
+  .regex(GOAL_ID_PATTERN, `goal id must match ${GOAL_ID_PATTERN.source}`);
+/** Goal text limits (#2499 slice 1); applied to the trimmed values. */
+export const GOAL_TITLE_MAX_LENGTH = 200;
+export const GOAL_OBJECTIVE_MAX_LENGTH = 2_000;
+
 export const taskSchema = z
   .object({
     id: z.string().min(1),
@@ -339,6 +353,9 @@ export const taskSchema = z
     leaseV1: taskLeaseStampV1Schema.optional(),
     wake: taskWakeSchema.optional(),
     taskOrigin: taskOriginSchema,
+    // #2499: optional goal link. Absent stays absent (no default), so a task
+    // without a goal serializes exactly as before.
+    goalId: goalIdSchema.optional(),
   })
   .passthrough();
 
@@ -951,7 +968,9 @@ export const registerWorkerRequestSchema = workerSchema.omit({
  * input. Everything left is copied verbatim from the request into the record:
  * `intent`, `requester`/`target` party refs, `workspace`, `message`, `via`,
  * `proposalId`, `assignedWorkerId`, `exchangeId`, `parentTaskId`,
- * `policyContext`, `taskOrigin`.
+ * `policyContext`, `taskOrigin`, and the optional `goalId` (#2499: its
+ * {@link GOAL_ID_PATTERN} shape is checked here, before the idempotent-replay
+ * branch; existence and `pursuing` status are checked later in `createTask`).
  *
  * `id` and `artifactIds` are relaxed to optional: a caller may pin an id
  * (idempotent create) and `artifactIds` defaults to `[]`. `artifactIds` is
@@ -990,10 +1009,17 @@ export const createTaskRequestSchema = taskSchema
   });
 
 /**
- * Persisted goal record (#2499 slice 1), stored one row per goal in the SQLite
- * `broker_goals` table. Deliberately NOT part of {@link brokerSnapshotSchema}:
- * goals are queryable without loading the snapshot, and the snapshot shape
- * (and therefore CURRENT_BROKER_STATE_VERSION) does not change.
+ * Persisted goal record (#2499 slice 1). SQLite stores keep one row per goal
+ * in the `broker_goals` table (parsed with this schema on every read), so
+ * goals are queryable without loading the snapshot. Stores without a goal
+ * table (the JSON-file store, injected test stores) carry goals in the
+ * snapshot's optional `goals` field instead: {@link brokerSnapshotSchema}
+ * does not declare that field, so it survives a reload only through the
+ * schema's `.passthrough()`, and the broker validates each entry against
+ * this schema in `loadSnapshot` — an invalid entry is dropped and logged as
+ * `broker.snapshot.record_quarantined` (collection `goals`). The field is
+ * omitted when there are no goals, so existing snapshot shapes (and
+ * CURRENT_BROKER_STATE_VERSION) do not change.
  *
  * `status` and `reason` reuse the closed `GoalStatus` / `GoalTransitionReason`
  * vocabularies from types.ts; there is no second goal status enum.
@@ -1032,9 +1058,9 @@ export const goalBudgetPolicySchema = z
 
 export const goalRecordSchema = z
   .object({
-    id: z.string().min(1),
-    title: z.string().min(1),
-    objective: z.string().min(1),
+    id: goalIdSchema,
+    title: z.string().min(1).max(GOAL_TITLE_MAX_LENGTH),
+    objective: z.string().min(1).max(GOAL_OBJECTIVE_MAX_LENGTH),
     requester: partyRefSchema,
     status: z.enum(GOAL_STATUS_VALUES),
     createdAt: z.string(),
@@ -1055,7 +1081,7 @@ export const goalRecordSchema = z
       z
         .object({
           id: z.string().min(1),
-          goalId: z.string().min(1),
+          goalId: goalIdSchema,
           from: z.enum(GOAL_STATUS_VALUES).optional(),
           to: z.enum(GOAL_STATUS_VALUES),
           reason: z.enum(GOAL_TRANSITION_REASON_VALUES),

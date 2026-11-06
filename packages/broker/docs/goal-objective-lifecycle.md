@@ -11,7 +11,13 @@ The additive broker-side model is defined in `src/core/types.ts`:
 - `GoalStatusEvent`: append-only status/history entry with actor, reason, optional task id, and timestamp.
 - `GoalBudgetPolicy`: bounded ceilings (`maxChildAttempts`, `deadlineAt`, `maxResourceUnits`) that can stop pursuit without classifying the work as a failure.
 
-Snapshots may carry `goals?: GoalRecord[]`. Existing task lineage remains `TaskRecord.parentTaskId`; goal attachments do not replace parent/child task relationships.
+Existing task lineage remains `TaskRecord.parentTaskId`; goal attachments do not replace parent/child task relationships.
+
+### Persistence and task links (#2499 slice 1)
+
+- SQLite stores keep one `broker_goals` row per goal (schema 14). Stores without a goal table (the JSON-file store) carry goals in the snapshot's optional `goals` field; it passes through `brokerSnapshotSchema` and each entry is validated against `goalRecordSchema` on load (an invalid entry is dropped and logged as `broker.snapshot.record_quarantined`).
+- `POST /goals` (hub/operator) creates a `pursuing` goal and appends a `goal.created` audit event. Goal ids match `^[A-Za-z0-9._:-]{1,128}$`; titles are at most 200 characters and objectives at most 2000.
+- A task links to a goal through the optional `TaskRecord.goalId`, validated at create: malformed is 400, unknown is 404, not `pursuing` is 409. Retry tasks inherit the root task's `goalId`.
 
 ## Statuses and transitions
 
@@ -75,6 +81,15 @@ GET /goals/:goalId/history?afterId=goal-event-12&limit=50
 ```
 
 The summary is a read model only. It must not create child tasks, requeue work, or approve gated work by itself.
+
+### Implemented in slice 1 (#2499)
+
+The shipped `GET /goals/:id` returns `{ goal, linkedTasks: { total, byStatus } }`. The counts are read from the hot task table (`broker_tasks.goal_id` on SQLite, the in-memory task map otherwise), so they are a read model, not a ledger:
+
+- On the worker-thread persistence topology, task writes reach SQLite through the persistence queue while the count reads the main-thread connection, so a just-created or just-transitioned task can lag.
+- Tasks removed from the hot table by retention (terminal caps, tombstoned or pruned tasks) are not counted.
+
+`GET /goals` lists goals newest first (`?status=`, `?limit=`). The `children` / `summary` shape and the history route above remain a sketch.
 
 ## Smoke / golden fixture
 

@@ -147,6 +147,10 @@ export function buildDecisionDialecticPhaseTaskRequest(
       taskOrigin: "operator",
       brokerOfRecord: parentTask.brokerOfRecord,
       teamId: parentTask.teamId,
+      // #2499: a phase task works toward the parent's goal. The link goes
+      // back through `createTask`, which re-validates it (shape, exists,
+      // `pursuing`), so a phase cannot attach to a goal that has closed.
+      ...(parentTask.goalId ? { goalId: parentTask.goalId } : {}),
     },
   };
 }

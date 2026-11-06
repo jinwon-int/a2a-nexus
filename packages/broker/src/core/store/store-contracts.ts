@@ -123,8 +123,12 @@ export interface BrokerStateStore {
    * Goal persistence (#2499 slice 1). SQLite stores keep one `broker_goals`
    * row per goal and implement all four; a store that leaves them undefined
    * gets broker-held goals carried in its snapshot instead.
+   *
+   * `insertGoal` is create-only: an existing id is a `BrokerError`
+   * `invalid_transition` (409), never an overwrite. Slice 1 has no goal
+   * update path, so there is no update method yet.
    */
-  upsertGoal?(goal: GoalRecord): void;
+  insertGoal?(goal: GoalRecord): void;
   readGoal?(id: string): GoalRecord | undefined;
   listGoals?(filters?: GoalListFilters): GoalRecord[];
   /** Task counts per status for tasks linked to `goalId` (indexed `goal_id` column). */
