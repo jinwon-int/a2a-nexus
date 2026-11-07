@@ -413,9 +413,10 @@ Alert kind notes:
   not infer it client-side.
 - `budget_warn` (warning) and `budget_exhausted` (critical) are
   broker-projected from monthly spend budgets (#2499 slice 4). Their
-  subject kind is `budget` with id `<budgetId>:<periodKey>`, so each opens
-  at most once per budget and period and resolves when the period rolls or
-  the limit no longer holds; exhausted supersedes warn. See
+  subject kind is `budget` with id `<budgetId>:<periodKey>`, so at most one
+  alert per budget and period is open at a time. It resolves when the period
+  rolls or the limit no longer holds, and can re-open in the same period if
+  the condition returns; exhausted supersedes warn. See
   `goal-objective-lifecycle.md` ("Budget alerts") and
   `spend-budget-runbook.md`.
 - `gateway.unhealthy` is part of the closed operator alert vocabulary

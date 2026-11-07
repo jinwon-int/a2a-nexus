@@ -17,9 +17,14 @@ name or credential into a ticket, log or this document.
 
 ```sh
 export BROKER_URL="https://broker.example.invalid"   # your broker's base URL
-export A2A_EDGE_SECRET="<redacted>"                  # read from your secret store, never echo it
 export OPERATOR_ID="operator-1"                      # your operator identity
-AUTH=(-H "x-a2a-edge-secret: ${A2A_EDGE_SECRET}" -H "x-a2a-requester-id: ${OPERATOR_ID}" -H "x-a2a-requester-role: operator")
+# Keep the edge secret off the curl command line (ps, /proc, shell history):
+# write it to an owner-only header file with the shell builtin printf and
+# pass the file with -H @file (curl 7.55+). Read the value from your secret
+# store; never echo it or paste it into a command.
+umask 077; HDR="$(mktemp)"; trap 'rm -f "$HDR"' EXIT
+printf 'x-a2a-edge-secret: %s\n' "$A2A_EDGE_SECRET_FROM_YOUR_STORE" > "$HDR"
+AUTH=(-H @"$HDR" -H "x-a2a-requester-id: ${OPERATOR_ID}" -H "x-a2a-requester-role: operator")
 ```
 
 Use the operator authentication your deployment already has; the headers above
@@ -36,11 +41,14 @@ budget writes are 409 `unsupported_operation`.
 The ledger and budget tables arrive with SQLite schema version 14. Upgrading a
 store to v14 is a **database migration**:
 
-1. Take a backup of the broker state database before the upgrade (the store's
-   usual backup procedure, broker stopped or with a consistent snapshot).
-2. Get the owner's approval for the migration and record where the backup is.
-3. Deploy. The broker migrates at startup; a v14 store makes an older binary
-   refuse to start, so the backup is the only way back to an older release.
+1. Get the owner's approval first. It covers the migration and, if the backup
+   needs the broker stopped, that stop and restart.
+2. Take a backup of the whole broker state database before the upgrade (the
+   store's usual backup procedure, broker stopped or with a consistent
+   snapshot) and record where it is.
+3. Deploy. The broker migrates at startup. A v14 store makes an older binary
+   refuse to start, so this pre-upgrade backup is the only way back to an
+   older release.
 
 The enforcement mode defaults to `off`, so the deploy itself refuses nothing.
 
@@ -134,8 +142,9 @@ curl -sS "${AUTH[@]}" "$BROKER_URL/budgets/status" | jq '.enforcement'
 An invalid value, or a mode other than `off` on a store without the spend
 ledger, refuses startup with a message naming the setting.
 
-Change `A2A_BUDGET_PERIOD_TIME_ZONE` only at a month boundary; rows keep the
-period they were written with, and the broker logs
+`A2A_BUDGET_PERIOD_TIME_ZONE` is also read at startup, so changing it needs a
+restart (**owner approval**). Change it only at a month boundary in the new
+zone. Rows keep the period they were written with, and the broker logs
 `broker.spend.time_zone_changed` at startup.
 
 ## 5. Read spend, unmetered work and counters
@@ -180,16 +189,25 @@ curl -sS "${AUTH[@]}" "$BROKER_URL/alerts" | jq '.alerts[] | select(.kind | star
 
 | alert | severity | meaning |
 | --- | --- | --- |
-| `budget_warn:<budgetId>:<period>` | warning | a limit reached `warnPct` % this period |
-| `budget_exhausted:<budgetId>:<period>` | critical | a limit is exhausted this period |
+| `budget_warn:<budgetId>:<periodKey>` | warning | a limit reached `warnPct` % this period |
+| `budget_exhausted:<budgetId>:<periodKey>` | critical | a limit is exhausted this period |
+
+`<periodKey>` is the month key, such as `2026-11`. The metadata field `period`
+is the budget's period type (`month`).
 
 The metadata names the budget, scope, period, which limit crossed (`limits`),
 spent against limit, `warnPct`, `enforce`, and the configured and effective
-mode. Each alert opens once per budget and period and resolves when the period
-rolls, or when a raised or cleared limit ends the condition; exhausted replaces
-warn. Alerts are evaluated by the stale-reaper sweep (every
+mode. At most one alert per budget and period is open at a time. It resolves
+when the period rolls, or when a raised or cleared limit ends the condition.
+It can open again in the same period if spend crosses the line again.
+Exhausted replaces warn. Alerts are evaluated by the stale-reaper sweep (every
 `STALE_REAPER_INTERVAL_SEC`, default 60 s; up to 200 budgets per sweep, changed
 budgets first), in every mode.
+
+The stale-reaper sweep also runs the spend reconciliation, late-metering
+repair and goal `budget_limited` / resume. If stale reaping is disabled in
+your deployment, none of these run; budget alerts are then computed only once
+at startup.
 
 What to do:
 
@@ -210,7 +228,11 @@ What to do:
   The task stays `queued`.
 - The worker poll `GET /tasks?assignedWorkerId=worker-a&status=queued` and the
   SSE `worker-assignment-snapshot` **hide** those tasks; the poll adds
-  `budgetOmitted` and `budgetScanCapped`. So 403s stop after the next poll.
+  `budgetOmitted` and `budgetScanCapped`. So a polling worker stops getting
+  403s after its next poll. A worker on the SSE stream can still receive one
+  live `worker-assignment` event for a task in a scope that ran out after the
+  event was queued. It gets one 403 on that claim, and the next snapshot hides
+  the task.
 - A create in an exhausted `pause` scope answers **403** `policy_denied` with
   `details.reason: "budget_paused"`.
 - A USD limit refuses only workers that reported a cost this period; token
@@ -242,10 +264,15 @@ In order of preference:
 1. **Mode `off`** (restart, **owner approval**): nothing is refused or hidden;
    goals limited by a budget resume over the next sweeps; budgets, status and
    alerts keep working.
-2. **Revert the code** to the previous release of the same schema version
-   (v14): budgets and the ledger stay in the database untouched.
-3. **Restore the v14 backup** to go back before schema 14 (**owner approval**:
-   a database restore). Spend recorded since the upgrade is lost with it.
+2. **Revert the code** to an earlier release of the same schema version
+   (v14), if one exists. Budgets and the ledger stay in the database
+   untouched. After the first v14 release there is none, so only step 1 or
+   step 3 applies.
+3. **Restore the pre-upgrade backup taken in §1** to go back before schema 14
+   (**owner approval**: a database restore). This replaces the **whole broker
+   state database**. Everything recorded since the upgrade is lost with it,
+   not only spend: tasks, goals, exchanges, audit events, budgets and the spend
+   ledger. Work that ran after the upgrade is in that store only.
 
 Never delete budget or spend rows by hand: the ledger is the audit record, and
 budget audit events are exempt from retention for that reason.

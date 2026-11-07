@@ -337,7 +337,7 @@ Proposed in the slice 3b-2 PR and accepted when the owner approves its merge.
 Proposed in the slice 4 PR and accepted when the owner approves its merge.
 
 19. **Alert semantics.**
-    - **Kinds:** `budget_warn` (warning, at `warnPct` of either limit) and `budget_exhausted` (critical) in `AlertKind`, with subject kind `budget`. The subject id is `<budgetId>:<periodKey>`, so an alert opens at most once per budget and period, and a period roll resolves it.
+    - **Kinds:** `budget_warn` (warning, at `warnPct` of either limit) and `budget_exhausted` (critical) in `AlertKind`, with subject kind `budget`. The subject id is `<budgetId>:<periodKey>`, so at most one alert per budget and period is open at a time, and a period roll resolves it. A resolved alert can open again in the same period if the condition returns (for example, a limit raised and then exhausted again).
     - **One at a time:** exhausted supersedes warn for the same budget and period.
     - **Every mode:** alerts are visibility only and are projected in every enforcement mode (including `off`) whenever a spend ledger exists. A USD-exhausted budget alerts even though at claim time it refuses only cost-reporting workers.
     - **Evaluation:** in the stale-reaper sweep, up to 200 budgets per sweep (recently written first, then round-robin), cached on the broker. The projection does no store reads.
