@@ -406,8 +406,8 @@ export interface SpendTopRow {
   goalId: string | null;
   costUsd: number;
   costKnown: boolean;
-  /** input + output tokens of the row. */
-  tokens: number;
+  /** input + output tokens of the row (exact; JSON through jsonSafeSpendInteger). */
+  tokens: bigint;
   recordedAt: string;
 }
 

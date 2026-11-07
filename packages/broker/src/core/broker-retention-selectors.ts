@@ -236,6 +236,9 @@ export function isAuditEventRetained(
   if (isHeartbeatAuditEvent(event)) {
     return false;
   }
+  if (isRetentionExemptAuditEvent(event)) {
+    return true;
+  }
   if (event.proposalId && params.retainedProposalIds.has(event.proposalId)) {
     return true;
   }
@@ -258,6 +261,20 @@ export function isAuditEventRetained(
     default:
       return false;
   }
+}
+
+/**
+ * Budget audit events (#2499 slice 3b) are the only change history of a
+ * budget (the table keeps no update time), so no audit retention path
+ * prunes them: the in-memory selector below, the SQLite retention planner,
+ * the cap prune and the full-save mirror prune all exempt them. They grow
+ * only with operator budget writes.
+ */
+export const RETENTION_EXEMPT_AUDIT_SQL =
+  "(target_type = 'budget' AND action IN ('budget.created', 'budget.updated'))";
+
+export function isRetentionExemptAuditEvent(event: Pick<AuditEvent, "action" | "targetType">): boolean {
+  return event.targetType === "budget" && (event.action === "budget.created" || event.action === "budget.updated");
 }
 
 export function isHeartbeatAuditEvent(event: Pick<AuditEvent, "action" | "targetType">): boolean {

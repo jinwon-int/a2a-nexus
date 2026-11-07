@@ -818,7 +818,11 @@ test("handler: budget create / update / list — auth, validation, 404, 409, aud
       [{ ...base, limitTokens: 1, enforce: "stop" }, /enforce/],
       [{ ...base, limitTokens: 1, period: "day" }, /period/],
       [{ ...base, limitTokens: 1, scopeType: "team" }, /scopeType/],
-      [{ ...base, limitTokens: 1, scopeId: "worker-a " }, /scopeId must match/],
+      [{ ...base, limitTokens: 1, scopeId: "a".repeat(257) }, /scopeId must match/],
+      [{ ...base, limitTokens: 1, scopeType: "goal", scopeId: "goal-1 " }, /scopeId must match/],
+      [{ ...base, limitTokens: 1, scopeType: 123 }, /scopeType/],
+      [{ ...base, limitTokens: 1, scopeId: ["worker-a"] }, /scopeId must match/],
+      [{ ...base, limitTokens: 1, id: 123 }, /budget id must match/],
       [{ ...base, limitTokens: 1, id: " b-1" }, /budget id must match/],
     ];
     for (const [body, pattern] of invalid) {
@@ -850,7 +854,11 @@ test("handler: budget create / update / list — auth, validation, 404, 409, aud
     assert.deepEqual((await r.route("GET", "/budgets?scope_type=lane")).json.budgets.map((budget: { id: string }) => budget.id), ["b-lane"]);
     assert.equal((await r.route("GET", "/budgets?scope_type=agent&scope_id=worker-a")).json.count, 1);
     assert.equal((await r.route("GET", "/budgets?limit=1")).json.count, 1);
-    await assert.rejects(() => r.route("GET", "/budgets?limit=0"), rejectsWith("bad_request", /limit/));
+    assert.equal((await r.route("GET", "/budgets?limit=1000")).json.count, 2);
+    // m9: strict integers only, route-side maximum 1000.
+    for (const limit of ["0", "%205", "0x5", "1e3", "5.0", "1001", "-1", "", "05", "abc"]) {
+      await assert.rejects(() => r.route("GET", `/budgets?limit=${limit}`), rejectsWith("bad_request", /limit must be an integer from 1 to 1000/), limit);
+    }
     await assert.rejects(() => r.route("GET", "/budgets?scope_id=worker-a"), rejectsWith("bad_request", /scope_id requires scope_type/));
     await assert.rejects(() => r.route("GET", "/budgets?scope_type=team"), rejectsWith("bad_request", /scope_type/));
 
@@ -919,11 +927,17 @@ test("handler: budget status — enforcement, budgets, limits, topRows, checkFai
     assert.deepEqual(lane.json.topRows.byCost.map((row: { taskId: string }) => row.taskId), ["s-1"]);
     assert.deepEqual(lane.json.topRows.byTokens, [
       { taskId: "s-2", agentId: "worker-b", lane: "analyze", goalId: null, costUsd: 0, costKnown: false, tokens: 1_000, recordedAt: "2026-11-06T00:00:00.000Z" },
-    ]);
+    ], "m8: tokens is a JSON number while safe");
     assert.equal((await r.route("GET", "/budgets/status?scope_type=lane&scope_id=analyze")).json.topRows.limit, 5, "default N");
     await assert.rejects(() => r.route("GET", "/budgets/status?top=3"), rejectsWith("bad_request", /top requires scope_type and scope_id/));
-    await assert.rejects(() => r.route("GET", "/budgets/status?scope_type=lane&scope_id=analyze&top=21"), rejectsWith("bad_request", /top must be/));
-    await assert.rejects(() => r.route("GET", "/budgets/status?scope_type=lane&scope_id=analyze&top=0"), rejectsWith("bad_request", /top must be/));
+    for (const top of ["21", "0", "%205", "0x5", "1e1", "5.0", "-1", "05"]) {
+      await assert.rejects(
+        () => r.route("GET", `/budgets/status?scope_type=lane&scope_id=analyze&top=${top}`),
+        rejectsWith("bad_request", /top must be an integer from 1 to 20/),
+        top,
+      );
+    }
+    assert.equal((await r.route("GET", "/budgets/status?scope_type=lane&scope_id=analyze&top=20")).json.topRows.limit, 20);
 
     // A failed claim-time read is counted; a failed status read still answers with it.
     const original = r.store.readSpendScopeUsage;
@@ -936,9 +950,10 @@ test("handler: budget status — enforcement, budgets, limits, topRows, checkFai
       assert.equal(r.broker.evaluateClaimBudget({ lane: "analyze", workerId: "worker-a" }).checkFailed, true);
       const failed = await r.route("GET", "/budgets/status");
       assert.equal(failed.status, 200);
-      assert.equal(failed.json.available, false);
+      assert.equal(failed.json.available, true, "m6: the ledger exists; available:false keeps meaning no SQLite ledger");
       assert.equal(failed.json.readError, "ledger_read_failed");
       assert.equal(failed.json.period_total, null);
+      assert.equal(failed.json.ledger, null);
       assert.deepEqual(failed.json.budgets, []);
       assert.equal(failed.json.checkFailed.count, 1, "served from memory");
       assert.match(failed.json.checkFailed.lastAt, /^\d{4}-\d{2}-\d{2}T/);
@@ -947,10 +962,96 @@ test("handler: budget status — enforcement, budgets, limits, topRows, checkFai
       console.warn = originalWarn;
       r.store.readSpendScopeUsage = original;
     }
-    assert.equal((await r.route("GET", "/budgets/status")).json.available, true);
+    const recovered = (await r.route("GET", "/budgets/status")).json;
+    assert.equal(recovered.available, true);
+    assert.equal("readError" in recovered, false);
   } finally {
     r.close();
   }
+});
+
+test("handler: status limits come from every budget, not the first 200 evaluated (m5); topRows tokens past 2^53 is a string (m8)", async () => {
+  const r = sqliteRouter();
+  try {
+    const period = r.broker.budgetPeriodKey();
+    // 201 agent budgets: the `budgets` array stops at 200; `limits` still finds the last one.
+    for (let index = 0; index <= 200; index += 1) {
+      r.broker.createBudget({ id: `b-${String(index).padStart(3, "0")}`, scopeType: "agent", scopeId: `worker-${String(index).padStart(3, "0")}`, period: "month", limitUsd: 1, createdBy: "o" });
+    }
+    r.store.saveHotEntities({
+      spendEvents: [{ taskId: "s-last", recordedAt: "2026-11-06T00:00:00.000Z", periodKey: period, agentId: "worker-200", lane: "analyze", goalId: null, costUsd: 0, inputTokens: 1, outputTokens: 1, costKnown: false }],
+    });
+    const status = (await r.route("GET", "/budgets/status?scope_type=agent")).json;
+    assert.equal(status.budgets.length, 200);
+    assert.equal(status.budgetsTruncated, true);
+    assert.equal(status.scopes.find((scope: { scope_id: string }) => scope.scope_id === "worker-200")?.limits?.budgetId, "b-200");
+
+    // topRows tokens: the store reads BigInt; the route projects it like the totals.
+    const original = r.store.listTopSpendRows.bind(r.store);
+    r.store.listTopSpendRows = (query) => original(query).map((row) => ({ ...row, tokens: 2n ** 60n }));
+    const top = (await r.route("GET", "/budgets/status?scope_type=agent&scope_id=worker-200")).json;
+    assert.equal(top.topRows.byTokens[0].tokens, (2n ** 60n).toString());
+  } finally {
+    r.close();
+  }
+});
+
+test("M2: PATCH /budgets/:id invalid values, bodies and callers over HTTP", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-broker-budget-patch-"));
+  const server = await startTestServer({
+    rateLimitMaxRequests: 1_000,
+    stateStore: undefined,
+    persistenceBackend: "sqlite",
+    stateFile: join(dir, "state.json"),
+    sqliteFile: join(dir, "state.sqlite"),
+  });
+  try {
+    const baseUrl = server.baseUrl;
+    const created = await fetch(`${baseUrl}/budgets`, {
+      method: "POST",
+      headers: jsonHeaders(HUB),
+      body: JSON.stringify({ id: "b-patch", scopeType: "lane", scopeId: "analyze", period: "month", limitUsd: 5, limitTokens: 10 }),
+    });
+    assert.equal(created.status, 201);
+    const patch = (body: string, headers: Record<string, string> = jsonHeaders(HUB)) =>
+      fetch(`${baseUrl}/budgets/b-patch`, { method: "PATCH", headers, body });
+    const invalid: unknown[] = [
+      { warnPct: 0 }, { warnPct: 101 }, { warnPct: 50.5 }, { warnPct: "50" },
+      { enforce: "stop" },
+      { limitUsd: 0 }, { limitUsd: -1 }, { limitUsd: 1e10 }, { limitUsd: "5" },
+      { limitTokens: 2.5 }, { limitTokens: 0 }, { limitTokens: Number.MAX_SAFE_INTEGER + 1 }, { limitTokens: "5" },
+      { limitUsd: null, limitTokens: null },
+      {}, // no change: 400, not a 200 no-op
+      [], "x", 5, null,
+      { scopeType: "agent" },
+    ];
+    for (const body of invalid) {
+      const res = await patch(JSON.stringify(body));
+      assert.equal(res.status, 400, JSON.stringify(body));
+      assert.equal((await res.json()).error.code, "bad_request");
+    }
+    // NaN cannot travel in JSON (JSON.stringify turns it into null, a clear); the broker-level table covers it.
+    const malformed = await patch("{\"warnPct\": ");
+    assert.equal(malformed.status, 400, "malformed JSON");
+    // Unauthenticated and read-role callers: 401 (the broker maps every role refusal to unauthorized).
+    assert.equal((await patch(JSON.stringify({ warnPct: 5 }), jsonHeaders({}))).status, 401);
+    assert.equal((await patch(JSON.stringify({ warnPct: 5 }), jsonHeaders({ "x-a2a-requester-id": "an-1", "x-a2a-requester-role": "analyst" }))).status, 401);
+    const unchanged = await (await fetch(`${baseUrl}/budgets?scope_type=lane&scope_id=analyze`, { headers: HUB })).json();
+    assert.deepEqual(unchanged.budgets.map((budget: { limitUsd: number; limitTokens: number; warnPct: number }) => [budget.limitUsd, budget.limitTokens, budget.warnPct]), [[5, 10, 80]]);
+    const ok = await patch(JSON.stringify({ warnPct: 50 }));
+    assert.equal(ok.status, 200);
+  } finally {
+    await server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("server: an injected broker whose enforcement mode differs from A2A_BUDGET_ENFORCEMENT_MODE fails startup (m4)", async () => {
+  await withEnv({ A2A_BUDGET_ENFORCEMENT_MODE: "shadow" }, async () => {
+    await assert.rejects(() => startTestServer({ broker: new InMemoryA2ABroker() }), /differs from the injected broker's budget enforcement mode 'off'/);
+  });
+  const server = await startTestServer({ broker: new InMemoryA2ABroker() });
+  await server.close();
 });
 
 async function exerciseBudgetRoutesServer(baseUrl: string): Promise<void> {

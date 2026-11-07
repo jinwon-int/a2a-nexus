@@ -173,16 +173,12 @@ export interface BrokerStateStore {
   /**
    * Budgets and their evaluator reads (#2499 slice 3b, SQLite only, optional
    * like readSpendTotals; a store missing any of them has no budgets and the
-   * budget routes report it). `insertBudget` is create-only and one budget
-   * per (scopeType, scopeId, period): a duplicate id or scope is a
-   * `BrokerError` `invalid_transition` (409). `updateBudget` returns false
-   * for an unknown id. Writes are durable when they return on both
-   * topologies (main-connection transaction, like `insertGoal`).
+   * budget routes report it). Budget rows are written only through the save
+   * hints (`BrokerStateSaveHints.budgets`), so a row commits with its audit
+   * event; these are the reads: the broker loads every budget once at
+   * startup (`listBudgets`) and keeps them in memory.
    */
-  insertBudget?(budget: BudgetRecord): void;
-  updateBudget?(budget: BudgetRecord): boolean;
   readBudget?(id: string): BudgetRecord | undefined;
-  findBudgetByScope?(scopeType: BudgetScopeType, scopeId: string, period: BudgetRecord["period"]): BudgetRecord | undefined;
   listBudgets?(filters?: BudgetListFilters): BudgetRecord[];
   /** One scope's period spend: USD over cost_known rows, input + output tokens. */
   readSpendScopeUsage?(query: { periodKey: string; scopeType: BudgetScopeType; scopeId: string }): {
@@ -230,6 +226,14 @@ export interface BrokerStateSaveHints {
    * attributed to the late poster, so a replay is a no-op.
    */
   spendMeterings?: SpendLateMeteringRecord[];
+  /**
+   * #2499 slice 3b: budget rows created or updated by this mutation, upserted
+   * by id in the same transaction as the rest of these hints (so with their
+   * `budget.created` / `budget.updated` audit rows). Not a hot entity mirror:
+   * the snapshot carries no budgets and retention never prunes them. Stores
+   * without a budget table ignore the field.
+   */
+  budgets?: BudgetRecord[];
 }
 
 export interface BrokerPersistenceInfo {

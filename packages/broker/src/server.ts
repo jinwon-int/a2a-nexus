@@ -617,6 +617,14 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const budgetEnforcementMode = resolveBudgetEnforcementMode(
     options.budgetEnforcementMode ?? process.env.A2A_BUDGET_ENFORCEMENT_MODE,
   );
+  // #2499 slice 3b: an injected broker carries its own enforcement mode; a
+  // different configured mode would otherwise be silently ignored.
+  if (options.broker && options.broker.getBudgetEnforcementMode() !== budgetEnforcementMode) {
+    throw new Error(
+      `A2A_BUDGET_ENFORCEMENT_MODE='${budgetEnforcementMode}' differs from the injected broker's budget enforcement mode `
+        + `'${options.broker.getBudgetEnforcementMode()}'; set budgetEnforcementMode when constructing the broker`,
+    );
+  }
   const hotRuntimeLimits = resolveHotRuntimeLimits(options);
   const maxHotRuntimeNonTerminalTasks = hotRuntimeLimits.maxNonTerminalTasks;
   const maxHotRuntimeTerminalTasks = hotRuntimeLimits.maxTerminalTasks;

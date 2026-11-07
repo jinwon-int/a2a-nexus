@@ -23,10 +23,12 @@ import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
 import type { BrokerStateStore } from "../core/store/store.js";
 import {
   BUDGET_PERIOD_KEY_PATTERN,
+  BUDGET_SCOPE_ID_PATTERN,
   BUDGET_SCOPE_TYPES,
   jsonSafeSpendInteger,
   GOAL_ID_PATTERN,
   GOAL_STATUS_VALUES,
+  spendLedgerPeriodComplete,
   spendTotalsToJson,
 } from "../core/store-schemas.js";
 import { assertRequesterHasRole, type RequesterIdentity } from "../core/transport/request-security.js";
@@ -39,6 +41,7 @@ import type {
   GoalListFilters,
   GoalStatus,
   SpendScopeTotals,
+  SpendTopRow,
   SpendTotals,
 } from "../core/types.js";
 import { awaitDurablePersistenceAck } from "./error-mapping.js";
@@ -173,8 +176,6 @@ function handleGet(ctx: GoalRouteContext, goalId: string): void {
   );
 }
 
-/** Agent and lane scope ids: 1-256 characters, no control characters, never trimmed. */
-const BUDGET_SCOPE_ID_PATTERN = /^[^\u0000-\u001f\u007f]{1,256}$/;
 /** Bound on scope groups returned per scope type. */
 const BUDGET_STATUS_SCOPE_LIMIT = 1_000;
 
@@ -183,6 +184,20 @@ const BUDGET_STATUS_BUDGET_LIMIT = 200;
 /** Default and maximum `top` rows per order in a named-scope status read. */
 const BUDGET_STATUS_TOP_DEFAULT = 5;
 const BUDGET_STATUS_TOP_MAX = 20;
+/** Maximum `limit` on GET /budgets. */
+const BUDGET_LIST_LIMIT_MAX = 1_000;
+
+/**
+ * Strict positive integer query value (#2499 slice 3b): decimal digits only,
+ * no sign, padding, exponent, fraction or hex, at most `max`; else 400.
+ */
+function strictPositiveIntParam(raw: string, name: string, max: number): number {
+  const value = /^[1-9][0-9]*$/.test(raw) ? Number(raw) : Number.NaN;
+  if (!Number.isSafeInteger(value) || value > max) {
+    throw new BrokerError("bad_request", `${name} must be an integer from 1 to ${max}`);
+  }
+  return value;
+}
 
 /** `limits` of a status scope entry: its month budget, or null (#2499 slice 3b). */
 function limitsJson(budget: BudgetRecord | undefined) {
@@ -196,17 +211,38 @@ function limitsJson(budget: BudgetRecord | undefined) {
   };
 }
 
-function scopeKey(scopeType: BudgetScopeType, scopeId: string): string {
-  return `${scopeType}\u0000${scopeId}`;
-}
-
-function scopeJson(scope: SpendScopeTotals, budgets: ReadonlyMap<string, BudgetRecord>) {
+/** A status scope entry; `limits` from the broker's in-memory map of every budget. */
+function scopeJson(scope: SpendScopeTotals, broker: InMemoryA2ABroker) {
   return {
     scope_type: scope.scopeType,
     scope_id: scope.scopeId,
     ...spendTotalsToJson(scope),
-    limits: limitsJson(budgets.get(scopeKey(scope.scopeType, scope.scopeId))),
+    limits: limitsJson(broker.findBudgetForScope(scope.scopeType, scope.scopeId)),
   };
+}
+
+/** A top-rows entry; `tokens` is bigint-safe like the totals. */
+function topRowJson(row: SpendTopRow) {
+  return { ...row, tokens: jsonSafeSpendInteger(row.tokens) };
+}
+
+/**
+ * Await the queued write of a budget mutation (#2499 slice 3b). On the
+ * worker-thread topology the row and its audit commit in that write; if it
+ * failed, neither is in SQLite, so the in-memory entry is re-read from the
+ * store (dropped or restored) before the error is returned.
+ */
+async function awaitBudgetWrite(ctx: GoalRouteContext, budgetId: string): Promise<void> {
+  try {
+    await awaitDurablePersistenceAck(ctx.stateStore);
+  } catch (error) {
+    try {
+      ctx.broker.reloadBudgetFromStore(budgetId);
+    } catch {
+      // Keep the write failure as the answer; the next restart reloads the map.
+    }
+    throw error;
+  }
 }
 
 /** The camelCase budget record (`updatedAt` absent: the table keeps no update time). */
@@ -283,11 +319,15 @@ async function handleBudgetCreate(ctx: GoalRouteContext): Promise<void> {
     ...(body.enforce !== undefined ? { enforce: body.enforce as BudgetRecord["enforce"] } : {}),
     createdBy: callerId(ctx),
   });
-  await awaitDurablePersistenceAck(ctx.stateStore);
+  await awaitBudgetWrite(ctx, budget.id);
   sendJson(ctx.res, 201, { budget: budgetJson(budget) }, { "cache-control": "no-store" });
 }
 
-/** PATCH /budgets/:id (#2499 slice 3b) — limits (null clears one), warnPct, enforce. */
+/**
+ * PATCH /budgets/:id (#2499 slice 3b) — limits (null clears one), warnPct,
+ * enforce. Every invalid value is 400 (validated by the broker); an empty
+ * `{}` changes nothing and is 400, not a 200 no-op.
+ */
 async function handleBudgetUpdate(ctx: GoalRouteContext, budgetId: string): Promise<void> {
   assertRoles(ctx, GOAL_WRITE_ROLES, "budget.update");
   if (!GOAL_ID_PATTERN.test(budgetId)) {
@@ -301,7 +341,7 @@ async function handleBudgetUpdate(ctx: GoalRouteContext, budgetId: string): Prom
     ...(body.enforce !== undefined ? { enforce: body.enforce as BudgetRecord["enforce"] } : {}),
     actorId: callerId(ctx),
   });
-  await awaitDurablePersistenceAck(ctx.stateStore);
+  await awaitBudgetWrite(ctx, budget.id);
   sendJson(ctx.res, 200, { budget: budgetJson(budget) }, { "cache-control": "no-store" });
 }
 
@@ -328,19 +368,15 @@ function scopeFiltersFromUrl(url: URL): { scopeType?: BudgetScopeType; scopeId?:
 
 /**
  * GET /budgets (#2499 slice 3b) — budgets ordered by scope type, scope id,
- * period and id; `scope_type` / `scope_id` filter, `limit` bounds (default
- * and max per the hot-read bound). Without budgets (non-SQLite store):
+ * period and id, from the broker's in-memory map; `scope_type` / `scope_id`
+ * filter, `limit` (strict integer 1..1000, default 1000). Without budgets (non-SQLite store):
  * `available: false` and an empty list, like `GET /budgets/status`.
  */
 function handleBudgetList(ctx: GoalRouteContext): void {
   assertRoles(ctx, GOAL_READ_ROLES, "budget.list");
   const filters = scopeFiltersFromUrl(ctx.url);
   const rawLimit = ctx.url.searchParams.get("limit");
-  let limit: number | undefined;
-  if (rawLimit !== null) {
-    limit = Number(rawLimit);
-    if (!Number.isInteger(limit) || limit <= 0) throw new BrokerError("bad_request", "limit must be a positive integer");
-  }
+  const limit = rawLimit === null ? undefined : strictPositiveIntParam(rawLimit, "limit", BUDGET_LIST_LIMIT_MAX);
   const budgets = ctx.broker.listBudgets({ ...filters, ...(limit !== undefined ? { limit } : {}) });
   if (!budgets) {
     sendJson(
@@ -398,14 +434,18 @@ const ZERO_TOTALS: SpendTotals = {
  *   - `budgets`: the budgets matching the scope filter (at most
  *     BUDGET_STATUS_BUDGET_LIMIT, `budgetsTruncated` when more) evaluated
  *     against the period: `usdSpent`, `tokensSpent` (number or decimal
- *     string, like the totals), `usdExhausted`, `tokensExhausted`, `warn`;
+ *     string, like the totals), `usdExhausted`, `tokensExhausted`, `warn`.
+ *     `limits` on the scope entries comes from all budgets, not this list;
  *   - `topRows` for a named scope: `{ limit, byCost, byTokens }`, the N
- *     largest rows of the scope in the period (`top`, 1..20, default 5;
- *     `top` without a named scope is 400); null otherwise;
- *   - `checkFailed` `{ count, lastAt }`: failed claim-time budget reads since
- *     startup, from memory. A ledger read that throws still answers 200 with
- *     `available: false`, `readError: "ledger_read_failed"`, null totals, and
- *     the in-memory `enforcement` and `checkFailed`;
+ *     largest rows of the scope in the period (`top`, strict integer 1..20,
+ *     default 5; `top` without a named scope is 400); null otherwise;
+ *     `tokens` is a number or decimal string like the totals;
+ *   - `checkFailed` `{ count, lastAt }`: failed budget reads since startup
+ *     (claim-time evaluator and enforcement-mode metadata), from memory. A
+ *     ledger read that throws still answers 200 with `available: true`,
+ *     `readError: "ledger_read_failed"`, null totals and `ledger`, empty
+ *     `scopes`/`budgets`, and the in-memory `enforcement` and `checkFailed`
+ *     (`available: false` keeps meaning "no SQLite ledger");
  * - the spend ledger is SQLite-only: other stores answer `available: false`.
  */
 function handleBudgetStatus(ctx: GoalRouteContext): void {
@@ -421,10 +461,7 @@ function handleBudgetStatus(ctx: GoalRouteContext): void {
   let top = BUDGET_STATUS_TOP_DEFAULT;
   if (rawTop !== null) {
     if (!named) throw new BrokerError("bad_request", "top requires scope_type and scope_id");
-    top = Number(rawTop);
-    if (!Number.isInteger(top) || top < 1 || top > BUDGET_STATUS_TOP_MAX) {
-      throw new BrokerError("bad_request", `top must be an integer from 1 to ${BUDGET_STATUS_TOP_MAX}`);
-    }
+    top = strictPositiveIntParam(rawTop, "top", BUDGET_STATUS_TOP_MAX);
   }
   const period = rawPeriod ?? ctx.broker.budgetPeriodKey();
   const base = {
@@ -434,20 +471,19 @@ function handleBudgetStatus(ctx: GoalRouteContext): void {
     scopeType: scopeType ?? null,
     scopeId: scopeId ?? null,
   };
-  // Served from memory (plus one metadata lookup that cannot fail the read).
+  // Served from memory (plus one metadata lookup; getBudgetEnforcement never
+  // throws and counts a failed lookup in checkFailed, so read it first).
   const live = {
     enforcement: ctx.broker.getBudgetEnforcement(period),
     checkFailed: ctx.broker.getBudgetCheckFailures(),
   };
-  const unavailable = (reason: string, extra: Record<string, unknown> = {}) => {
+  const empty = (marker: Record<string, unknown>) => {
     sendJson(
       ctx.res,
       200,
       {
         ...base,
-        available: false,
-        reason,
-        ...extra,
+        ...marker,
         period_total: null,
         scope_total: null,
         scopes: [],
@@ -458,8 +494,9 @@ function handleBudgetStatus(ctx: GoalRouteContext): void {
       { "cache-control": "no-store" },
     );
   };
+  const noLedger = { available: false, reason: "the spend ledger requires the SQLite state store" };
   if (!ctx.broker.hasSpendLedger()) {
-    unavailable("the spend ledger requires the SQLite state store");
+    empty(noLedger);
     return;
   }
   let body: Record<string, unknown>;
@@ -471,7 +508,7 @@ function handleBudgetStatus(ctx: GoalRouteContext): void {
       limit: BUDGET_STATUS_SCOPE_LIMIT,
     });
     if (!result) {
-      unavailable("the spend ledger requires the SQLite state store");
+      empty(noLedger);
       return;
     }
     // #2499 slice 3a: what the ledger covers. `periodComplete` is true only
@@ -483,7 +520,7 @@ function handleBudgetStatus(ctx: GoalRouteContext): void {
       firstPeriod: coverage?.firstPeriod ?? null,
       timeZone: coverage?.timeZone ?? null,
       missingSpendRows: coverage ? coverage.missingSpendRows : null,
-      periodComplete: coverage?.firstPeriod ? period > coverage.firstPeriod : false,
+      periodComplete: spendLedgerPeriodComplete(period, coverage?.firstPeriod),
     };
     const scopes: SpendScopeTotals[] = named && result.scopes.length === 0
       ? [{ scopeType: scopeType!, scopeId: scopeId!, ...ZERO_TOTALS }]
@@ -497,16 +534,16 @@ function handleBudgetStatus(ctx: GoalRouteContext): void {
     }) ?? [];
     const budgetsTruncated = listed.length > BUDGET_STATUS_BUDGET_LIMIT;
     const budgets = listed.slice(0, BUDGET_STATUS_BUDGET_LIMIT);
-    const byScope = new Map(budgets.filter((budget) => budget.period === "month").map((budget) => [scopeKey(budget.scopeType, budget.scopeId), budget]));
-    const topRows = named && ctx.broker.hasBudgets()
-      ? { limit: top, ...ctx.broker.listTopSpendRows({ periodKey: period, scopeType: scopeType!, scopeId: scopeId!, limit: top }) }
-      : null;
+    const topSpend = named && ctx.broker.hasBudgets()
+      ? ctx.broker.listTopSpendRows({ periodKey: period, scopeType: scopeType!, scopeId: scopeId!, limit: top })
+      : undefined;
+    const topRows = topSpend ? { limit: top, byCost: topSpend.byCost.map(topRowJson), byTokens: topSpend.byTokens.map(topRowJson) } : null;
     body = {
       ...base,
       available: true,
       period_total: spendTotalsToJson(result.total),
       scope_total: named && scopes[0] ? spendTotalsToJson(scopes[0]) : null,
-      scopes: scopes.map((scope) => scopeJson(scope, byScope)),
+      scopes: scopes.map((scope) => scopeJson(scope, ctx.broker)),
       truncated: result.truncated,
       ledger,
       budgets: budgets.map((budget) => budgetEvaluationJson(ctx.broker.evaluateBudget(budget, period))),
@@ -515,8 +552,9 @@ function handleBudgetStatus(ctx: GoalRouteContext): void {
       ...live,
     };
   } catch (error) {
+    // The ledger exists (available stays true); the read failed.
     ctx.broker.noteBudgetStatusReadFailure(error);
-    unavailable("the spend ledger read failed", { readError: "ledger_read_failed" });
+    empty({ available: true, readError: "ledger_read_failed", ledger: null, budgetsTruncated: false });
     return;
   }
   sendJson(ctx.res, 200, body, { "cache-control": "no-store" });

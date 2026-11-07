@@ -1155,6 +1155,24 @@ export const BUDGET_PERIODS = ["month"] as const satisfies readonly BudgetPeriod
 export const BUDGET_ENFORCE_ACTIONS = ["refuse", "pause"] as const satisfies readonly BudgetEnforceAction[];
 export const BUDGET_ENFORCEMENT_MODES = ["off", "shadow", "on"] as const satisfies readonly BudgetEnforcementMode[];
 export const BUDGET_MAX_LIMIT_USD = 1e9;
+/**
+ * Agent and lane scope ids (#2499 slices 2 and 3b): 1-256 characters, no
+ * control characters, never trimmed. The ledger stores worker ids and task
+ * intents as reported, so budgets, status and list filters accept the same
+ * set; goal scopes use GOAL_ID_PATTERN.
+ */
+export const BUDGET_SCOPE_ID_PATTERN = /^[^\u0000-\u001f\u007f]{1,256}$/;
+
+/**
+ * Whether the ledger fully covers `periodKey` (#2499 slice 3a/3b): only a
+ * period strictly after the one the ledger started recording in (that one,
+ * and any before it, may be partial; `YYYY-MM` compares as a string). An
+ * unknown first period is never complete. The one computation behind
+ * `ledger.periodComplete` and the effective enforcement mode.
+ */
+export function spendLedgerPeriodComplete(periodKey: string, firstPeriod: string | null | undefined): boolean {
+  return typeof firstPeriod === "string" && firstPeriod !== "" && periodKey > firstPeriod;
+}
 export const BUDGET_DEFAULT_WARN_PCT = 80;
 /** A terminal or reconciled row at or above this fraction of a per-task cap logs `broker.spend.near_cap`. */
 export const SPEND_NEAR_CAP_FRACTION = 0.5;

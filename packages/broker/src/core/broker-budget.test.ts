@@ -24,14 +24,16 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test, { mock } from "node:test";
 
-import { BrokerError, InMemoryA2ABroker } from "./broker.js";
+import { BrokerError, InMemoryA2ABroker, type InMemoryA2ABrokerOptions } from "./broker.js";
 import { buildTaskSpendEvent } from "./completion/broker-task-terminal.js";
 import {
   decideClaimBudgetScope,
   evaluateBudgetUsage,
   resolveEffectiveBudgetEnforcement,
 } from "./dispatch/broker-task-admission.js";
+import { selectRetainedAuditEventIds } from "./broker-retention-selectors.js";
 import { resolveBudgetEnforcementMode } from "./store-schemas.js";
+import { planAuditRetentionFromRecords } from "./store/store-hot-retention-planning.js";
 import {
   SqliteArtifactRuntimeRepository,
   SqliteAuditRuntimeRepository,
@@ -123,11 +125,13 @@ interface Harness {
   dbFile: string;
   sql(statement: string, ...params: Array<string | number | null>): void;
   query<T>(statement: string, ...params: Array<string | number | null>): T[];
-  reopen(options?: { budgetEnforcementMode?: string }): Array<Record<string, unknown>>;
+  reopen(options?: HarnessOptions): Array<Record<string, unknown>>;
   close(): void;
 }
 
-function harness(wiring: Wiring = "hints", options: { budgetEnforcementMode?: string; budgetPeriodTimeZone?: string } = {}): Harness {
+type HarnessOptions = Pick<InMemoryA2ABrokerOptions, "budgetEnforcementMode" | "budgetPeriodTimeZone" | "retention">;
+
+function harness(wiring: Wiring = "hints", options: HarnessOptions = {}): Harness {
   const dir = mkdtempSync(join(tmpdir(), "a2a-budget-"));
   const dbFile = join(dir, "state.sqlite");
   const open = (opts: typeof options) => {
@@ -233,7 +237,8 @@ for (const wiring of ["hints", "repositories"] as const) {
       const generated = h.broker.createBudget({ scopeType: "agent", scopeId: "worker-a", period: "month", limitTokens: 1_000, createdBy: "operator-1" });
       assert.match(generated.id, /^[0-9a-f-]{36}$/, "an id is generated when absent");
       assert.deepEqual(h.broker.getBudget("b-lane"), created);
-      assert.deepEqual(h.store.findBudgetByScope("lane", "analyze", "month"), created);
+      assert.deepEqual(h.broker.findBudgetForScope("lane", "analyze"), created);
+      assert.deepEqual(h.store.readBudget("b-lane"), created, "row and memory agree");
       assert.deepEqual(h.broker.listBudgets()?.map((budget) => budget.id), [generated.id, "b-lane"], "ordered by scope type, scope id");
       assert.deepEqual(h.broker.listBudgets({ scopeType: "lane" })?.map((budget) => budget.id), ["b-lane"]);
       assert.deepEqual(h.broker.listBudgets({ scopeType: "agent", scopeId: "worker-b" }), []);
@@ -293,9 +298,38 @@ for (const wiring of ["hints", "repositories"] as const) {
       );
       assert.equal(h.broker.getBudget("b-flaky"), undefined, "the row rolled back with the batch");
       assert.deepEqual(h.broker.listAuditEvents({ action: "budget.created" }), []);
+      assert.equal(h.store.readBudget("b-flaky"), undefined);
       h.sql("DROP TRIGGER audit_fail");
+
+      // The other way round: the budget row fails, so its audit row does not commit either.
+      h.sql(`CREATE TRIGGER budget_fail BEFORE INSERT ON broker_budgets
+             BEGIN SELECT RAISE(ABORT, 'budget write failed'); END`);
+      assert.throws(
+        () => h.broker.createBudget({ id: "b-flaky", scopeType: "lane", scopeId: "chat", period: "month", limitUsd: 1, createdBy: "o" }),
+        /budget write failed/,
+      );
+      assert.equal(h.broker.getBudget("b-flaky"), undefined, "the map entry is rolled back");
+      assert.deepEqual(h.broker.listAuditEvents({ action: "budget.created" }), []);
+      assert.equal(h.query("SELECT id FROM broker_audit_events WHERE target_type = 'budget'").length, 0, "no audit row without its budget row");
+      h.sql("DROP TRIGGER budget_fail");
+
       h.broker.createBudget({ id: "b-flaky", scopeType: "lane", scopeId: "chat", period: "month", limitUsd: 1, createdBy: "o" });
       assert.equal(h.broker.listAuditEvents({ action: "budget.created" }).length, 1, "a retry is not a false 409");
+
+      // A failed update restores the previous record in memory and leaves the row unchanged.
+      h.sql(`CREATE TRIGGER budget_update_fail BEFORE UPDATE ON broker_budgets
+             BEGIN SELECT RAISE(ABORT, 'budget update failed'); END`);
+      assert.throws(() => h.broker.updateBudget("b-flaky", { limitUsd: 9, actorId: "o" }), /budget update failed/);
+      assert.equal(h.broker.getBudget("b-flaky")?.limitUsd, 1);
+      assert.equal(h.store.readBudget("b-flaky")?.limitUsd, 1);
+      assert.deepEqual(h.broker.listAuditEvents({ action: "budget.updated" }), []);
+      assert.equal(h.query("SELECT id FROM broker_audit_events WHERE action = 'budget.updated'").length, 0);
+      h.sql("DROP TRIGGER budget_update_fail");
+
+      // One commit per budget write, row and audit together.
+      const before = h.store.commits;
+      h.broker.updateBudget("b-flaky", { limitUsd: 2, actorId: "o" });
+      assert.equal(h.store.commits - before, 1, "row + audit + persist = one commit");
     } finally {
       h.close();
     }
@@ -323,10 +357,24 @@ test("store: validation (400), the at-least-one-limit CHECK, and the unique scop
       [{ ...base, limitUsd: 1, enforce: "block" }, /enforce/],
       [{ ...base, limitUsd: 1, period: "week" }, /period/],
       [{ ...base, limitUsd: 1, scopeType: "team" }, /scopeType/],
-      [{ ...base, limitUsd: 1, scopeId: " analyze" }, /scopeId must match/],
-      [{ ...base, limitUsd: 1, scopeId: "a".repeat(129) }, /scopeId must match/],
+      [{ ...base, limitUsd: 1, scopeId: "a".repeat(257) }, /scopeId must match/],
+      [{ ...base, limitUsd: 1, scopeId: "" }, /scopeId must match/],
+      [{ ...base, limitUsd: 1, scopeId: "lane\u0001x" }, /scopeId must match/],
+      [{ ...base, limitUsd: 1, scopeType: "goal", scopeId: "goal 1" }, /scopeId must match/],
+      [{ ...base, limitUsd: 1, scopeType: "goal", scopeId: "a".repeat(129) }, /scopeId must match/],
       [{ ...base, limitUsd: 1, id: "b 1" }, /budget id must match/],
       [{ ...base, limitUsd: 1, id: "b-1 " }, /budget id must match/],
+      // m10: every identifier and enum field must be a string.
+      [{ ...base, limitUsd: 1, id: 123 }, /budget id must match/],
+      [{ ...base, limitUsd: 1, id: ["x"] }, /budget id must match/],
+      [{ ...base, limitUsd: 1, scopeId: 123 }, /scopeId must match/],
+      [{ ...base, limitUsd: 1, scopeId: ["analyze"] }, /scopeId must match/],
+      [{ ...base, limitUsd: 1, scopeType: 123 }, /scopeType/],
+      [{ ...base, limitUsd: 1, scopeType: ["lane"] }, /scopeType/],
+      [{ ...base, limitUsd: 1, period: 123 }, /period/],
+      [{ ...base, limitUsd: 1, period: ["month"] }, /period/],
+      [{ ...base, limitUsd: 1, enforce: 123 }, /enforce/],
+      [{ ...base, limitUsd: 1, enforce: ["refuse"] }, /enforce/],
     ];
     for (const [request, pattern] of bad) {
       assert.throws(
@@ -336,6 +384,10 @@ test("store: validation (400), the at-least-one-limit CHECK, and the unique scop
       );
     }
     assert.equal(h.broker.createBudget({ ...base, limitTokens: Number.MAX_SAFE_INTEGER }).limitTokens, Number.MAX_SAFE_INTEGER);
+    // m7: agent and lane scope ids use the ledger's pattern (up to 256, any non-control character).
+    assert.equal(h.broker.createBudget({ ...base, scopeId: "l".repeat(129), limitUsd: 1 }).scopeId.length, 129);
+    assert.equal(h.broker.createBudget({ ...base, scopeType: "agent", scopeId: "worker/a@host", limitUsd: 1 }).scopeId, "worker/a@host");
+    assert.equal(h.broker.createBudget({ ...base, scopeType: "agent", scopeId: " padded ", limitUsd: 1 }).scopeId, " padded ", "never trimmed");
     assert.throws(
       () => h.broker.createBudget({ ...base, scopeType: "goal", scopeId: "goal-missing", limitUsd: 1 }),
       rejectsWith("not_found", /goal not found/),
@@ -389,10 +441,9 @@ test("stores without SQLite: budget writes are unsupported_operation (409), read
   assert.deepEqual(broker.getBudgetCheckFailures(), { count: 0, lastAt: null });
 });
 
-test("real worker-thread persistence: budget writes are durable when they return; audit rows follow the queue", async () => {
+test("real worker-thread persistence: row and audit ride one queued write; the map is the duplicate check; a failed write leaves neither", async () => {
   const dir = mkdtempSync(join(tmpdir(), "a2a-budget-worker-thread-"));
   const dbFile = join(dir, "state.sqlite");
-  const handle = createWorkerThreadPersistence({ dbFile, loadSource: "hot-tables", queueCapacity: 256 });
   const read = <T>(sql: string): T[] => {
     const db = new DatabaseSync(dbFile);
     try {
@@ -401,20 +452,32 @@ test("real worker-thread persistence: budget writes are durable when they return
       db.close();
     }
   };
+  const exec = (sql: string) => {
+    const db = new DatabaseSync(dbFile);
+    try {
+      db.exec(sql);
+    } finally {
+      db.close();
+    }
+  };
+  let handle = createWorkerThreadPersistence({ dbFile, loadSource: "hot-tables", queueCapacity: 256 });
   try {
-    const proxy = handle.stateStore;
-    const broker = new InMemoryA2ABroker(proxy, proxy.load(), { budgetPeriodTimeZone: "UTC" });
+    let proxy = handle.stateStore;
+    let broker = new InMemoryA2ABroker(proxy, proxy.load(), { budgetPeriodTimeZone: "UTC" });
     assert.equal(broker.hasBudgets(), true, "the proxy store keeps the budget capability");
     broker.createBudget({ id: "wt-1", scopeType: "lane", scopeId: "analyze", period: "month", limitUsd: 3, createdBy: "o" });
-    // Main-connection transaction: the row is on disk before the queue drains.
-    assert.deepEqual(read<{ id: string }>("SELECT id FROM broker_budgets"), [{ id: "wt-1" }]);
+    // Quick succession, before the queue flushes: the in-memory map refuses the duplicate scope.
     assert.throws(
       () => broker.createBudget({ id: "wt-2", scopeType: "lane", scopeId: "analyze", period: "month", limitUsd: 3, createdBy: "o" }),
-      rejectsWith("invalid_transition"),
+      rejectsWith("invalid_transition", /budget for lane 'analyze'/),
+    );
+    assert.throws(
+      () => broker.createBudget({ id: "wt-1", scopeType: "lane", scopeId: "chat", period: "month", limitUsd: 3, createdBy: "o" }),
+      rejectsWith("invalid_transition", /'wt-1' already exists/),
     );
     broker.updateBudget("wt-1", { limitTokens: 9, actorId: "o" });
-    assert.equal(read<{ limit_tokens: number }>("SELECT limit_tokens FROM broker_budgets")[0]?.limit_tokens, 9);
     await proxy.awaitDurablePersistenceAck();
+    assert.deepEqual(read("SELECT id, limit_usd, limit_tokens FROM broker_budgets"), [{ id: "wt-1", limit_usd: 3, limit_tokens: 9 }]);
     assert.deepEqual(
       read<{ action: string }>("SELECT action FROM broker_audit_events WHERE target_type = 'budget' ORDER BY action").map((row) => row.action),
       ["budget.created", "budget.updated"],
@@ -422,11 +485,118 @@ test("real worker-thread persistence: budget writes are durable when they return
     // Evaluator reads run on the main connection.
     proxy.saveHotEntities({ spendEvents: [spendRow("wt-row", { periodKey: broker.budgetPeriodKey(), costKnown: true, costUsd: 4 })] });
     await proxy.awaitDurablePersistenceAck();
-    const budget = broker.getBudget("wt-1")!;
-    assert.equal(broker.evaluateBudget(budget).usdExhausted, true);
+    assert.equal(broker.evaluateBudget(broker.getBudget("wt-1")!).usdExhausted, true);
+
+    // A failing queued write (the worker-side transaction aborts on the budget
+    // row): neither the row nor its audit row commits; the ack reports it and
+    // the in-memory entry is re-read from the store (dropped).
+    exec(`CREATE TRIGGER budget_fail BEFORE INSERT ON broker_budgets
+          WHEN NEW.id = 'wt-bad' BEGIN SELECT RAISE(ABORT, 'budget write failed'); END`);
+    const originalError = console.error;
+    console.error = () => {};
+    try {
+      broker.createBudget({ id: "wt-bad", scopeType: "lane", scopeId: "chat", period: "month", limitUsd: 1, createdBy: "o" });
+      await assert.rejects(() => proxy.awaitDurablePersistenceAck(), /budget write failed/);
+    } finally {
+      console.error = originalError;
+    }
+    assert.deepEqual(read("SELECT id FROM broker_budgets WHERE id = 'wt-bad'"), []);
+    assert.deepEqual(read("SELECT id FROM broker_audit_events WHERE target_id = 'wt-bad'"), [], "no audit without its row");
+    assert.ok(broker.getBudget("wt-bad"), "before the resync the queued failure is not visible in memory");
+    broker.reloadBudgetFromStore("wt-bad");
+    assert.equal(broker.getBudget("wt-bad"), undefined);
+    assert.equal(broker.findBudgetForScope("lane", "chat"), undefined, "the scope is free again");
+    exec("DROP TRIGGER budget_fail");
+
+    // Restart: the map is reloaded from the table.
+    await handle.close();
+    handle = createWorkerThreadPersistence({ dbFile, loadSource: "hot-tables", queueCapacity: 256 });
+    proxy = handle.stateStore;
+    const restarted = captureWarnings(() => new InMemoryA2ABroker(proxy, proxy.load(), { budgetPeriodTimeZone: "UTC" }));
+    broker = restarted.result;
+    assert.deepEqual(named(restarted.events, "broker.budget.loaded"), [{ event: "broker.budget.loaded", count: 1 }]);
+    assert.equal(broker.getBudget("wt-1")?.limitTokens, 9);
+    assert.throws(
+      () => broker.createBudget({ id: "wt-3", scopeType: "lane", scopeId: "analyze", period: "month", limitUsd: 3, createdBy: "o" }),
+      rejectsWith("invalid_transition"),
+    );
   } finally {
     await handle.close();
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("budgets: restart reloads the map; the unique index stays a backstop for a row the map does not know", () => {
+  const h = harness();
+  try {
+    h.broker.createBudget({ id: "b-1", scopeType: "lane", scopeId: "analyze", period: "month", limitUsd: 1, createdBy: "o" });
+    const startup = h.reopen();
+    assert.deepEqual(named(startup, "broker.budget.loaded"), [{ event: "broker.budget.loaded", count: 1 }]);
+    assert.deepEqual(h.broker.listBudgets()?.map((budget) => budget.id), ["b-1"]);
+    // A row written behind the broker's back: the map misses it, the index refuses the duplicate.
+    h.sql(`INSERT INTO broker_budgets (id, scope_type, scope_id, period, limit_usd, created_by, created_at)
+           VALUES ('b-raw', 'lane', 'chat', 'month', 1, 'o', '2026-11-01T00:00:00.000Z')`);
+    assert.throws(
+      () => h.broker.createBudget({ id: "b-2", scopeType: "lane", scopeId: "chat", period: "month", limitUsd: 1, createdBy: "o" }),
+      /UNIQUE constraint failed/,
+    );
+    assert.equal(h.broker.getBudget("b-2"), undefined, "rolled back");
+    assert.deepEqual(h.broker.listAuditEvents({ action: "budget.created" }).map((event) => event.targetId), ["b-1"]);
+  } finally {
+    h.close();
+  }
+});
+
+test("m3: budget audit events are exempt from every audit retention path", () => {
+  const h = harness();
+  try {
+    h.broker.createBudget({ id: "b-keep", scopeType: "lane", scopeId: "analyze", period: "month", limitUsd: 1, createdBy: "o" });
+    h.broker.updateBudget("b-keep", { warnPct: 50, actorId: "o" });
+    h.broker.createGoal({ id: "goal-prunable", title: "G", requester: OPERATOR });
+    const events = h.broker.listAuditEvents();
+    const budgetIds = events.filter((event) => event.targetType === "budget").map((event) => event.id).sort();
+    assert.equal(budgetIds.length, 2);
+    const future = Date.now() + 365 * 24 * 3600_000;
+
+    // In-memory selector and the SQLite planner.
+    const retained = selectRetainedAuditEventIds({
+      auditEvents: events,
+      nowMs: future,
+      auditRetentionMs: 1,
+      maxAuditEvents: 0,
+      maxHeartbeatAuditEvents: 0,
+      retainedProposalIds: new Set(),
+      retainedTaskIds: new Set(),
+      retainedExchangeIds: new Set(),
+      retainedMessageIds: new Set(),
+      retainedArtifactIds: new Set(),
+      retainedValidationIds: new Set(),
+      retainedWorkerIds: new Set(),
+    });
+    assert.deepEqual([...retained].sort(), budgetIds, "only the budget history survives the selector");
+    const plan = planAuditRetentionFromRecords(events, { retentionMs: 1, maxRecords: 0, nowMs: future });
+    assert.deepEqual(plan.retainedIds, budgetIds);
+
+    // The cap prune (audit repository) and the full-save mirror prune.
+    h.store.pruneHotAuditEventsToMax(0);
+    assert.deepEqual(h.query<{ id: string }>("SELECT id FROM broker_audit_events ORDER BY id").map((row) => row.id), budgetIds);
+    h.broker.createGoal({ id: "goal-2", title: "G2", requester: OPERATOR });
+    h.store.save({ ...h.broker.exportSnapshot(), auditEvents: [] });
+    assert.deepEqual(
+      h.query<{ id: string }>("SELECT id FROM broker_audit_events ORDER BY id").map((row) => row.id),
+      budgetIds,
+      "a full save whose snapshot no longer holds them keeps the budget audit rows",
+    );
+    // The in-memory retention pass at startup keeps them too.
+    mock.timers.enable({ apis: ["Date"], now: future });
+    try {
+      h.reopen({ retention: { auditRetentionMs: 1, maxAuditEvents: 0 } });
+      assert.deepEqual(h.broker.listAuditEvents().filter((event) => event.targetType === "budget").map((event) => event.id).sort(), budgetIds);
+    } finally {
+      mock.timers.reset();
+    }
+  } finally {
+    h.close();
   }
 });
 
@@ -557,7 +727,7 @@ test("evaluator (broker): USD counts only cost_known rows; tokens are input + ou
     assert.deepEqual(refusedA.enforcement, { configuredMode: "on", effectiveMode: "on", reason: "mode_on" });
     assert.deepEqual(refusedA.scopes.map((scope) => [scope.budgetId, scope.refuse, scope.reason]), [["lane-analyze", true, "usd_exhausted"]]);
     assert.equal(refusedA.refuse, true);
-    const allowedB = h.broker.evaluateClaimBudget({ lane: "analyze", agentId: "worker-b", workerId: "worker-b" });
+    const allowedB = h.broker.evaluateClaimBudget({ lane: "analyze", workerId: "worker-b" });
     assert.deepEqual(
       allowedB.scopes.map((scope) => [scope.budgetId, scope.refuse, scope.reason]),
       [["usd-b", false, "within_limit"], ["lane-analyze", false, "usd_exhausted_cost_unknown_worker"]],
@@ -566,9 +736,10 @@ test("evaluator (broker): USD counts only cost_known rows; tokens are input + ou
 
     // A token limit counts input + output and refuses any worker.
     h.broker.createBudget({ id: "lane-chat", scopeType: "lane", scopeId: "chat", period: "month", limitTokens: 500, createdBy: "o" });
-    for (const workerId of ["worker-a", "worker-b"]) {
+    // m11: workerId is also the agent scope key (worker-b has its own USD-only budget, within limit).
+    for (const [workerId, reasons] of [["worker-a", ["tokens_exhausted"]], ["worker-b", ["within_limit", "tokens_exhausted"]]] as const) {
       const decision = h.broker.evaluateClaimBudget({ lane: "chat", workerId });
-      assert.deepEqual(decision.scopes.map((scope) => scope.reason), ["tokens_exhausted"], workerId);
+      assert.deepEqual(decision.scopes.map((scope) => scope.reason), reasons, workerId);
       assert.equal(decision.refuse, true);
     }
     // Goal scope and absent scopes.
@@ -601,7 +772,7 @@ test("evaluator: a read failure fails open with checkFailed, an in-memory counte
       { checkFailed: true, refuse: false, wouldRefuse: false, scopes: [] },
     );
     assert.deepEqual(named(first.events, "broker.budget.check_failed"), [
-      { event: "broker.budget.check_failed", workerId: "worker-a", count: 1, error: "disk I/O error", suppressed: 0 },
+      { event: "broker.budget.check_failed", source: "claim", workerId: "worker-a", count: 1, error: "disk I/O error", suppressed: 0 },
     ]);
     assert.deepEqual(h.broker.getBudgetCheckFailures(), { count: 1, lastAt: "2026-11-07T00:00:00.000Z" });
     mock.timers.tick(30_000);
@@ -612,7 +783,7 @@ test("evaluator: a read failure fails open with checkFailed, an in-memory counte
     mock.timers.tick(30_000);
     const third = captureWarnings(() => h.broker.evaluateClaimBudget({ lane: "analyze", workerId: "worker-b" }));
     assert.deepEqual(named(third.events, "broker.budget.check_failed"), [
-      { event: "broker.budget.check_failed", workerId: "worker-b", count: 3, error: "disk I/O error", suppressed: 1 },
+      { event: "broker.budget.check_failed", source: "claim", workerId: "worker-b", count: 3, error: "disk I/O error", suppressed: 1 },
     ]);
   } finally {
     mock.timers.reset();
@@ -652,44 +823,58 @@ function completedWithoutRow(h: Harness, id: string, output?: Record<string, unk
   h.sql("DELETE FROM broker_spend_events WHERE task_id = ?", id);
 }
 
-test("6b/6c: a page that keeps failing is skipped after 3 periodic failures; reconcile_failed is rate-limited; diagnostics log after the write", () => {
+test("6b/m1: after a page write fails, the next periodic run retries it row by row and skips only the failing row; lines are rate-limited", () => {
   const h = harness();
   mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-07T00:00:00.000Z") });
   try {
     completedWithoutRow(h, "b-bad", { executionTelemetry: telemetry({ outputTokens: -1 }) });
-    completedWithoutRow(h, "c-ok");
+    completedWithoutRow(h, "c-ok", { executionTelemetry: telemetry({ outputTokens: -2 }) });
+    completedWithoutRow(h, "d-ok");
     h.sql(`CREATE TRIGGER spend_fail BEFORE INSERT ON broker_spend_events
            WHEN NEW.task_id = 'b-bad' BEGIN SELECT RAISE(ABORT, 'spend insert failed'); END`);
-    const sweep = () => captureWarnings(() => h.broker.reconcileSpendLedger({ maxPages: 1, pageSize: 1 }));
+    const sweep = () => captureWarnings(() => h.broker.reconcileSpendLedger({ maxPages: 1, pageSize: 3 }));
+    // Sweep 1: the bulk page write fails; nothing is written or logged per row.
     const one = sweep();
     assert.equal(one.result, undefined);
     assert.deepEqual(named(one.events, "broker.spend.reconcile_failed"), [
       { event: "broker.spend.reconcile_failed", submitted: 0, unrepairable: 0, error: "spend insert failed", suppressed: 0 },
     ]);
     assert.deepEqual(named(one.events, "broker.spend.telemetry_malformed"), [], "6c: nothing logged for a page whose write failed");
+    assert.equal(h.query("SELECT task_id FROM broker_spend_events").length, 0, "the page write is all or nothing");
+    // Sweep 2: row by row; only b-bad is skipped, the other two are written and logged once.
     const two = sweep();
-    assert.deepEqual(named(two.events, "broker.spend.reconcile_failed"), [], "one line per minute");
-    assert.deepEqual(named(two.events, "broker.spend.reconcile_page_skipped"), []);
+    assert.deepEqual(two.result, { submitted: 2, unrepairable: 0 });
+    assert.deepEqual(named(two.events, "broker.spend.reconcile_row_skipped"), [
+      { event: "broker.spend.reconcile_row_skipped", taskId: "b-bad", error: "spend insert failed", suppressed: 0 },
+    ]);
+    assert.deepEqual(named(two.events, "broker.spend.telemetry_malformed").map((event) => event.taskId), ["c-ok"]);
+    assert.deepEqual(named(two.events, "broker.spend.reconciled"), [
+      { event: "broker.spend.reconciled", submitted: 2, unrepairable: 0, passEnded: false, rowsSkipped: 1 },
+    ]);
+    assert.deepEqual(h.query<{ task_id: string }>("SELECT task_id FROM broker_spend_events ORDER BY task_id").map((row) => row.task_id), ["c-ok", "d-ok"]);
+    // The cursor moved past the page: the next sweep ends the pass instead of re-reading it.
+    assert.deepEqual(sweep().result, { submitted: 0, unrepairable: 0 });
+    // Next pass: b-bad alone fails its (bulk) write again; within the minute the line is suppressed.
+    const again = sweep();
+    assert.equal(again.result, undefined);
+    assert.deepEqual(named(again.events, "broker.spend.reconcile_failed"), [], "one reconcile_failed line per minute");
     mock.timers.tick(61_000);
-    const three = sweep();
-    assert.deepEqual(named(three.events, "broker.spend.reconcile_failed"), [
+    const rowAgain = sweep();
+    assert.deepEqual(named(rowAgain.events, "broker.spend.reconcile_row_skipped"), [
+      { event: "broker.spend.reconcile_row_skipped", taskId: "b-bad", error: "spend insert failed", suppressed: 0 },
+    ]);
+    const third = sweep();
+    assert.equal(third.result, undefined);
+    assert.deepEqual(named(third.events, "broker.spend.reconcile_failed"), [
       { event: "broker.spend.reconcile_failed", submitted: 0, unrepairable: 0, error: "spend insert failed", suppressed: 1 },
     ]);
-    assert.deepEqual(named(three.events, "broker.spend.reconcile_page_skipped"), [
-      { event: "broker.spend.reconcile_page_skipped", firstId: "b-bad", lastId: "b-bad", ids: 1, failures: 3 },
-    ]);
-    // The cursor moved past the failing page: the next sweep repairs c-ok.
-    const four = sweep();
-    assert.deepEqual(four.result, { submitted: 1, unrepairable: 0 });
-    assert.equal(h.query("SELECT task_id FROM broker_spend_events WHERE task_id = 'c-ok'").length, 1);
-
-    // 6c: once the write goes through, the page's diagnostics are logged exactly once.
+    // Once the write goes through, the row and its diagnostics land once.
     h.sql("DROP TRIGGER spend_fail");
     const passes = [sweep(), sweep(), sweep()];
-    const malformed = passes.flatMap((run) => named(run.events, "broker.spend.telemetry_malformed"));
-    assert.deepEqual(malformed, [
-      { event: "broker.spend.telemetry_malformed", taskId: "b-bad", status: "succeeded", reason: "outputTokens_invalid", reconciled: true },
-    ]);
+    assert.deepEqual(
+      passes.flatMap((run) => named(run.events, "broker.spend.telemetry_malformed")).map((event) => event.taskId),
+      ["b-bad"],
+    );
     assert.equal(h.query("SELECT task_id FROM broker_spend_events WHERE task_id = 'b-bad'").length, 1);
   } finally {
     mock.timers.reset();
@@ -697,20 +882,33 @@ test("6b/6c: a page that keeps failing is skipped after 3 periodic failures; rec
   }
 });
 
-test("6b: a failure of a different page restarts the count; a listing failure never skips", () => {
+test("6b/m1: a listing failure never arms the row-by-row retry and keeps the cursor", () => {
   const h = harness();
   try {
-    completedWithoutRow(h, "b-bad");
+    completedWithoutRow(h, "b-1");
     const original = h.store.listTerminalTasksMissingSpend;
     h.store.listTerminalTasksMissingSpend = () => {
       throw new Error("database is locked");
     };
     for (let index = 0; index < 4; index += 1) {
       const run = captureWarnings(() => h.broker.reconcileSpendLedger({ maxPages: 1, pageSize: 1 }));
-      assert.deepEqual(named(run.events, "broker.spend.reconcile_page_skipped"), [], "no ids, nothing to skip");
+      assert.equal(run.result, undefined);
     }
     h.store.listTerminalTasksMissingSpend = original;
-    assert.deepEqual(captureWarnings(() => h.broker.reconcileSpendLedger({ maxPages: 1, pageSize: 1 })).result, { submitted: 1, unrepairable: 0 });
+    completedWithoutRow(h, "b-2");
+    // A bulk write (not row by row): one saveHotEntities call for the page.
+    let calls = 0;
+    const save = h.store.saveHotEntities;
+    h.store.saveHotEntities = (hints) => {
+      calls += 1;
+      save.call(h.store, hints);
+    };
+    try {
+      assert.deepEqual(captureWarnings(() => h.broker.reconcileSpendLedger({ maxPages: 1, pageSize: 2 })).result, { submitted: 2, unrepairable: 0 });
+      assert.equal(calls, 1);
+    } finally {
+      h.store.saveHotEntities = save;
+    }
   } finally {
     h.close();
   }
@@ -811,8 +1009,89 @@ test("outliers: listTopSpendRows orders a scope's rows by cost (cost_known only)
     });
     const top = h.broker.listTopSpendRows({ periodKey: "2026-11", scopeType: "lane", scopeId: "analyze", limit: 2 });
     assert.deepEqual(top.byCost.map((row) => [row.taskId, row.costUsd]), [["t-2", 9], ["t-1", 3]]);
-    assert.deepEqual(top.byTokens.map((row) => [row.taskId, row.tokens, row.costKnown]), [["t-3", 1000, false], ["t-2", 5, true]]);
+    assert.deepEqual(top.byTokens.map((row) => [row.taskId, row.tokens, row.costKnown]), [["t-3", 1000n, false], ["t-2", 5n, true]]);
     assert.deepEqual(Object.keys(top.byCost[0]!).sort(), ["agentId", "costKnown", "costUsd", "goalId", "lane", "recordedAt", "taskId", "tokens"]);
+  } finally {
+    h.close();
+  }
+});
+
+test("m2: getBudgetEnforcement never throws; a failed metadata read counts in checkFailed and logs check_failed (source enforcement)", () => {
+  const h = harness("hints", { budgetEnforcementMode: "on" });
+  try {
+    h.sql("UPDATE broker_metadata SET value = '2000-01' WHERE key = 'spend_ledger_first_period'");
+    assert.equal(h.broker.getBudgetEnforcement().effectiveMode, "on");
+    h.store.readSpendLedgerMetadata = () => {
+      throw new Error("disk I/O error");
+    };
+    const run = captureWarnings(() => h.broker.getBudgetEnforcement());
+    assert.deepEqual(run.result, { configuredMode: "on", effectiveMode: "shadow", reason: "period_incomplete" });
+    assert.deepEqual(named(run.events, "broker.budget.check_failed"), [
+      { event: "broker.budget.check_failed", source: "enforcement", count: 1, error: "disk I/O error", suppressed: 0 },
+    ]);
+    assert.equal(h.broker.getBudgetCheckFailures().count, 1);
+  } finally {
+    h.close();
+  }
+});
+
+test("m12: scope types reaching SQL come from the closed map only", () => {
+  const h = harness();
+  try {
+    for (const scopeType of ["__proto__", "toString", "team"]) {
+      assert.throws(
+        () => h.broker.listTopSpendRows({ periodKey: "2026-11", scopeType: scopeType as never, scopeId: "x", limit: 1 }),
+        rejectsWith("bad_request", /scopeType must be one of/),
+      );
+      assert.throws(
+        () => h.store.readSpendScopeUsage({ periodKey: "2026-11", scopeType: scopeType as never, scopeId: "x" }),
+        rejectsWith("bad_request", /unknown budget scope type/),
+      );
+      assert.throws(
+        () => h.store.listTopSpendRows({ periodKey: "2026-11", scopeType: scopeType as never, scopeId: "x", by: "cost", limit: 1 }),
+        rejectsWith("bad_request", /unknown budget scope type/),
+      );
+    }
+  } finally {
+    h.close();
+  }
+});
+
+test("M2: updateBudget rejects every invalid value (400) and leaves the budget unchanged", () => {
+  const h = harness();
+  try {
+    const created = h.broker.createBudget({ id: "b-1", scopeType: "lane", scopeId: "analyze", period: "month", limitUsd: 5, limitTokens: 10, createdBy: "o" });
+    const invalid: Array<[Record<string, unknown>, RegExp]> = [
+      [{ warnPct: 0 }, /warnPct/],
+      [{ warnPct: 101 }, /warnPct/],
+      [{ warnPct: 50.5 }, /warnPct/],
+      [{ warnPct: "50" }, /warnPct/],
+      [{ warnPct: null }, /warnPct/],
+      [{ enforce: "stop" }, /enforce/],
+      [{ enforce: 1 }, /enforce/],
+      [{ limitUsd: 0 }, /limitUsd/],
+      [{ limitUsd: -1 }, /limitUsd/],
+      [{ limitUsd: 1e10 }, /limitUsd/],
+      [{ limitUsd: "5" }, /limitUsd/],
+      [{ limitUsd: Number.NaN }, /limitUsd/],
+      [{ limitTokens: 2.5 }, /limitTokens/],
+      [{ limitTokens: 0 }, /limitTokens/],
+      [{ limitTokens: Number.MAX_SAFE_INTEGER + 1 }, /limitTokens/],
+      [{ limitTokens: "5" }, /limitTokens/],
+      [{ limitUsd: null, limitTokens: null }, /at least one/],
+      [{}, /changes nothing/],
+    ];
+    for (const [request, pattern] of invalid) {
+      assert.throws(
+        () => h.broker.updateBudget("b-1", { ...request, actorId: "o" } as Parameters<InMemoryA2ABroker["updateBudget"]>[1]),
+        rejectsWith("bad_request", pattern),
+        JSON.stringify(request),
+      );
+    }
+    assert.throws(() => h.broker.updateBudget("b-1", [] as never), rejectsWith("bad_request", /requires an object/));
+    assert.throws(() => h.broker.updateBudget("b-1", { warnPct: 5 } as never), rejectsWith("bad_request", /actorId/));
+    assert.deepEqual(h.broker.getBudget("b-1"), created);
+    assert.deepEqual(h.broker.listAuditEvents({ action: "budget.updated" }), []);
   } finally {
     h.close();
   }
