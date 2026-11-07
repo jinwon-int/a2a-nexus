@@ -85,6 +85,7 @@ import {
   uniqueIds,
 } from "./broker-helpers.js";
 import { buildBrokerDashboard } from "./observability/broker-dashboard.js";
+import { projectBudgetAlert, type Alert } from "./observability/alert-projection.js";
 import {
   addBrokerExchangeMessage,
   listBrokerExchangeMessages,
@@ -282,6 +283,7 @@ import {
   GOAL_ID_PATTERN,
   GOAL_OBJECTIVE_MAX_LENGTH,
   GOAL_TITLE_MAX_LENGTH,
+  goalMatchesListFilters,
   goalRecordSchema,
   resolveBudgetEnforcementMode,
   resolveBudgetPeriodTimeZone,
@@ -443,6 +445,15 @@ const RATE_LIMITED_LOG_INTERVAL_MS = 60_000;
 /** #2499 slice 3b-2: goal budgets evaluated per goal-limit sweep, and tasks checked per lost-late-metering pass. */
 const GOAL_BUDGET_SWEEP_LIMIT = 200;
 const LATE_METERING_PASS_LIMIT = 200;
+/** #2499 slice 4: failed restage saves of one task before the pass settles it anyway (with a log line). */
+const LATE_METERING_MAX_ATTEMPTS = 3;
+/**
+ * #2499 slice 4: budgets evaluated per budget-alert sweep (one aggregate
+ * each): changed budgets first, then round-robin by id. With the 10 000
+ * budget load cap a full round takes 50 sweeps; the others keep their
+ * previous result meanwhile.
+ */
+const BUDGET_ALERT_SWEEP_LIMIT = 200;
 
 /** #2499 slice 3b: budgets loaded at startup (all of them; more refuses startup). */
 const BUDGET_LOAD_LIMIT = 10_000;
@@ -473,8 +484,9 @@ function sameBudgetRecord(a: BudgetRecord, b: BudgetRecord): boolean {
     && a.scopeType === b.scopeType
     && a.scopeId === b.scopeId
     && a.period === b.period
-    && a.limitUsd === b.limitUsd
-    && a.limitTokens === b.limitTokens
+    // #2499 slice 4: a missing limit compares equal to a cleared one.
+    && (a.limitUsd ?? null) === (b.limitUsd ?? null)
+    && (a.limitTokens ?? null) === (b.limitTokens ?? null)
     && a.warnPct === b.warnPct
     && a.enforce === b.enforce
     && a.createdBy === b.createdBy
@@ -716,6 +728,31 @@ export class InMemoryA2ABroker {
   private lateMeteringIndex = 0;
   private readonly lateMeteringSettled = new Set<string>();
   /**
+   * #2499 slice 4: restaged tasks whose queued (worker-thread) save has not
+   * settled yet, and failed restage saves per task (settled after
+   * LATE_METERING_MAX_ATTEMPTS).
+   */
+  private readonly lateMeteringInFlight = new Set<string>();
+  private readonly lateMeteringAttempts = new Map<string, number>();
+  /** #2499 slice 4: keyset cursor of the not-`on` goal resume pass (undefined: start). */
+  private goalResumeCursor: { updatedAt: string; id: string } | undefined;
+  /** #2499 slice 4: shadow would-limit decisions already counted, per goal, for `goalWouldLimitPeriod`. */
+  private goalWouldLimitPeriod: string | undefined;
+  private readonly goalWouldLimitCounted = new Set<string>();
+  /**
+   * #2499 slice 4: budget alerts. One entry per budget: the period it was
+   * evaluated for and its alert (null: below warn). Computed only by the
+   * stale-reaper sweep (and once at startup); getBudgetAlerts serves it to
+   * the alert projection from memory. `budgetAlertDirty` holds budgets
+   * written since their last evaluation (evaluated first).
+   */
+  private readonly budgetAlertEntries = new Map<string, { periodKey: string; alert: Alert | null }>();
+  private readonly budgetAlertDirty = new Set<string>();
+  private budgetAlertCursor: string | undefined;
+  private budgetAlertIdsKey = "";
+  /** #2499 slice 4: bumped on every in-memory budget change (getBudgetRevision). */
+  private budgetRevision = 0;
+  /**
    * #2499 slice 3b-2: the newest budget write per id (generation, its audit
    * event, the record written), so a failed queued write's resync neither
    * overwrites a newer queued change nor keeps the failed write's audit event.
@@ -881,6 +918,10 @@ export class InMemoryA2ABroker {
     this.applyRetentionPolicy();
     this.initializeSpendLedger();
     this.loadBudgets();
+    // #2499 slice 4: the budget alert set is computed once, for every budget,
+    // before the server builds its operator alert differ, so a restart does
+    // not re-open an alert that still holds (like every other alert kind).
+    this.evaluateBudgetAlerts({ all: true });
   }
 
   /**
@@ -1217,27 +1258,29 @@ export class InMemoryA2ABroker {
 
   listGoals(filters: GoalListFilters = {}): GoalRecord[] {
     const store = this.goalStore();
+    const limit = filters.limit !== undefined && filters.limit > 0 ? filters.limit : DEFAULT_GOAL_LIST_LIMIT;
+    const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
     if (store) {
-      const rows = store.listGoals(filters);
-      if (this.goalUpdates.size === 0) return rows;
+      if (this.goalUpdates.size === 0) return store.listGoals(filters);
       // #2499 slice 3b-2: the same overlay as getGoal, applied before the
-      // status filter and the limit: a lagging row is replaced by its
-      // overlay record (and dropped when that no longer matches the
-      // status), and overlay goals that now match are added. Same order as
-      // the store (updated_at DESC, id ASC).
+      // filters and the limit: a lagging row is replaced by its overlay
+      // record (and dropped when that no longer matches), and overlay goals
+      // that now match are added. Same order as the store (updated_at DESC,
+      // id ASC). #2499 slice 4: every filter (status and the keyset cursor)
+      // goes through goalMatchesListFilters, and the store is read past the
+      // limit by the overlay size, so overlay records that no longer match
+      // cannot leave the page short.
+      const rows = store.listGoals({ ...filters, limit: limit + this.goalUpdates.size });
       const merged = new Map(rows.map((goal) => [goal.id, goal]));
       for (const [id, goal] of this.goalUpdates) merged.set(id, structuredClone(goal));
-      const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-      const limit = filters.limit !== undefined && filters.limit > 0 ? filters.limit : DEFAULT_GOAL_LIST_LIMIT;
       return [...merged.values()]
-        .filter((goal) => !filters.status || goal.status === filters.status)
+        .filter((goal) => goalMatchesListFilters(goal, filters))
         .sort((a, b) => compare(b.updatedAt, a.updatedAt) || compare(a.id, b.id))
         .slice(0, limit);
     }
-    const limit = filters.limit !== undefined && filters.limit > 0 ? filters.limit : DEFAULT_GOAL_LIST_LIMIT;
     return [...this.goals.values()]
-      .filter((goal) => !filters.status || goal.status === filters.status)
-      .sort((a, b) => (a.updatedAt === b.updatedAt ? a.id.localeCompare(b.id) : b.updatedAt.localeCompare(a.updatedAt)))
+      .filter((goal) => goalMatchesListFilters(goal, filters))
+      .sort((a, b) => compare(b.updatedAt, a.updatedAt) || compare(a.id, b.id))
       .slice(0, limit);
   }
 
@@ -1672,12 +1715,16 @@ export class InMemoryA2ABroker {
   private indexBudget(budget: BudgetRecord): void {
     this.budgets.set(budget.id, budget);
     this.budgetIdsByScope.set(budgetScopeKey(budget.scopeType, budget.scopeId, budget.period), budget.id);
+    // #2499 slice 4: re-evaluated first by the next alert sweep.
+    this.budgetRevision += 1;
+    this.budgetAlertDirty.add(budget.id);
   }
 
   private unindexBudget(id: string): void {
     const budget = this.budgets.get(id);
     if (!budget) return;
     this.budgets.delete(id);
+    this.budgetRevision += 1;
     const key = budgetScopeKey(budget.scopeType, budget.scopeId, budget.period);
     if (this.budgetIdsByScope.get(key) === id) this.budgetIdsByScope.delete(key);
   }
@@ -1819,6 +1866,7 @@ export class InMemoryA2ABroker {
     const isThisAudit = (event: AuditEvent) =>
       event.action === action && event.targetType === "budget" && event.targetId === budget.id;
     const earlier = new Set([...this.auditEvents.values()].filter(isThisAudit).map((event) => event.id));
+    const writeBefore = this.stateStore?.latestQueuedWrite?.();
     let auditEventId: string | undefined;
     try {
       this.commitMutation(() => {
@@ -1841,7 +1889,7 @@ export class InMemoryA2ABroker {
     // durable already, so nothing is kept.
     this.budgetWriteGeneration += 1;
     const generation = this.budgetWriteGeneration;
-    const queued = this.stateStore?.latestQueuedWrite?.();
+    const queued = this.queuedWriteSince(writeBefore);
     if (queued) {
       const pending = this.budgetPendingWrites.get(budget.id) ?? [];
       pending.push({ generation, auditEventId: auditEventId!, record: structuredClone(budget) });
@@ -1849,6 +1897,17 @@ export class InMemoryA2ABroker {
       // A failed save keeps its entry for the route's resync.
       queued.then(() => this.settleBudgetWrite(budget.id, generation), () => undefined);
     }
+  }
+
+  /**
+   * #2499 slice 4: the queued write a call produced: the store's latest
+   * queued write when it is not the one seen before the call (`before`),
+   * else undefined (nothing queued: in process, or no write). A write queued
+   * by an earlier call is never attributed to this one.
+   */
+  private queuedWriteSince(before: Promise<unknown> | undefined): Promise<unknown> | undefined {
+    const after = this.stateStore?.latestQueuedWrite?.();
+    return after !== undefined && after !== before ? after : undefined;
   }
 
   private settleBudgetWrite(id: string, generation: number): void {
@@ -2304,7 +2363,9 @@ export class InMemoryA2ABroker {
    * `budget_paused` refusal in effective `on`; counts nothing otherwise.
    */
   assertCreateBudgetAllowed(request: CreateTaskRequest): void {
-    this.assertCreateBudget(request, request.goalId, { countShadow: false });
+    // #2499 slice 4: the same normalization as createTask.
+    const normalized = this.normalizeCreateTaskRequest(request).request;
+    this.assertCreateBudget(normalized, normalized.goalId, { countShadow: false });
   }
 
   /**
@@ -2327,11 +2388,26 @@ export class InMemoryA2ABroker {
    * enforcement-metadata read skips the sweep (no flapping on a transient
    * failure). Never throws: a failed read counts in `checkFailed`, a failed
    * transition logs a rate-limited line.
+   *
+   * #2499 slice 4: without any goal budget nothing is read (no goal can be
+   * budget-limited: budgets are never deleted and their scope never
+   * changes). The not-`on` resume pass walks `budget_limited` goals with a
+   * keyset cursor, so goals limited for another reason cannot pin it and
+   * more than `limit` budget-limited goals are all resumed over sweeps.
+   * Shadow counts `goals.wouldLimitTotal` once per goal per period.
    */
   applyGoalBudgetLimits(options: { limit?: number } = {}): { limited: string[]; resumed: string[] } | undefined {
     if (!this.budgetStore()) return undefined;
     const limited: string[] = [];
     const resumed: string[] = [];
+    let hasGoalBudget = false;
+    for (const budget of this.budgets.values()) {
+      if (budget.scopeType === "goal") {
+        hasGoalBudget = true;
+        break;
+      }
+    }
+    if (!hasGoalBudget) return { limited, resumed };
     const limit = Math.max(1, Math.floor(options.limit ?? GOAL_BUDGET_SWEEP_LIMIT));
     const counters = this.budgetCounters.goals;
     let context: BudgetReadContext | undefined;
@@ -2366,7 +2442,11 @@ export class InMemoryA2ABroker {
     if (!on) {
       // Enforcement is not on: no goal stays limited by a budget.
       try {
-        for (const goal of this.listGoals({ status: "budget_limited", limit })) {
+        const cursor = this.goalResumeCursor;
+        const page = this.listGoals({ status: "budget_limited", limit, ...(cursor ? { after: cursor } : {}) });
+        const last = page[page.length - 1];
+        this.goalResumeCursor = page.length === limit && last ? { updatedAt: last.updatedAt, id: last.id } : undefined;
+        for (const goal of page) {
           if (lastGoalLimitReason(goal) === "budget_exhausted") transition(goal, false, undefined, "budget_enforcement_not_on");
         }
       } catch (error) {
@@ -2400,6 +2480,13 @@ export class InMemoryA2ABroker {
       const toResume = goal.status === "budget_limited" && !exhausted;
       if (!toLimit && !toResume) continue;
       if (!on) {
+        // #2499 slice 4: once per goal per period, not once per sweep.
+        if (this.goalWouldLimitPeriod !== context!.periodKey) {
+          this.goalWouldLimitPeriod = context!.periodKey;
+          this.goalWouldLimitCounted.clear();
+        }
+        if (this.goalWouldLimitCounted.has(goal.id)) continue;
+        this.goalWouldLimitCounted.add(goal.id);
         counters.wouldLimitTotal += 1;
         counters.lastAt = isoNow();
         this.warnRateLimited("broker.budget.goal_would_limit", { event: "broker.budget.goal_would_limit", goalId: goal.id, budgetId: budget.id });
@@ -2441,6 +2528,7 @@ export class InMemoryA2ABroker {
     const store = this.goalStore();
     const previousUpdate = this.goalUpdates.get(goal.id);
     const previousStaged = this.pendingHot.stagedGoal(goal.id);
+    const writeBefore = this.stateStore?.latestQueuedWrite?.();
     let auditEventId: string | undefined;
     try {
       this.commitMutation(() => {
@@ -2475,7 +2563,7 @@ export class InMemoryA2ABroker {
     const dropOverlay = () => {
       if (this.goalUpdates.get(goal.id) === next) this.goalUpdates.delete(goal.id);
     };
-    const queued = this.stateStore?.latestQueuedWrite?.();
+    const queued = this.queuedWriteSince(writeBefore);
     if (!queued) {
       dropOverlay();
       return;
@@ -2498,52 +2586,76 @@ export class InMemoryA2ABroker {
    * same guarded metering (buildLateSpendMetering + the store's
    * still-unmetered, same-agent guard) for rows that are still unmetered.
    * A pass walks a snapshot of the candidate ids taken when it starts, so a
-   * sweep continues where the previous one stopped. Each task is checked
-   * once (settled after its read, whatever the outcome); a missing row is
-   * the reconciliation's job. Settled ids whose task left the task map are
-   * evicted when a pass starts. Written with one direct saveHotEntities
-   * call, like the reconciliation. Never throws.
+   * sweep continues where the previous one stopped. A task with nothing to
+   * restage is settled after its read; a missing row is the
+   * reconciliation's job. #2499 slice 4: a restaged task is settled only
+   * once its repair save succeeded (in process: after the synchronous save;
+   * worker-thread: when the queued write acks). A failed save leaves it for
+   * the next pass, up to LATE_METERING_MAX_ATTEMPTS failures, then it is
+   * settled with one `broker.spend.late_metering_restage_abandoned` line; a
+   * pass that holds a task whose save failed before writes row by row.
+   * Returns undefined when a read or a save failed. Settled ids whose task
+   * left the task map are evicted when a pass starts. Written with direct
+   * saveHotEntities calls (one per pass, or one per row after a failed
+   * save), like the reconciliation. Never throws.
    */
   restageLostLateMeterings(options: { limit?: number } = {}): { restaged: number; checked: number } | undefined {
     const store = this.stateStore;
     if (!this.hasSpendLedger() || !store?.readSpendEventMetering || !store.saveHotEntities) return undefined;
     const limit = Math.max(1, Math.floor(options.limit ?? LATE_METERING_PASS_LIMIT));
+    const pendingOrSettled = (id: string) => this.lateMeteringSettled.has(id) || this.lateMeteringInFlight.has(id);
     if (this.lateMeteringIndex >= this.lateMeteringKeys.length) {
       for (const id of this.lateMeteringSettled) {
         if (!this.tasks.has(id)) this.lateMeteringSettled.delete(id);
       }
+      for (const id of this.lateMeteringAttempts.keys()) {
+        if (!this.tasks.has(id)) this.lateMeteringAttempts.delete(id);
+      }
       this.lateMeteringKeys = [];
       for (const [id, task] of this.tasks) {
-        if (task.status === "canceled" && task.lateEvidenceAfterCancel && !this.lateMeteringSettled.has(id)) this.lateMeteringKeys.push(id);
+        if (task.status === "canceled" && task.lateEvidenceAfterCancel && !pendingOrSettled(id)) this.lateMeteringKeys.push(id);
       }
       this.lateMeteringIndex = 0;
     }
+    const settle = (id: string) => {
+      this.lateMeteringSettled.add(id);
+      this.lateMeteringAttempts.delete(id);
+    };
+    const saveFailed = (ids: readonly string[]) => {
+      for (const id of ids) {
+        const attempts = (this.lateMeteringAttempts.get(id) ?? 0) + 1;
+        if (attempts < LATE_METERING_MAX_ATTEMPTS) {
+          this.lateMeteringAttempts.set(id, attempts);
+          continue;
+        }
+        settle(id);
+        console.warn(JSON.stringify({ event: "broker.spend.late_metering_restage_abandoned", taskId: id, attempts }));
+      }
+    };
     const meterings: SpendLateMeteringRecord[] = [];
+    const meteredIds: string[] = [];
     let checked = 0;
     try {
       while (this.lateMeteringIndex < this.lateMeteringKeys.length && checked < limit) {
         const id = this.lateMeteringKeys[this.lateMeteringIndex]!;
         const task = this.tasks.get(id);
-        if (!task || task.status !== "canceled" || !task.lateEvidenceAfterCancel || this.lateMeteringSettled.has(id)) {
+        if (!task || task.status !== "canceled" || !task.lateEvidenceAfterCancel || pendingOrSettled(id)) {
           this.lateMeteringIndex += 1;
           continue;
         }
         checked += 1;
         const row = store.readSpendEventMetering(id);
         this.lateMeteringIndex += 1;
-        this.lateMeteringSettled.add(id);
-        if (!row) continue;
-        const unmetered = !row.costKnown && row.inputTokens === 0 && row.outputTokens === 0;
-        if (!unmetered || row.agentId !== task.lateEvidenceAfterCancel.submittedBy) continue;
-        const built = taskTerminal.buildLateSpendMetering(task);
-        if (built.metering) meterings.push(built.metering);
-      }
-      if (meterings.length > 0) {
-        store.saveHotEntities.call(store, { spendMeterings: meterings });
-        this.warnRateLimited("broker.spend.late_metering_restaged", {
-          event: "broker.spend.late_metering_restaged",
-          count: meterings.length,
-        });
+        const unmetered = row !== undefined && !row.costKnown && row.inputTokens === 0 && row.outputTokens === 0;
+        const built = unmetered && row.agentId === task.lateEvidenceAfterCancel.submittedBy
+          ? taskTerminal.buildLateSpendMetering(task)
+          : undefined;
+        if (built?.metering) {
+          meterings.push(built.metering);
+          meteredIds.push(id);
+        } else {
+          settle(id);
+        }
       }
     } catch (error) {
       this.warnRateLimited("broker.spend.late_metering_restage_failed", {
@@ -2552,12 +2664,63 @@ export class InMemoryA2ABroker {
       });
       return undefined;
     }
+    if (meterings.length > 0) {
+      // One write per pass; once a task's save failed, its pass writes row by
+      // row, so one bad row cannot hold back the others.
+      const submit = (batch: SpendLateMeteringRecord[], ids: string[]): boolean => {
+        const writeBefore = store.latestQueuedWrite?.();
+        try {
+          store.saveHotEntities!.call(store, { spendMeterings: batch });
+        } catch (error) {
+          saveFailed(ids);
+          this.warnRateLimited("broker.spend.late_metering_restage_failed", {
+            event: "broker.spend.late_metering_restage_failed",
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return false;
+        }
+        const queued = this.queuedWriteSince(writeBefore);
+        if (!queued) {
+          for (const id of ids) settle(id);
+          return true;
+        }
+        for (const id of ids) this.lateMeteringInFlight.add(id);
+        queued.then(
+          () => {
+            for (const id of ids) {
+              this.lateMeteringInFlight.delete(id);
+              settle(id);
+            }
+          },
+          () => {
+            for (const id of ids) this.lateMeteringInFlight.delete(id);
+            saveFailed(ids);
+          },
+        );
+        return true;
+      };
+      let submitted = 0;
+      if (meteredIds.some((id) => this.lateMeteringAttempts.has(id))) {
+        meterings.forEach((metering, index) => {
+          if (submit([metering], [meteredIds[index]!])) submitted += 1;
+        });
+      } else if (submit(meterings, meteredIds)) {
+        submitted = meterings.length;
+      }
+      if (submitted > 0) {
+        this.warnRateLimited("broker.spend.late_metering_restaged", {
+          event: "broker.spend.late_metering_restaged",
+          count: submitted,
+        });
+      }
+      if (submitted < meterings.length) return undefined;
+    }
     return { restaged: meterings.length, checked };
   }
 
   private recordBudgetCheckFailure(
     error: unknown,
-    context: { source: "claim" | "enforcement" | "create" | "goal"; workerId?: string },
+    context: { source: "claim" | "enforcement" | "create" | "goal" | "alert"; workerId?: string },
   ): void {
     this.budgetCheckFailures = {
       count: this.budgetCheckFailures.count + 1,
@@ -2585,6 +2748,119 @@ export class InMemoryA2ABroker {
   /** #2499 slice 3b-2: enforcement counters since startup (a copy; `GET /budgets/status`). */
   getBudgetEnforcementCounters(): BudgetEnforcementCounters {
     return structuredClone(this.budgetCounters);
+  }
+
+  /**
+   * #2499 slice 4: evaluate budget alerts (spec "Alerts and read surfaces").
+   * Run by every stale-reaper sweep (after the reconciliation and the goal
+   * limits) and once at startup for every budget (`all`). Each evaluated
+   * budget gets one aggregate read (evaluateBudget) against the current
+   * period; its alert (projectBudgetAlert: `budget_exhausted`, else
+   * `budget_warn`, else none) is cached for getBudgetAlerts. Per sweep at
+   * most `limit` (BUDGET_ALERT_SWEEP_LIMIT) budgets: budgets written since
+   * their last evaluation first, then round-robin by id; the rest keep their
+   * previous result. A budget whose read fails keeps its previous alert (no
+   * flapping), stays queued for the next sweep, and counts in `checkFailed`
+   * (`source: "alert"`). Alerts are visibility only, so they are computed in
+   * every enforcement mode, but only on a store with a spend ledger. Mode
+   * `off` reads no enforcement metadata; nothing is read without budgets.
+   * `changed`: the projected alert set (ids) differs from the previous call.
+   * Never throws.
+   */
+  evaluateBudgetAlerts(options: { limit?: number; all?: boolean } = {}): { evaluated: number; failed: number; changed: boolean } | undefined {
+    if (!this.budgetStore() || !this.hasSpendLedger()) return undefined;
+    let evaluated = 0;
+    let failed = 0;
+    try {
+      if (this.budgets.size === 0) {
+        this.budgetAlertEntries.clear();
+        this.budgetAlertDirty.clear();
+      } else {
+        const periodKey = this.budgetPeriodKey();
+        const enforcement = this.budgetEnforcementMode === "off"
+          ? { state: taskAdmission.resolveEffectiveBudgetEnforcement("off", false), failed: false }
+          : this.resolveBudgetEnforcement(periodKey);
+        const modes = {
+          configuredMode: enforcement.state.configuredMode,
+          effectiveMode: enforcement.failed ? null : enforcement.state.effectiveMode,
+        };
+        for (const id of this.budgetAlertEntries.keys()) {
+          if (!this.budgets.has(id)) this.budgetAlertEntries.delete(id);
+        }
+        const byId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+        let page: BudgetRecord[];
+        if (options.all) {
+          page = [...this.budgets.values()];
+        } else {
+          const limit = Math.max(1, Math.floor(options.limit ?? BUDGET_ALERT_SWEEP_LIMIT));
+          const dirty = [...this.budgetAlertDirty].filter((id) => this.budgets.has(id)).sort(byId).slice(0, limit);
+          const picked = new Set(dirty);
+          // Round-robin over the other budgets by id, continuing after the
+          // cursor and wrapping to the start within the same sweep.
+          const cursor = this.budgetAlertCursor;
+          const others = [...this.budgets.keys()].filter((id) => !picked.has(id)).sort(byId);
+          const start = cursor === undefined ? 0 : others.findIndex((id) => id > cursor);
+          const rotated = start <= 0 ? others : [...others.slice(start), ...others.slice(0, start)];
+          const rest = rotated.slice(0, limit - dirty.length);
+          if (rest.length > 0) this.budgetAlertCursor = rest[rest.length - 1];
+          page = [...dirty, ...rest].map((id) => this.budgets.get(id)!);
+        }
+        const now = isoNow();
+        for (const budget of page) {
+          let evaluation: BudgetEvaluation;
+          try {
+            evaluation = this.evaluateBudget(budget, periodKey);
+          } catch (error) {
+            failed += 1;
+            this.recordBudgetCheckFailure(error, { source: "alert" });
+            continue;
+          }
+          evaluated += 1;
+          this.budgetCheckFailures.consecutive = 0;
+          this.budgetAlertDirty.delete(budget.id);
+          const previous = this.budgetAlertEntries.get(budget.id)?.alert ?? null;
+          let alert = projectBudgetAlert({ evaluation, enforcement: modes, detectedAt: now });
+          // Same alert (same id: kind, budget, period) keeps its first detection time.
+          if (alert && previous && previous.id === alert.id) alert = { ...alert, detectedAt: previous.detectedAt };
+          this.budgetAlertEntries.set(budget.id, { periodKey, alert });
+        }
+      }
+    } catch (error) {
+      this.warnRateLimited("broker.budget.alert_evaluation_failed", {
+        event: "broker.budget.alert_evaluation_failed",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    const idsKey = this.getBudgetAlerts().map((alert) => alert.id).join("\n");
+    const changed = idsKey !== this.budgetAlertIdsKey;
+    this.budgetAlertIdsKey = idsKey;
+    return { evaluated, failed, changed };
+  }
+
+  /**
+   * #2499 slice 4: the cached budget alerts for the alert projection (copies,
+   * by id). From memory only, no store read: entries evaluated for an
+   * earlier period are not served, so an alert resolves when the period
+   * rolls. Empty without a spend ledger.
+   */
+  getBudgetAlerts(): Alert[] {
+    if (this.budgetAlertEntries.size === 0 || !this.hasSpendLedger()) return [];
+    const periodKey = this.budgetPeriodKey();
+    const alerts: Alert[] = [];
+    for (const [id, entry] of this.budgetAlertEntries) {
+      if (entry.alert && entry.periodKey === periodKey && this.budgets.has(id)) alerts.push(structuredClone(entry.alert));
+    }
+    return alerts.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  }
+
+  /**
+   * #2499 slice 4: changes whenever a budget changes in memory or the period
+   * rolls; nothing else can make a budget-omitted task claimable again (the
+   * mode is fixed at startup and spend only grows). The worker assignment
+   * stream re-announces omitted assignments when it changes.
+   */
+  getBudgetRevision(): string {
+    return `${this.budgetRevision}:${this.budgetPeriodKey()}`;
   }
 
   /** Rate-limited diagnostic for a failed budget status read (the route still answers 200). */
@@ -4065,20 +4341,33 @@ export class InMemoryA2ABroker {
    * create. The HTTP surface additionally marks the replay response with
    * `idempotentReturn: true` (200 vs 201).
    */
-  createTask(request: CreateTaskRequest): TaskRecord {
+  /**
+   * The create request as createTask sees it (GitHub patch, A2A round and
+   * payload normalization). #2499 slice 4: shared with the create-time
+   * budget pre-check (assertCreateBudgetAllowed) so the pre-check and the
+   * create decide on the same request.
+   */
+  private normalizeCreateTaskRequest(request: CreateTaskRequest) {
     const normalizedGitHubRequest = normalizeGitHubPatchTaskRequest(request, {
       brokerId: this.brokerId,
       knownBrokerIds: this.knownBrokerIds,
     });
     const brokerOfRecord = normalizeOwnershipString(normalizedGitHubRequest.brokerOfRecord) ?? this.brokerId;
     const roundNormalizedRequest = normalizeA2ARoundTaskRequest(normalizedGitHubRequest, brokerOfRecord);
-    const normalizedRequest = {
-      ...roundNormalizedRequest,
-      payload: normalizeTaskPayload(roundNormalizedRequest.payload, {
-        assignedWorkerId: roundNormalizedRequest.assignedWorkerId ?? roundNormalizedRequest.target.id,
-        localBrokerId: brokerOfRecord,
-      }),
+    return {
+      brokerOfRecord,
+      request: {
+        ...roundNormalizedRequest,
+        payload: normalizeTaskPayload(roundNormalizedRequest.payload, {
+          assignedWorkerId: roundNormalizedRequest.assignedWorkerId ?? roundNormalizedRequest.target.id,
+          localBrokerId: brokerOfRecord,
+        }),
+      },
     };
+  }
+
+  createTask(request: CreateTaskRequest): TaskRecord {
+    const { request: normalizedRequest, brokerOfRecord } = this.normalizeCreateTaskRequest(request);
     this.assertTaskPayload(normalizedRequest);
 
     // Idempotent create: if a task with the requested id already exists, return it as-is.

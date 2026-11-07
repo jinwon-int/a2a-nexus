@@ -137,10 +137,12 @@ Split into two PRs (finalizer decision, 2026-11-07, recorded on #2499): **3b-1**
 
 ### Slice 4 — alerts and runbook
 
-- [ ] `budget_warn` (at `warn_pct`) and `budget_exhausted` added to the `AlertKind` list, through the existing operator alert path.
-- [ ] Each alert opens once per scope and period and resolves when the period rolls or the limit is raised.
-- [ ] Runbook: create and inspect budgets, raise a limit, switch mode, read unmetered spend, roll back.
-- [ ] Tests: alert open/resolve, no duplicate alert within a period.
+- [x] `budget_warn` (at `warn_pct`) and `budget_exhausted` added to the `AlertKind` list, through the existing operator alert path.
+- [x] Each alert opens once per scope and period and resolves when the period rolls or the limit is raised.
+- [x] Runbook: create and inspect budgets, raise a limit, switch mode, read unmetered spend, roll back.
+- [x] Tests: alert open/resolve, no duplicate alert within a period.
+- [x] Runbook: `packages/broker/docs/spend-budget-runbook.md` (linked from the lifecycle doc and the broker README). Spec decision 19.
+- [x] Slice 3b-2 round-2 minors: small-limit scan bound, SSE re-snapshot on a budget change, guarded JSON-RPC race cancel, shared create request builder, restage settles after its save, `latestQueuedWrite` cleared, goal overlay applies all filters plus a resume cursor, `wouldLimitTotal` per goal and period, no metadata reads without budgets, sweep-hook and worker-thread race tests.
 
 ### Closeout
 

@@ -57,6 +57,7 @@ map.
 - `docs/restart-recovery-smoke.md` for the operator runbook and automation flow that validates restart recovery
 - `docs/operator-dashboard-snapshot.md` for the `GET /dashboard` operator snapshot JSON projection: workers, task status counters, stale/retry/dead-letter summary, and attention items
 - `docs/wake-on-task-live-canary-runbook.md` for the live Wake-on-Task canary proof, resource-warning classification, and rollback/reset checklist
+- `docs/spend-budget-runbook.md` for monthly spend budgets (#2499): creating and inspecting budgets, raising a limit, switching `A2A_BUDGET_ENFORCEMENT_MODE`, reading unmetered spend and enforcement counters, the `budget_warn` / `budget_exhausted` alerts, and rollback; the model is in `docs/goal-objective-lifecycle.md`
 - `docs/docker-runner-rollout-runbook.md` for the A2A docker-runner worker rollout and rollback procedure: canary smoke, node expansion, feature flags, and failure rollback
 - `docs/superseded-running-task-policy.md` for the finalizer policy that marks slower sibling lanes as superseded after a winning PR/evidence is selected
 - `docs/hot-table-memory-warning-policy.md` for interpreting hot-table warnings as observe, investigate, or approval-required operator actions

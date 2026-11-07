@@ -1231,13 +1231,21 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   /** Newest first (`updated_at DESC, id ASC`), bounded like the other hot reads. */
   listGoals(filters: GoalListFilters = {}): GoalRecord[] {
     const limit = normalizeBoundedSqliteLimit(filters.limit);
-    const rows = filters.status
-      ? this
-        .stmt("SELECT payload FROM broker_goals WHERE status = ? ORDER BY updated_at DESC, id ASC LIMIT ?")
-        .all(filters.status, limit)
-      : this
-        .stmt("SELECT payload FROM broker_goals ORDER BY updated_at DESC, id ASC LIMIT ?")
-        .all(limit);
+    // #2499 slice 4: the same filters as goalMatchesListFilters (status and
+    // the keyset cursor), in SQL. Fixed statement texts, so stmt() caches them.
+    const where: string[] = [];
+    const params: string[] = [];
+    if (filters.status) {
+      where.push("status = ?");
+      params.push(filters.status);
+    }
+    if (filters.after) {
+      where.push("(updated_at < ? OR (updated_at = ? AND id > ?))");
+      params.push(filters.after.updatedAt, filters.after.updatedAt, filters.after.id);
+    }
+    const rows = this
+      .stmt(`SELECT payload FROM broker_goals${where.length > 0 ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY updated_at DESC, id ASC LIMIT ?`)
+      .all(...params, limit);
     return rows.flatMap((row) => parseHotEntityPayloadSafe(row, goalRecordSchema, "broker_goals")) as GoalRecord[];
   }
 

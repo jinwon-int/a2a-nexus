@@ -129,7 +129,9 @@ export interface BrokerStateStore {
    * topology), without taking it out of the set awaitDurablePersistenceAck
    * reports on; undefined when no write is queued or writes are synchronous
    * (in-process SQLite). Lets the broker settle in-memory state that waits on
-   * one write (budget write generations, the goal overlay).
+   * one write (budget write generations, the goal overlay). #2499 slice 4:
+   * cleared once that write settles; callers compare it with the value seen
+   * before their own mutation, so an earlier call's write is never theirs.
    */
   latestQueuedWrite?(): Promise<unknown> | undefined;
   getPersistenceInfo?(): BrokerPersistenceInfo;

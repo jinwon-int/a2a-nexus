@@ -332,6 +332,19 @@ Proposed in the slice 3b-2 PR and accepted when the owner approves its merge.
     - **Goal `budget_limited`:** the stale-reaper sweep moves a `pursuing` goal whose budget is exhausted (either limit) to `budget_limited`, and back to `pursuing` when the limit is raised or the period rolls. The resume uses the existing history reason `operator_requested` with note `budget_available`; there is no new reason value, so goal rows stay readable by older binaries. Mode `off` does not resume goals limited while the mode was `on`.
     - **Fail-open:** repeated read failures stay fail-open; `checkFailed.consecutive` is shown, and the alert comes in slice 4.
 
+### Budget alerts (slice 4, 2026-11-07)
+
+Proposed in the slice 4 PR and accepted when the owner approves its merge.
+
+19. **Alert semantics.**
+    - **Kinds:** `budget_warn` (warning, at `warnPct` of either limit) and `budget_exhausted` (critical) in `AlertKind`, with subject kind `budget`. The subject id is `<budgetId>:<periodKey>`, so an alert opens at most once per budget and period, and a period roll resolves it.
+    - **One at a time:** exhausted supersedes warn for the same budget and period.
+    - **Every mode:** alerts are visibility only and are projected in every enforcement mode (including `off`) whenever a spend ledger exists. A USD-exhausted budget alerts even though at claim time it refuses only cost-reporting workers.
+    - **Evaluation:** in the stale-reaper sweep, up to 200 budgets per sweep (recently written first, then round-robin), cached on the broker. The projection does no store reads.
+    - **Failures:** a failed read keeps the previous alert state and counts in `checkFailed` (source `alert`).
+    - **Restart:** all budgets are evaluated once at startup, before the alert differ is seeded, so a restart does not re-open an alert that still holds.
+    - **No alert for `checkFailed` itself:** it is visible in status.
+
 ## Out of scope
 
 - Dashboard UI and spend charts.

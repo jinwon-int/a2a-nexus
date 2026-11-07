@@ -1101,7 +1101,13 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       // without spend reads). Both are bounded per sweep and never throw.
       broker.restageLostLateMeterings();
       broker.applyGoalBudgetLimits();
-      if (requeued.length > 0 || deadLettered.length > 0 || stalledWaves.length > 0) {
+      // #2499 slice 4: budget alerts are evaluated here (bounded per sweep,
+      // in every enforcement mode, never throws) and cached on the broker;
+      // the alert projection only reads that cache. A changed alert set
+      // publishes, so operator-alert-opened / -resolved go out through the
+      // existing differ.
+      const budgetAlerts = broker.evaluateBudgetAlerts();
+      if (requeued.length > 0 || deadLettered.length > 0 || stalledWaves.length > 0 || budgetAlerts?.changed) {
         publishOperatorEvents();
       }
       return requeued.length;

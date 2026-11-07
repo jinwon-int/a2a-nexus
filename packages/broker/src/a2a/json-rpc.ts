@@ -2,7 +2,7 @@ import { BrokerError, type InMemoryA2ABroker } from "../core/broker.js";
 import { PushNotificationConfigStore, PushConfigError, redactPushConfigSecrets } from "./push-notification-config.js";
 import { assertRequesterCanSubscribeToTask, type RequesterIdentity } from "../core/transport/request-security.js";
 import { isTerminalTaskStatus } from "../core/broker-status-predicates.js";
-import type { A2AExchangeVia, TaskListFilters, TaskRecord } from "../core/types.js";
+import type { A2AExchangeVia, CreateTaskRequest, TaskListFilters, TaskRecord } from "../core/types.js";
 import type { AgentCard, AgentCapabilities } from "./agent-card.js";
 import { PEER_STATUS_VERBOSE_SCOPE, PeerStatusService, type PeerStatusRequest } from "./peer-status.js";
 import {
@@ -975,17 +975,32 @@ export function executeSendMessage(
   // `pause` refusal for the task it would create, and, for a convention the
   // default agent claims inline, the claim refusal. In `shadow` nothing is
   // refused or counted here (the real create and claim count).
+  // #2499 slice 4: the pre-check and the create share one request builder,
+  // so they cannot diverge; only the exchange id (not created yet, and not
+  // a budget input) differs.
+  const buildTaskRequest = (exchangeId?: string): CreateTaskRequest => ({
+    ...(exchangeId !== undefined ? { exchangeId } : {}),
+    intent,
+    requester: actor,
+    target: {
+      id: targetWorker.nodeId,
+      kind: "node",
+      role: targetWorker.role,
+    },
+    assignedWorkerId: assignedWorker.nodeId,
+    message: text,
+    via,
+  });
   if (convention?.kind !== "direct-message") {
-    options.broker.assertCreateBudgetAllowed({
-      intent,
-      requester: actor,
-      target: { id: targetWorker.nodeId, kind: "node", role: targetWorker.role },
-      assignedWorkerId: assignedWorker.nodeId,
-      message: text,
-    });
+    options.broker.assertCreateBudgetAllowed(buildTaskRequest());
   }
   if (convention && convention.kind !== "direct-message") {
-    options.broker.assertClaimBudgetAllowed({ workerId: assignedWorker.nodeId, lane: intent });
+    const precheck = buildTaskRequest();
+    options.broker.assertClaimBudgetAllowed({
+      workerId: precheck.assignedWorkerId ?? assignedWorker.nodeId,
+      lane: precheck.intent,
+      goalId: precheck.goalId ?? null,
+    });
   }
 
   const exchange = options.broker.startExchange({
@@ -1012,19 +1027,7 @@ export function executeSendMessage(
     };
   }
 
-  const task = options.broker.createTask({
-    exchangeId: exchange.id,
-    intent,
-    requester: actor,
-    target: {
-      id: targetWorker.nodeId,
-      kind: "node",
-      role: targetWorker.role,
-    },
-    assignedWorkerId: assignedWorker.nodeId,
-    message: text,
-    via,
-  });
+  const task = options.broker.createTask(buildTaskRequest(exchange.id));
 
   if (convention?.kind === "complete-with-artifacts" || convention?.kind === "complete-with-message") {
     // The default agent's async drive loop may already have claimed/started
@@ -1078,18 +1081,29 @@ export function executeSendMessage(
  * path with reason `budget_exhausted` (so it gets its spend row and cannot
  * run later), and the send fails with -32012 naming the task and context in
  * the message and in the error data. Every other claim error propagates
- * unchanged, as before.
+ * unchanged, as before. #2499 slice 4: a cancel that throws does not
+ * replace the budget refusal: the send still fails with -32012 (naming the
+ * task's current status), and one `broker.budget.convention_cancel_failed`
+ * line (task id only) is logged.
  */
 function claimConventionTask(broker: InMemoryA2ABroker, taskId: string, workerId: string, contextId: string): void {
   try {
     broker.claimTask(taskId, workerId);
   } catch (error) {
     if (error instanceof BrokerError && error.code === "policy_denied" && error.details?.reason === "budget_exhausted") {
-      broker.cancelTask(taskId, { actor: { id: "broker", kind: "service", role: "hub" }, reason: "budget_exhausted" });
+      let canceled = true;
+      try {
+        broker.cancelTask(taskId, { actor: { id: "broker", kind: "service", role: "hub" }, reason: "budget_exhausted" });
+      } catch {
+        canceled = false;
+        console.warn(JSON.stringify({ event: "broker.budget.convention_cancel_failed", taskId }));
+      }
+      const taskStatus = canceled ? "canceled" : (broker.getTask(taskId)?.status ?? "unknown");
       throw new BrokerError(
         "policy_denied",
-        `budget_exhausted: claim of task ${taskId} (context ${contextId}) refused by a monthly budget; the task was canceled`,
-        { ...error.details, taskId, contextId, taskStatus: "canceled" },
+        `budget_exhausted: claim of task ${taskId} (context ${contextId}) refused by a monthly budget; `
+          + (canceled ? "the task was canceled" : `canceling the task failed (status ${taskStatus})`),
+        { ...error.details, taskId, contextId, taskStatus },
       );
     }
     throw error;

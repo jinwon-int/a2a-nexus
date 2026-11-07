@@ -288,5 +288,7 @@ export function buildAlertScan(input: {
     workerHeartbeatMissedAfterMs: input.workerHeartbeatMissedAfterMs,
     nowMs: input.nowMs,
     hotTableGrowth: input.hotTableGrowth,
+    // #2499 slice 4: the budget alert set cached by the stale-reaper sweep.
+    budgetAlerts: input.broker.getBudgetAlerts(),
   });
 }
