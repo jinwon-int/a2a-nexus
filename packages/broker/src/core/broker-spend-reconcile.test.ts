@@ -544,7 +544,7 @@ for (const wiring of ["hints", "repositories"] as const) {
 
       const startup = h.reopen();
       assert.deepEqual(spendEvents(startup, "broker.spend.reconciled"), [
-        { event: "broker.spend.reconciled", submitted: 3, unrepairable: 0 },
+        { event: "broker.spend.reconciled", submitted: 3, unrepairable: 0, passEnded: true },
       ]);
       // Rebuilt from the task records with the terminal-time builder: same rows
       // (agent, lane, period from completedAt, usage). The cancel's claimant is
@@ -585,7 +585,7 @@ test("G2: a failed save after the in-memory transition, then a later save of the
 
     const startup = h.reopen();
     assert.deepEqual(spendEvents(startup, "broker.spend.reconciled"), [
-      { event: "broker.spend.reconciled", submitted: 1, unrepairable: 0 },
+      { event: "broker.spend.reconciled", submitted: 1, unrepairable: 0, passEnded: true },
     ]);
     assert.equal(h.row("g2-lost")?.cost_usd, 0.7);
     assert.equal(h.broker.readSpendLedgerCoverage()?.missingSpendRows, 0);
@@ -624,7 +624,7 @@ test("G3: a pre-slice-2 terminal task row gets its row with period_key from comp
     try {
       const { events } = captureWarnings(() => new InMemoryA2ABroker(store, store.load()));
       assert.deepEqual(spendEvents(events, "broker.spend.reconciled"), [
-        { event: "broker.spend.reconciled", submitted: 1, unrepairable: 0 },
+        { event: "broker.spend.reconciled", submitted: 1, unrepairable: 0, passEnded: true },
       ]);
       const db = new DatabaseSync(dbFile);
       try {
@@ -644,7 +644,7 @@ test("G3: a pre-slice-2 terminal task row gets its row with period_key from comp
       third.upsertHotTasks([legacy("old-unloaded", "failed", "2026-03-02T00:00:00.000Z")]);
       const { events } = captureWarnings(() => new InMemoryA2ABroker(third, emptySnapshot()));
       assert.deepEqual(spendEvents(events, "broker.spend.reconciled"), [
-        { event: "broker.spend.reconciled", submitted: 0, unrepairable: 1 },
+        { event: "broker.spend.reconciled", submitted: 0, unrepairable: 1, passEnded: true },
       ]);
       assert.equal(third.countTerminalTasksMissingSpend(), 1);
     } finally {
@@ -715,7 +715,7 @@ test("reconcile pages past unrepairable ids, is non-fatal, and stops at maxPages
     });
     assert.equal(failing.result, undefined);
     assert.deepEqual(spendEvents(failing.events, "broker.spend.reconcile_failed"), [
-      { event: "broker.spend.reconcile_failed", submitted: 0, unrepairable: 0, error: "disk I/O error" },
+      { event: "broker.spend.reconcile_failed", submitted: 0, unrepairable: 0, error: "disk I/O error", suppressed: 0 },
     ]);
   } finally {
     h.close();
@@ -758,13 +758,13 @@ test("periodic reconcile: the cursor moves past a full page of unrepairable ids,
     // Sweep 2 continues after a-2 (it no longer re-reads the first page): a-3, a-4, z-real.
     assert.deepEqual(sweep(), {
       result: { submitted: 1, unrepairable: 2 },
-      logged: [{ event: "broker.spend.reconciled", submitted: 1, unrepairable: 2 }],
+      logged: [{ event: "broker.spend.reconciled", submitted: 1, unrepairable: 2, passEnded: false }],
     });
     assert.deepEqual(h.row("z-real"), metered, "repaired without a restart");
     // Sweep 3: an empty page ends the pass: the pass total (5) is new, so one line.
     assert.deepEqual(sweep(), {
       result: { submitted: 0, unrepairable: 0 },
-      logged: [{ event: "broker.spend.reconciled", submitted: 0, unrepairable: 5 }],
+      logged: [{ event: "broker.spend.reconciled", submitted: 0, unrepairable: 5, passEnded: true }],
     });
     // The next pass starts again from the first id; the same 5 log nothing.
     assert.deepEqual(sweep(), { result: { submitted: 0, unrepairable: 3 }, logged: [] });
@@ -775,7 +775,7 @@ test("periodic reconcile: the cursor moves past a full page of unrepairable ids,
     assert.equal(sweep().result?.submitted, 0, "a-0..a-2");
     assert.deepEqual(sweep(), {
       result: { submitted: 1, unrepairable: 2 },
-      logged: [{ event: "broker.spend.reconciled", submitted: 1, unrepairable: 2 }],
+      logged: [{ event: "broker.spend.reconciled", submitted: 1, unrepairable: 2, passEnded: false }],
     });
     assert.deepEqual(h.row("z-real"), metered);
 
@@ -990,7 +990,7 @@ test("ledger metadata: both keys commit in one transaction; a failed sync logs l
     assert.deepEqual(spendEvents(startup, "broker.spend.ledger_metadata_failed"), [
       { event: "broker.spend.ledger_metadata_failed", error: "database is locked" },
     ]);
-    assert.deepEqual(spendEvents(startup, "broker.spend.reconciled"), [{ event: "broker.spend.reconciled", submitted: 1, unrepairable: 0 }]);
+    assert.deepEqual(spendEvents(startup, "broker.spend.reconciled"), [{ event: "broker.spend.reconciled", submitted: 1, unrepairable: 0, passEnded: true }]);
     assert.ok(h.row("md-ok"));
     assert.deepEqual(h.broker.readSpendLedgerCoverage(), { firstPeriod: null, timeZone: null, missingSpendRows: 0 });
   } finally {

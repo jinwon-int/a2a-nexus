@@ -298,6 +298,29 @@ enforcement is `off`.
 14. **Slice 2 clarifications accepted:** `input_tokens` is uncached input plus
     cache-creation tokens; "not reported" is stored as `0`.
 
+### Budgets and enforcement mode (slice 3b, 2026-11-07)
+
+Proposed in the slice 3b-1 PR and accepted when the owner approves its merge.
+
+15. **USD limit at claim time: cost-reporting workers only.** A USD-exhausted scope refuses
+    a claim only from a worker that reported a known cost in the same period (one
+    `cost_known = 1` row with that `agent_id`). Workers whose runtime reports no cost are
+    never refused by a USD limit (Decision 4); a token-exhausted scope refuses any worker.
+    This uses the ledger instead of a static runtime table; a worker's first cost-reporting
+    task in a period can overshoot by that one task.
+16. **Mode setting and budget rows.** `A2A_BUDGET_ENFORCEMENT_MODE` = `off | shadow | on`,
+    default `off`, read at startup (a change needs a restart; an invalid value or a mode
+    other than `off` without a spend ledger refuses startup). One budget per scope and
+    period (unique index on `broker_budgets(scope_type, scope_id, period)`, added to the
+    v14 DDL, no version bump). A `pause` budget acts at create time only and never refuses
+    a claim. `warn` stays true once a limit is exhausted. Budget rows expose `createdAt`
+    only; changes are in the `budget.updated` audit events.
+17. **Routes.** `POST /budgets`, `PATCH /budgets/:id` (limits, `warnPct`, `enforce`; at least
+    one limit stays set) and `GET /budgets`, with the goal routes' auth (writes hub/operator,
+    reads the observer set). `GET /budgets/status` adds `enforcement` (configured and
+    effective mode, reason), per-budget usage, `topRows` for a named scope, and
+    `checkFailed` (served from memory, also when the ledger read fails).
+
 ## Out of scope
 
 - Dashboard UI and spend charts.

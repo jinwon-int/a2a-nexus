@@ -25,6 +25,10 @@ import { evaluateTaskReadiness, type TaskReadinessMode } from "../../task-readin
 import type {
   AuditAction,
   AuditEvent,
+  BudgetEnforcementMode,
+  BudgetEvaluation,
+  BudgetRecord,
+  BudgetScopeType,
   ChangeProposal,
   CreateTaskRequest,
   TaskRecord,
@@ -490,4 +494,124 @@ export function assertTaskWorker(task: TaskRecord, workerId: string, action: str
       `${action} requires the worker that claimed the task`,
     );
   }
+}
+
+// --- Budget evaluation (#2499 slice 3b) ---------------------------------------
+// Pure decision functions over a budget and its period spend. The broker
+// reads the spend (one indexed aggregate per scope) and calls these; slice 3b
+// computes and reports the decisions only. The claim-time refusal, the
+// queued-listing filter and the create-time `pause` refusal call them in a
+// later slice; nothing here throws or refuses.
+
+/** Limits reached by a scope's period spend. `warn` also holds once a limit is exhausted. */
+export function evaluateBudgetUsage(
+  budget: BudgetRecord,
+  usage: { usdSpent: number; tokensSpent: bigint },
+  periodKey: string,
+): BudgetEvaluation {
+  const usdExhausted = budget.limitUsd !== null && usage.usdSpent >= budget.limitUsd;
+  const tokensExhausted = budget.limitTokens !== null && usage.tokensSpent >= BigInt(budget.limitTokens);
+  // Percent comparisons without division; tokens stay exact BigInt.
+  const usdWarn = budget.limitUsd !== null && usage.usdSpent * 100 >= budget.limitUsd * budget.warnPct;
+  const tokensWarn = budget.limitTokens !== null
+    && usage.tokensSpent * 100n >= BigInt(budget.limitTokens) * BigInt(budget.warnPct);
+  return {
+    budget,
+    periodKey,
+    usdSpent: usage.usdSpent,
+    tokensSpent: usage.tokensSpent,
+    usdExhausted,
+    tokensExhausted,
+    warn: usdWarn || tokensWarn,
+  };
+}
+
+export type BudgetEnforcementReason = "mode_off" | "mode_shadow" | "mode_on" | "period_incomplete";
+
+export interface BudgetEnforcementState {
+  configuredMode: BudgetEnforcementMode;
+  effectiveMode: BudgetEnforcementMode;
+  reason: BudgetEnforcementReason;
+}
+
+/**
+ * Spec decision 9: a configured `on` runs as `shadow` for any period the
+ * ledger does not fully cover (`periodComplete` false: the deploy month, or
+ * unknown coverage). `off` and `shadow` are taken as configured.
+ */
+export function resolveEffectiveBudgetEnforcement(
+  configuredMode: BudgetEnforcementMode,
+  periodComplete: boolean,
+): BudgetEnforcementState {
+  if (configuredMode === "off") return { configuredMode, effectiveMode: "off", reason: "mode_off" };
+  if (configuredMode === "shadow") return { configuredMode, effectiveMode: "shadow", reason: "mode_shadow" };
+  return periodComplete
+    ? { configuredMode, effectiveMode: "on", reason: "mode_on" }
+    : { configuredMode, effectiveMode: "shadow", reason: "period_incomplete" };
+}
+
+export type ClaimBudgetReason =
+  | "within_limit"
+  | "tokens_exhausted"
+  | "usd_exhausted"
+  | "usd_exhausted_cost_unknown_worker"
+  | "enforce_pause";
+
+export interface ClaimBudgetScopeDecision {
+  budgetId: string;
+  scopeType: BudgetScopeType;
+  scopeId: string;
+  enforce: BudgetRecord["enforce"];
+  usdExhausted: boolean;
+  tokensExhausted: boolean;
+  warn: boolean;
+  /** Whether this scope would refuse the claim (in mode `on`; `shadow` only reports it). */
+  refuse: boolean;
+  reason: ClaimBudgetReason;
+}
+
+/**
+ * Claim-time decision for one scope's budget:
+ * - a token-exhausted scope refuses any worker;
+ * - a USD-exhausted scope refuses only a worker that reports cost in this
+ *   period (Decision 4: unknown-cost runtimes are never refused by a USD
+ *   limit; they stay governed by the token limit). `workerReportsCost` is
+ *   called at most once, and only when the answer matters;
+ * - a `pause` budget acts at create time, not at claim (spec "Enforcement
+ *   points"), so it never refuses here.
+ */
+export function decideClaimBudgetScope(
+  evaluation: BudgetEvaluation,
+  workerReportsCost: () => boolean,
+): ClaimBudgetScopeDecision {
+  const { budget } = evaluation;
+  const base = {
+    budgetId: budget.id,
+    scopeType: budget.scopeType,
+    scopeId: budget.scopeId,
+    enforce: budget.enforce,
+    usdExhausted: evaluation.usdExhausted,
+    tokensExhausted: evaluation.tokensExhausted,
+    warn: evaluation.warn,
+  };
+  if (!evaluation.usdExhausted && !evaluation.tokensExhausted) return { ...base, refuse: false, reason: "within_limit" };
+  if (budget.enforce === "pause") return { ...base, refuse: false, reason: "enforce_pause" };
+  if (evaluation.tokensExhausted) return { ...base, refuse: true, reason: "tokens_exhausted" };
+  return workerReportsCost()
+    ? { ...base, refuse: true, reason: "usd_exhausted" }
+    : { ...base, refuse: false, reason: "usd_exhausted_cost_unknown_worker" };
+}
+
+/** The claim-time budget decision across a task's scopes (InMemoryA2ABroker.evaluateClaimBudget). */
+export interface ClaimBudgetEvaluation {
+  periodKey: string;
+  enforcement: BudgetEnforcementState;
+  /** A budget read failed: no decision, the claim proceeds (fail-open, decision 13). */
+  checkFailed: boolean;
+  /** One entry per scope that has a month budget. */
+  scopes: ClaimBudgetScopeDecision[];
+  /** Some scope would refuse the claim (what `shadow` reports). */
+  wouldRefuse: boolean;
+  /** `wouldRefuse` in effective mode `on`: the claim is to be refused. */
+  refuse: boolean;
 }

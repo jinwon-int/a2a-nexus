@@ -25,7 +25,7 @@ import {
   type FinalizerVerdictEnforcement,
 } from "./finalizer-verdict-admission.js";
 import { isRecord } from "../value-guards.js";
-import { budgetPeriodKey, SPEND_MAX_COST_USD, SPEND_MAX_TOKENS } from "../store-schemas.js";
+import { budgetPeriodKey, SPEND_MAX_COST_USD, SPEND_MAX_TOKENS, SPEND_NEAR_CAP_FRACTION } from "../store-schemas.js";
 import type { FinalizerKeyring } from "a2a-attestation";
 import type { TaskUpdateReason } from "../broker-contracts.js";
 import type {
@@ -571,6 +571,33 @@ export interface TaskSpendEventBuild {
    * one). The reason code of the first malformed carrier; never a value.
    */
   fallback?: string;
+  /**
+   * #2499 slice 3b: per-task usage fields at or above SPEND_NEAR_CAP_FRACTION
+   * of their cap (`costUsd`, `inputTokens`, `outputTokens`); field names only.
+   */
+  nearCap?: string[];
+  /**
+   * #2499 slice 3b: a reconciled canceled row's late-evidence diagnostics
+   * (buildReconciledSpendEvent only), logged with `late: true, reconciled: true`.
+   */
+  late?: { malformed?: string; fallback?: string };
+}
+
+/**
+ * #2499 slice 3b (outliers): the usage fields of a row at or above
+ * SPEND_NEAR_CAP_FRACTION of the per-task caps. A cost counts only when known.
+ */
+export function spendNearCapFields(usage: {
+  costUsd: number;
+  costKnown: boolean;
+  inputTokens: number;
+  outputTokens: number;
+}): string[] {
+  const fields: string[] = [];
+  if (usage.costKnown && usage.costUsd >= SPEND_NEAR_CAP_FRACTION * SPEND_MAX_COST_USD) fields.push("costUsd");
+  if (usage.inputTokens >= SPEND_NEAR_CAP_FRACTION * SPEND_MAX_TOKENS) fields.push("inputTokens");
+  if (usage.outputTokens >= SPEND_NEAR_CAP_FRACTION * SPEND_MAX_TOKENS) fields.push("outputTokens");
+  return fields;
 }
 
 /** The task fields `executionTelemetry` can travel on. */
@@ -706,18 +733,29 @@ export function buildTaskSpendEvent(
   // canceled task prefers the cancel time explicitly (#2499 slice 3a) so a
   // row rebuilt by the reconciliation can never move into the period of a
   // late post, even for a record missing `completedAt`.
-  const candidate = (task.status === "canceled" ? task.cancellation?.requestedAt : undefined)
-    ?? task.completedAt
-    ?? task.updatedAt;
-  const recordedAt = typeof candidate === "string" && !Number.isNaN(Date.parse(candidate))
-    ? candidate
-    : (options.now ?? isoNow)();
+  // #2499 slice 3b: the first candidate Date.parse accepts wins, so an
+  // unparseable cancel time falls through to completedAt, then updatedAt,
+  // instead of straight to now().
+  const candidates: unknown[] = [
+    task.status === "canceled" ? task.cancellation?.requestedAt : undefined,
+    task.completedAt,
+    task.updatedAt,
+  ];
+  const recordedAt = candidates.find(
+    (candidate): candidate is string => typeof candidate === "string" && !Number.isNaN(Date.parse(candidate)),
+  ) ?? (options.now ?? isoNow)();
   const { usage, malformed, fallback } = resolveSpendUsage(spendTelemetryCandidates(
     { result: task.result, error: task.error, negativeVerdictResult: task.negativeVerdictEvidence?.result },
     task.status === "failed",
   ));
   const costKnown = usage?.costUsd !== undefined;
   const nonEmpty = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
+  const nearCap = spendNearCapFields({
+    costUsd: usage?.costUsd ?? 0,
+    costKnown,
+    inputTokens: usage?.inputTokens ?? 0,
+    outputTokens: usage?.outputTokens ?? 0,
+  });
   return {
     event: {
       taskId: task.id,
@@ -733,6 +771,7 @@ export function buildTaskSpendEvent(
     },
     ...(malformed ? { malformed } : {}),
     ...(fallback ? { fallback } : {}),
+    ...(nearCap.length > 0 ? { nearCap } : {}),
   };
 }
 
@@ -742,6 +781,8 @@ export interface LateSpendMeteringBuild {
   /** Late telemetry was present but no carrier parsed (reason code only). */
   malformed?: string;
   fallback?: string;
+  /** #2499 slice 3b: see TaskSpendEventBuild.nearCap. */
+  nearCap?: string[];
 }
 
 /**
@@ -762,16 +803,19 @@ export function buildLateSpendMetering(task: TaskRecord): LateSpendMeteringBuild
   );
   if (!usage) return malformed ? { malformed } : {};
   const costKnown = usage.costUsd !== undefined;
+  const metering: SpendLateMeteringRecord = {
+    taskId: task.id,
+    agentId: late.submittedBy,
+    costUsd: costKnown ? usage.costUsd! : 0,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    costKnown,
+  };
+  const nearCap = spendNearCapFields(metering);
   return {
-    metering: {
-      taskId: task.id,
-      agentId: late.submittedBy,
-      costUsd: costKnown ? usage.costUsd! : 0,
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-      costKnown,
-    },
+    metering,
     ...(fallback ? { fallback } : {}),
+    ...(nearCap.length > 0 ? { nearCap } : {}),
   };
 }
 
@@ -790,8 +834,18 @@ export function buildReconciledSpendEvent(task: TaskRecord, options: { timeZone:
   }
   const lateBuild = buildLateSpendMetering(task);
   const late = lateBuild.metering;
-  if (!late || late.agentId !== event.agentId) return built;
+  // #2499 slice 3b: the late diagnostics travel separately (`late`), so the
+  // reconciled cancel logs them as the live late path would (`late: true`),
+  // including a late `malformed` that left the row unmetered.
+  const lateDiagnostics = {
+    ...(lateBuild.malformed ? { malformed: lateBuild.malformed } : {}),
+    ...(lateBuild.fallback && late && late.agentId === event.agentId ? { fallback: lateBuild.fallback } : {}),
+  };
+  const withLate = Object.keys(lateDiagnostics).length > 0 ? { late: lateDiagnostics } : {};
+  if (!late || late.agentId !== event.agentId) return { ...built, ...withLate };
+  const { nearCap: _baseNearCap, ...base } = built;
   return {
+    ...base,
     event: {
       ...event,
       costUsd: late.costUsd,
@@ -799,6 +853,7 @@ export function buildReconciledSpendEvent(task: TaskRecord, options: { timeZone:
       outputTokens: late.outputTokens,
       costKnown: late.costKnown,
     },
-    ...(lateBuild.fallback ? { fallback: lateBuild.fallback } : {}),
+    ...(lateBuild.nearCap ? { nearCap: lateBuild.nearCap } : {}),
+    ...withLate,
   };
 }

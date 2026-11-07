@@ -12,12 +12,15 @@ import type {
   A2AExchangeMessageRecord,
   A2AExchangeState,
   ChangeProposal,
+  BudgetListFilters,
+  BudgetRecord,
   BudgetScopeType,
   GoalListFilters,
   GoalRecord,
   SpendEventRecord,
   SpendLateMeteringRecord,
   SpendScopeTotals,
+  SpendTopRow,
   SpendTotals,
   SpendTotalsQuery,
   SpendTotalsResult,
@@ -1427,6 +1430,169 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   /**
+   * #2499 slice 3b: one scope's spend in a period, the budget evaluator's
+   * read. One indexed aggregate (`(period_key, agent_id|lane|goal_id)`);
+   * USD over `cost_known` rows only (Decision 4), tokens as exact BigInt.
+   */
+  readSpendScopeUsage(query: { periodKey: string; scopeType: BudgetScopeType; scopeId: string }): {
+    usdSpent: number;
+    tokensSpent: bigint;
+  } {
+    const column = SPEND_SCOPE_COLUMNS[query.scopeType];
+    const statement = this.stmt(
+      `SELECT TOTAL(CASE WHEN cost_known = 1 THEN cost_usd ELSE 0 END) AS usd,
+              COALESCE(SUM(input_tokens), 0) + COALESCE(SUM(output_tokens), 0) AS tokens
+         FROM broker_spend_events WHERE period_key = ? AND ${column} = ?`,
+    );
+    statement.setReadBigInts(true);
+    const row = statement.get(query.periodKey, query.scopeId) as Record<string, unknown> | undefined;
+    return {
+      usdSpent: Math.round(sqliteNumber(row?.usd) * 1e6) / 1e6,
+      tokensSpent: sqliteBigInt(row?.tokens),
+    };
+  }
+
+  /**
+   * #2499 slice 3b (Decision 4): whether `agentId` has at least one
+   * `cost_known` row in the period, i.e. runs a cost-reporting runtime. One
+   * probe over the `(period_key, agent_id)` index.
+   */
+  hasCostReportingSpend(query: { periodKey: string; agentId: string }): boolean {
+    const row = this
+      .stmt("SELECT 1 AS hit FROM broker_spend_events WHERE period_key = ? AND agent_id = ? AND cost_known = 1 LIMIT 1")
+      .get(query.periodKey, query.agentId);
+    return row !== undefined;
+  }
+
+  /**
+   * #2499 slice 3b (outliers): the `limit` largest rows of one scope in a
+   * period, by cost (`cost_known` rows only) or by input + output tokens.
+   * The `(period_key, <scope>)` index selects the scope's rows; the order is
+   * a sort over those rows only (no index on cost or tokens: no new DDL).
+   */
+  listTopSpendRows(query: {
+    periodKey: string;
+    scopeType: BudgetScopeType;
+    scopeId: string;
+    by: "cost" | "tokens";
+    limit: number;
+  }): SpendTopRow[] {
+    const column = SPEND_SCOPE_COLUMNS[query.scopeType];
+    const limit = Math.max(1, Math.min(Math.floor(query.limit), 100));
+    const sql = query.by === "cost"
+      ? `SELECT task_id, agent_id, lane, goal_id, cost_usd, cost_known, input_tokens + output_tokens AS tokens, recorded_at
+           FROM broker_spend_events WHERE period_key = ? AND ${column} = ? AND cost_known = 1
+          ORDER BY cost_usd DESC, task_id ASC LIMIT ?`
+      : `SELECT task_id, agent_id, lane, goal_id, cost_usd, cost_known, input_tokens + output_tokens AS tokens, recorded_at
+           FROM broker_spend_events WHERE period_key = ? AND ${column} = ?
+          ORDER BY tokens DESC, task_id ASC LIMIT ?`;
+    const rows = this.stmt(sql).all(query.periodKey, query.scopeId, limit) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      taskId: String(row.task_id),
+      agentId: row.agent_id === null ? null : String(row.agent_id),
+      lane: row.lane === null ? null : String(row.lane),
+      goalId: row.goal_id === null ? null : String(row.goal_id),
+      costUsd: sqliteNumber(row.cost_usd),
+      costKnown: sqliteNumber(row.cost_known) === 1,
+      tokens: sqliteNumber(row.tokens),
+      recordedAt: String(row.recorded_at),
+    }));
+  }
+
+  /**
+   * Budget persistence (#2499 slice 3b). Create-only and one budget per
+   * (scope_type, scope_id, period): both are checked first, inside one
+   * transaction with the insert, so the 409 names the conflict; the primary
+   * key and `broker_budgets_scope_unique_idx` back the checks. The base-class
+   * runBatch is called directly (like syncSpendLedgerMetadata): in process it
+   * joins the caller's open commitMutation transaction; on the worker-thread
+   * topology (whose runBatch is a plain call) it is one short main-connection
+   * transaction, so the row is durable when this returns, like insertGoal.
+   */
+  insertBudget(budget: BudgetRecord): void {
+    SqliteBrokerStateStore.prototype.runBatch.call(this, () => {
+      if (this.stmt("SELECT 1 AS hit FROM broker_budgets WHERE id = ?").get(budget.id)) {
+        throw new BrokerError("invalid_transition", `budget '${budget.id}' already exists`, { budgetId: budget.id });
+      }
+      const existing = this.findBudgetByScope(budget.scopeType, budget.scopeId, budget.period);
+      if (existing) {
+        throw new BrokerError(
+          "invalid_transition",
+          `a ${budget.period} budget for ${budget.scopeType} '${budget.scopeId}' already exists`,
+          { budgetId: existing.id, scopeType: budget.scopeType, scopeId: budget.scopeId, period: budget.period },
+        );
+      }
+      const result = this
+        .stmt(
+          `INSERT INTO broker_budgets
+             (id, scope_type, scope_id, period, limit_usd, limit_tokens, warn_pct, enforce, created_by, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT DO NOTHING`,
+        )
+        .run(
+          budget.id,
+          budget.scopeType,
+          budget.scopeId,
+          budget.period,
+          budget.limitUsd,
+          budget.limitTokens,
+          budget.warnPct,
+          budget.enforce,
+          budget.createdBy,
+          budget.createdAt,
+        );
+      if (Number(result.changes) !== 1) {
+        throw new BrokerError("invalid_transition", `budget '${budget.id}' conflicts with an existing budget`, { budgetId: budget.id });
+      }
+    });
+  }
+
+  /**
+   * Update the mutable fields of one budget (limits, warn_pct, enforce);
+   * scope, period and creator never change. The table CHECK keeps at least
+   * one limit (the broker validates first). False when the id is unknown.
+   */
+  updateBudget(budget: BudgetRecord): boolean {
+    let changed = false;
+    SqliteBrokerStateStore.prototype.runBatch.call(this, () => {
+      const result = this
+        .stmt("UPDATE broker_budgets SET limit_usd = ?, limit_tokens = ?, warn_pct = ?, enforce = ? WHERE id = ?")
+        .run(budget.limitUsd, budget.limitTokens, budget.warnPct, budget.enforce, budget.id);
+      changed = Number(result.changes) === 1;
+    });
+    return changed;
+  }
+
+  readBudget(id: string): BudgetRecord | undefined {
+    const row = this.stmt(`SELECT ${BUDGET_COLUMNS} FROM broker_budgets WHERE id = ?`).get(id);
+    return row ? budgetFromRow(row as Record<string, unknown>) : undefined;
+  }
+
+  /** Over `broker_budgets_scope_unique_idx`. */
+  findBudgetByScope(scopeType: BudgetScopeType, scopeId: string, period: BudgetRecord["period"]): BudgetRecord | undefined {
+    const row = this
+      .stmt(`SELECT ${BUDGET_COLUMNS} FROM broker_budgets WHERE scope_type = ? AND scope_id = ? AND period = ?`)
+      .get(scopeType, scopeId, period);
+    return row ? budgetFromRow(row as Record<string, unknown>) : undefined;
+  }
+
+  /** Ordered by scope (type, id), period, id; bounded like the other hot reads. */
+  listBudgets(filters: BudgetListFilters = {}): BudgetRecord[] {
+    const limit = normalizeBoundedSqliteLimit(filters.limit);
+    const order = "ORDER BY scope_type ASC, scope_id ASC, period ASC, id ASC LIMIT ?";
+    const rows = filters.scopeType !== undefined && filters.scopeId !== undefined
+      ? this
+        .stmt(`SELECT ${BUDGET_COLUMNS} FROM broker_budgets WHERE scope_type = ? AND scope_id = ? ${order}`)
+        .all(filters.scopeType, filters.scopeId, limit)
+      : filters.scopeType !== undefined
+        ? this.stmt(`SELECT ${BUDGET_COLUMNS} FROM broker_budgets WHERE scope_type = ? ${order}`).all(filters.scopeType, limit)
+        : filters.scopeId !== undefined
+          ? this.stmt(`SELECT ${BUDGET_COLUMNS} FROM broker_budgets WHERE scope_id = ? ${order}`).all(filters.scopeId, limit)
+          : this.stmt(`SELECT ${BUDGET_COLUMNS} FROM broker_budgets ${order}`).all(limit);
+    return rows.map((row) => budgetFromRow(row as Record<string, unknown>));
+  }
+
+  /**
    * #1504 §4: fail-closed startup checks over the EXISTING database, run before
    * `initializeDatabase` can create or rewrite anything. Reads the version
    * markers and the last durable write only when the metadata table already
@@ -1646,6 +1812,12 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
         CHECK (limit_usd IS NOT NULL OR limit_tokens IS NOT NULL)
       );
       CREATE INDEX IF NOT EXISTS broker_budgets_scope_idx
+        ON broker_budgets(scope_type, scope_id, period);
+      -- #2499 slice 3b: one budget per (scope_type, scope_id, period). Index
+      -- only, no schema version bump: this DDL runs on every start, so a v14
+      -- store created before slice 3b gains it on its next start (the table
+      -- had no writer before slice 3b, so no duplicate row can block it).
+      CREATE UNIQUE INDEX IF NOT EXISTS broker_budgets_scope_unique_idx
         ON broker_budgets(scope_type, scope_id, period);
       -- Spend ledger (table only in slice 1). One row per task, keyed by
       -- task_id so a replayed terminal transition can never count twice.
@@ -2641,6 +2813,25 @@ const SPEND_SCOPE_COLUMNS: Record<BudgetScopeType, "agent_id" | "lane" | "goal_i
   lane: "lane",
   goal: "goal_id",
 };
+
+/** `broker_budgets` columns read into a BudgetRecord (#2499 slice 3b). */
+const BUDGET_COLUMNS = "id, scope_type, scope_id, period, limit_usd, limit_tokens, warn_pct, enforce, created_by, created_at";
+
+function budgetFromRow(row: Record<string, unknown>): BudgetRecord {
+  const nullableNumber = (value: unknown): number | null => (value === null || value === undefined ? null : sqliteNumber(value));
+  return {
+    id: String(row.id),
+    scopeType: String(row.scope_type) as BudgetScopeType,
+    scopeId: String(row.scope_id),
+    period: String(row.period) as BudgetRecord["period"],
+    limitUsd: nullableNumber(row.limit_usd),
+    limitTokens: nullableNumber(row.limit_tokens),
+    warnPct: sqliteNumber(row.warn_pct),
+    enforce: String(row.enforce) as BudgetRecord["enforce"],
+    createdBy: String(row.created_by),
+    createdAt: String(row.created_at),
+  };
+}
 
 function sqliteNumber(value: unknown): number {
   if (typeof value === "bigint") return Number(value);

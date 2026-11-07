@@ -132,6 +132,8 @@ export function auditFiltersFromUrl(url: URL): AuditReadPathFilters {
       "worker.registered",
       "worker.heartbeat",
       "goal.created",
+      "budget.created",
+      "budget.updated",
     ] as AuditAction[]),
   };
 }

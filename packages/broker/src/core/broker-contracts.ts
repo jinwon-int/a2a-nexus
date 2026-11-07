@@ -267,6 +267,14 @@ export interface InMemoryA2ABrokerOptions {
    * A2A_BUDGET_PERIOD_TIME_ZONE.
    */
   budgetPeriodTimeZone?: string;
+  /**
+   * #2499 slice 3b: budget enforcement mode `off | shadow | on`, default
+   * `off`. Read once at construction (a change applies on restart); an
+   * invalid value throws, and a mode other than `off` on a store without a
+   * spend ledger throws (spec decision 13). The server resolves it from
+   * A2A_BUDGET_ENFORCEMENT_MODE.
+   */
+  budgetEnforcementMode?: string;
   /** Optional lightweight profiling hook for broker internals. Listener errors are ignored. */
   profilingListener?: BrokerProfilingListener;
   /**

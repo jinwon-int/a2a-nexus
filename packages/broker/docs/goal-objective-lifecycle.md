@@ -93,9 +93,9 @@ The shipped `GET /goals/:id` returns `{ goal, linkedTasks: { total, byStatus } }
 
 `GET /goals` lists goals newest first (`?status=`, `?limit=`). The `children` / `summary` shape and the history route above remain a sketch.
 
-## Spend ledger and budget status (#2499 slices 2 and 3a)
+## Spend ledger and budget status (#2499 slices 2, 3a and 3b)
 
-Slices 2 and 3a record spend; they do not enforce anything. No claim or create is refused, no listing is filtered and no alert is raised because of spend.
+Slices 2 and 3a record spend. Slice 3b adds budgets, the enforcement mode setting and the budget evaluator (see [Budgets](#budgets-2499-slice-3b)); in this slice the evaluator only reports. No claim or create is refused, no listing is filtered and no alert is raised because of spend.
 
 ### Ledger rows
 
@@ -103,7 +103,7 @@ Every terminal transition writes one `broker_spend_events` row keyed by `task_id
 
 | column | value |
 | --- | --- |
-| `recorded_at` | terminal transition time (`completedAt`, else `updatedAt`; for a canceled task the cancel time `cancellation.requestedAt` first, so a late post never moves the row) |
+| `recorded_at` | terminal transition time: the first of `cancellation.requestedAt` (canceled tasks only, so a late post never moves the row), `completedAt`, `updatedAt` that parses as a timestamp, else the current time (slice 3b: an unparseable earlier candidate falls through to the next one) |
 | `period_key` | `YYYY-MM` of `recorded_at` in the budget period time zone |
 | `agent_id` | `claimedBy` (the worker that completed or failed the task), else the worker that held the claim when a cancel cleared `claimedBy`, else `assignedWorkerId`, else NULL (counted in the period total, in no agent scope) |
 | `lane` | the task `intent` (`analyze`, `propose_patch`, …): the closed lane vocabulary the broker already indexes, known before claim |
@@ -112,7 +112,7 @@ Every terminal transition writes one `broker_spend_events` row keyed by `task_id
 | `input_tokens` | `inputTokens + cacheCreationInputTokens` (cache-read tokens are not counted) |
 | `output_tokens` | `outputTokens` |
 
-Usage is read from `executionTelemetry` (schema `a2a.analysis-execution-telemetry.v1`) on `result.output`, on `error.details.bridgeFailure`, on the same nested under `error.details.nestedError.details` (a wrapped handler exit), or on a preserved negative review verdict. Carrier order: a failed task tries bridgeFailure, nested bridgeFailure, `result.output`, then the negative-verdict output; every other status tries `result.output`, the negative-verdict output, bridgeFailure, then nested bridgeFailure. The first carrier whose telemetry is valid wins; a malformed carrier falls through to the next. This data is unsigned and worker-reported. Every number must be a finite, non-negative number, with `costUsd` at most 1e6 and each token count at most 1e12. A wrong schema version, a non-object or any invalid field makes that carrier's telemetry malformed. When no present carrier is valid, the row is recorded unmetered and one `broker.spend.telemetry_malformed` warning (task id, status, the top carrier's reason code, no values) is logged. When a higher-precedence carrier is malformed and a later one is valid, the row is metered from the later one and one `broker.spend.telemetry_fallback` warning (task id, status, the malformed carrier's reason code, no values) is logged (slice 3a). Telemetry never makes a terminal transition fail.
+Usage is read from `executionTelemetry` (schema `a2a.analysis-execution-telemetry.v1`) on `result.output`, on `error.details.bridgeFailure`, on the same nested under `error.details.nestedError.details` (a wrapped handler exit), or on a preserved negative review verdict. Carrier order: a failed task tries bridgeFailure, nested bridgeFailure, `result.output`, then the negative-verdict output; every other status tries `result.output`, the negative-verdict output, bridgeFailure, then nested bridgeFailure. The first carrier whose telemetry is valid wins; a malformed carrier falls through to the next. This data is unsigned and worker-reported. Every number must be a finite, non-negative number, with `costUsd` at most 1e6 and each token count at most 1e12. A wrong schema version, a non-object or any invalid field makes that carrier's telemetry malformed. When no present carrier is valid, the row is recorded unmetered and one `broker.spend.telemetry_malformed` warning (task id, status, the top carrier's reason code, no values) is logged. When a higher-precedence carrier is malformed and a later one is valid, the row is metered from the later one and one `broker.spend.telemetry_fallback` warning (task id, status, the malformed carrier's reason code, no values) is logged (slice 3a). A row whose `costUsd` is at least half its cap (5e5) or whose input or output token count is at least half its cap (5e11) logs one `broker.spend.near_cap` line per field (task id and field name, no values; slice 3b), at terminal time, on a late metering (`late: true`) and when reconciled (`reconciled: true`). Telemetry never makes a terminal transition fail.
 
 The ledger columns are `NOT NULL DEFAULT 0` (schema 14), so "not reported" is stored as 0, not NULL. A row with `cost_known = 0` and zero tokens is **unmetered** (Codex, Hermes, patch lanes, Piri without a usage marker, cancellations). Rows that report tokens but no cost (Danso) are cost-unknown but not unmetered.
 
@@ -140,9 +140,9 @@ So the update applies only to a row that is still unmetered. It applies only onc
 
 ### Reconciliation (slice 3a)
 
-One create-only mechanism repairs lost rows (a dropped staged row) and backfills terminal tasks from before slice 2 that are still in the hot task table. It looks for `broker_tasks` rows with status `succeeded`, `failed` or `canceled` that have no `broker_spend_events` row. The lookup is a `LEFT JOIN` on `task_id`, paged by id 200 at a time, and reads only the id and status columns, never `payload`. Each row is built from the in-memory task record with the terminal-time builder, so `period_key` comes from the terminal time as usual (for a canceled task, the cancel time, even when late evidence arrived in a later month). Telemetry diagnostics are logged per rebuilt row like terminal-time rows (`broker.spend.telemetry_malformed` / `broker.spend.telemetry_fallback`, with `reconciled: true`). A canceled task's claimant is not kept on the record, so a rebuilt cancel row is attributed to the assignee. The rows are inserted with `ON CONFLICT(task_id) DO NOTHING` through the store's hints transaction (`saveHotEntities`; the queued write on the worker-thread topology). Ids with no terminal record in memory (for example, rows past the runtime hydration cap) are counted as `unrepairable` and left alone. They are pruned from the hot table at the next full save. Non-terminal tasks never get rows.
+One create-only mechanism repairs lost rows (a dropped staged row) and backfills terminal tasks from before slice 2 that are still in the hot task table. It looks for `broker_tasks` rows with status `succeeded`, `failed` or `canceled` that have no `broker_spend_events` row. The lookup is a `LEFT JOIN` on `task_id`, paged by id 200 at a time, and reads only the id and status columns, never `payload`. Each row is built from the in-memory task record with the terminal-time builder, so `period_key` comes from the terminal time as usual (for a canceled task, the cancel time, even when late evidence arrived in a later month). Telemetry diagnostics are logged per rebuilt row like terminal-time rows (`broker.spend.telemetry_malformed` / `broker.spend.telemetry_fallback` / `broker.spend.near_cap`, with `reconciled: true`), after the page's write was submitted, so a page that fails and is retried later does not log twice (slice 3b). A rebuilt cancel whose late evidence was malformed logs that line with `late: true, reconciled: true`. A canceled task's claimant is not kept on the record, so a rebuilt cancel row is attributed to the assignee. The rows are inserted with `ON CONFLICT(task_id) DO NOTHING` through the store's hints transaction (`saveHotEntities`; the queued write on the worker-thread topology). Ids with no terminal record in memory (for example, rows past the runtime hydration cap) are counted as `unrepairable` and left alone. They are pruned from the hot table at the next full save. Non-terminal tasks never get rows.
 
-The reconciliation runs once at broker startup, after the state load, walking every page from the first id. It then runs once per in-process stale-reaper sweep (`STALE_REAPER_INTERVAL_SEC`), one page per sweep. The sweeps keep a cursor: each continues after the last id the previous sweep read, so a full page of unrepairable ids sorting first cannot pin the sweep to the same page. A page shorter than the page size ends the pass, and the next sweep starts again from the first id. It never fails startup or the sweep: a throw logs `broker.spend.reconcile_failed`, and the next sweep retries the same page. It logs one `broker.spend.reconciled` line (`submitted`, `unrepairable`) when rows were submitted, or when a pass ends with a different unrepairable total from the last one logged. A stable set of unrepairable ids is therefore logged once per broker process, not on every sweep, and a restart that finds every row present logs nothing. `submitted` counts rows submitted for insert. In process, a failed insert throws into `reconcile_failed`. On the worker-thread topology the insert is a queued write: a rejection is logged by the persistence queue (`[worker-thread-persistence] background write failed`) and the row stays missing, so a later sweep submits it again. A row inserted concurrently is never duplicated.
+The reconciliation runs once at broker startup, after the state load, walking every page from the first id. It then runs once per in-process stale-reaper sweep (`STALE_REAPER_INTERVAL_SEC`), one page per sweep. The sweeps keep a cursor: each continues after the last id the previous sweep read, so a full page of unrepairable ids sorting first cannot pin the sweep to the same page. A page shorter than the page size ends the pass, and the next sweep starts again from the first id. It never fails startup or the sweep: a throw logs `broker.spend.reconcile_failed` (`submitted`, `unrepairable` of the pages completed before the throw, the error message, and `suppressed`: at most one line per 60 s, `suppressed` counting the lines dropped since the last one), and the next sweep retries the same page. Slice 3b: when the same page (same start cursor, page ids known) fails on 3 consecutive periodic sweeps, the cursor moves past it with one `broker.spend.reconcile_page_skipped` line (`firstId`, `lastId`, `ids`, `failures`), so a deterministic failure cannot pin the sweep forever; the next pass tries those ids again. A failure of the listing itself has no page to skip and keeps the cursor. When a periodic run that read several pages throws on a later one, the unrepairable count of the earlier pages stays in the pass total. It logs one `broker.spend.reconciled` line (`submitted`, `unrepairable`, `passEnded`) when rows were submitted, or when a pass ends with a different unrepairable total from the last one logged; with `passEnded: true`, `unrepairable` is the pass total, else this run's count. A stable set of unrepairable ids is therefore logged once per broker process, not on every sweep, and a restart that finds every row present logs nothing. `submitted` counts rows submitted for insert. In process, a failed insert throws into `reconcile_failed`. On the worker-thread topology the insert is a queued write: a rejection is logged by the persistence queue (`[worker-thread-persistence] background write failed`) and the row stays missing, so a later sweep submits it again. A row inserted concurrently is never duplicated.
 
 Retention prunes terminal `broker_tasks` rows but never `broker_spend_events`, so a pruned task keeps its spend row. The reconciliation never sees pruned tasks, so it cannot recreate or duplicate their rows.
 
@@ -169,11 +169,17 @@ Spend is SQLite-only. Stores without `readSpendTotals` (the JSON-file store and 
 
 - `period` defaults to the current period in the configured zone; anything other than `YYYY-MM` (month 01–12) is 400.
 - Without `scope_type`, every scope of every type is returned. With `scope_type` only, every scope of that type. With `scope_id` as well, just that scope (zero totals if it spent nothing). A `scope_id` without `scope_type`, an unknown `scope_type`, or a `scope_id` that breaks the goal id pattern (goal scope) or is longer than 256 characters or contains control characters (agent and lane scopes) is 400. Values are never trimmed.
-- Each scope reports `usd_known_total` (only `cost_known` rows, Decision 4), `input_tokens_total`, `output_tokens_total`, `task_count`, `cost_unknown_task_count`, `unmetered_task_count`, and `limits: null`; limits arrive with budgets in slice 3.
+- Each scope reports `usd_known_total` (only `cost_known` rows, Decision 4), `input_tokens_total`, `output_tokens_total`, `task_count`, `cost_unknown_task_count`, `unmetered_task_count`, and `limits`: the scope's month budget (`budgetId`, `limitUsd`, `limitTokens`, `warnPct`, `enforce`), or `null` when it has none (slice 2 always answered `null`; the field name is unchanged).
 - `period_total` always covers the whole period, including rows with no agent or goal, whatever the scope filter. `scope_total` is the named scope's totals when `scope_type` and `scope_id` are both given (zero totals if it spent nothing), else null.
 - Token totals are summed exactly (SQLite integer `SUM` read as BigInt; USD uses `TOTAL()`). API contract: `input_tokens_total` and `output_tokens_total` are `number | string`. Each is a JSON number while it is at most `Number.MAX_SAFE_INTEGER` (2^53 − 1), else its exact decimal string (for example `"9008000000000005"`), so clients must accept both and parse a string as an arbitrary-precision integer. Every server-side serialization of spend totals goes through one projector (`spendTotalsToJson` in `core/store-schemas.ts`); a raw `SpendTotals` holds `bigint` and cannot be passed to `JSON.stringify`. SQLite's integer sum is exact up to 2^63 − 1, at least about 9.2 million rows at the 1e12 per-row cap in one period.
 - `ledger` (slice 3a, additive; present when `available: true`): `firstPeriod` and `timeZone` from the coverage metadata, `missingSpendRows` (terminal task rows with no spend row, counted live with the reconciliation's anti-join; `null` when the store cannot count them or the count failed, and the response is still 200), and `periodComplete` (true only when the requested period is strictly after `firstPeriod`; the first period and earlier ones may be partial). On the worker-thread topology `missingSpendRows` reads the main-thread connection and can lag queued writes, like the other hot-table read models.
 - Groups are capped at 1000 per scope type (`truncated: true` when hit). Every query is one indexed aggregate over `broker_spend_events` (`(period_key, agent_id|lane|goal_id)` indexes); no query scans `broker_tasks.payload`.
+- Slice 3b, additive:
+  - `enforcement`: `{ configuredMode, effectiveMode, reason }` for the requested period (see [Enforcement mode](#enforcement-mode)).
+  - `budgets`: the budgets matching the scope filter (at most 200, `budgetsTruncated: true` when there are more), each evaluated against the period: `id`, `scopeType`, `scopeId`, `limitUsd`, `limitTokens`, `warnPct`, `enforce`, `usdSpent` (`cost_known` rows only), `tokensSpent` (input + output; `number | string` like the totals), `usdExhausted`, `tokensExhausted`, `warn` (either limit reached `warnPct` percent; stays true once exhausted). One indexed aggregate per budget.
+  - `topRows` (named scope only, else `null`): `{ limit, byCost, byTokens }`, the `top` (1–20, default 5) largest rows of the scope in the period by `cost_usd` (`cost_known` rows only) and by input + output tokens. Each row: `taskId`, `agentId`, `lane`, `goalId`, `costUsd`, `costKnown`, `tokens`, `recordedAt`. `top` without both `scope_type` and `scope_id`, or out of range, is 400. The scope index selects the rows; the order is a sort over that scope's rows (no index on cost or tokens).
+  - `checkFailed`: `{ count, lastAt }`, failed budget reads of the claim-time evaluator since startup, kept in memory.
+  - A ledger read that throws no longer fails the route: it answers 200 with `available: false`, `readError: "ledger_read_failed"`, null totals, empty `scopes` and `budgets`, `topRows: null`, and the in-memory `enforcement` and `checkFailed` (one `broker.budget.status_read_failed` line per 60 s). Clients tell the two `available: false` cases apart by `readError`.
 
 ```json
 {
@@ -187,11 +193,56 @@ Spend is SQLite-only. Stores without `readSpendTotals` (the JSON-file store and 
   "scope_total": { "usd_known_total": 0.5, "input_tokens_total": 120, "output_tokens_total": 40, "task_count": 1, "cost_unknown_task_count": 0, "unmetered_task_count": 0 },
   "scopes": [{ "scope_type": "goal", "scope_id": "goal-1", "usd_known_total": 0.5, "input_tokens_total": 120, "output_tokens_total": 40, "task_count": 1, "cost_unknown_task_count": 0, "unmetered_task_count": 0, "limits": null }],
   "truncated": false,
-  "ledger": { "firstPeriod": "2026-11", "timeZone": "Asia/Seoul", "missingSpendRows": 0, "periodComplete": false }
+  "ledger": { "firstPeriod": "2026-11", "timeZone": "Asia/Seoul", "missingSpendRows": 0, "periodComplete": false },
+  "budgets": [{ "id": "b-goal-1", "scopeType": "goal", "scopeId": "goal-1", "limitUsd": 5, "limitTokens": null, "warnPct": 80, "enforce": "refuse", "usdSpent": 0.5, "tokensSpent": 160, "usdExhausted": false, "tokensExhausted": false, "warn": false }],
+  "budgetsTruncated": false,
+  "topRows": { "limit": 5, "byCost": [{ "taskId": "task-1", "agentId": "worker-a", "lane": "analyze", "goalId": "goal-1", "costUsd": 0.5, "costKnown": true, "tokens": 160, "recordedAt": "2026-11-06T00:00:00.000Z" }], "byTokens": [{ "taskId": "task-1", "agentId": "worker-a", "lane": "analyze", "goalId": "goal-1", "costUsd": 0.5, "costKnown": true, "tokens": 160, "recordedAt": "2026-11-06T00:00:00.000Z" }] },
+  "enforcement": { "configuredMode": "off", "effectiveMode": "off", "reason": "mode_off" },
+  "checkFailed": { "count": 0, "lastAt": null }
 }
 ```
 
+(In this example the `limits` of the `goal-1` scope entry would carry `b-goal-1`.)
+
 Spend is per broker. A fleet-wide total is the sum over the Team 1 and Team 2 brokers (cross-broker aggregation is a follow-up).
+
+## Budgets (#2499 slice 3b)
+
+Slice 3b-1 adds budget records, the enforcement mode setting and the evaluator. The claim-time refusal, the queued-listing filter, the create-time `pause` refusal and the goal `budget_limited` transition come in slice 3b-2; until then nothing is refused, whatever the mode.
+
+### Records and routes
+
+One `broker_budgets` row per budget (schema 14 table, no new column). There is one budget per (`scope_type`, `scope_id`, `period`): the broker checks first, inside the insert transaction, and the unique index `broker_budgets_scope_unique_idx` backs it. The index is created by the store's startup DDL (`CREATE UNIQUE INDEX IF NOT EXISTS`, run on every start), so a v14 store created before slice 3b gains it on its next start, with no schema version change. Budgets are SQLite-only, like the ledger.
+
+| route | roles | behaviour |
+| --- | --- | --- |
+| `POST /budgets` | hub, operator | create; 201 `{ budget }` |
+| `PATCH /budgets/:id` | hub, operator | update `limitUsd`, `limitTokens` (`null` clears one; at least one must stay), `warnPct`, `enforce`; 200 `{ budget }` |
+| `GET /budgets` | `GET /goals` read roles | `{ kind: "budgets", available, count, budgets }`; `?scope_type=&scope_id=&limit=`; ordered by scope type, scope id, period, id; bounded like the other hot reads |
+
+Create body: `id?`, `scopeType` (`agent | lane | goal`), `scopeId`, `period` (`month` only), `limitUsd?` (finite, > 0, ≤ 1e9), `limitTokens?` (integer, > 0, ≤ `Number.MAX_SAFE_INTEGER`), at least one limit, `warnPct?` (integer 1–100, default 80), `enforce?` (`refuse | pause`, default `refuse`). `id` and `scopeId` match the goal id pattern `^[A-Za-z0-9._:-]{1,128}$` and are never trimmed; an absent `id` is a broker UUID. Unknown fields, wrong types and out-of-range values are 400 (never clamped). A goal scope must name an existing goal (404). A duplicate id or a second budget for the same scope and period is 409 `invalid_transition`. `createdBy` is the authenticated caller. Records are camelCase: `id`, `scopeType`, `scopeId`, `period`, `limitUsd`, `limitTokens`, `warnPct`, `enforce`, `createdBy`, `createdAt`. There is no `updatedAt`: the table has no update-time column; updates are in the audit trail.
+
+Each write appends an audit event (`budget.created`, `budget.updated`; target type `budget`; the update's note lists the changed fields) in the same `commitMutation` as the row, like `goal.created`. In process a failed save rolls the row back and the in-memory audit event is undone. On the worker-thread topology the row commits on the main connection when the call returns (like a goal) and the audit row follows through the persistence queue; the route awaits it.
+
+On a store without SQLite, `POST` and `PATCH` are 409 `unsupported_operation` and `GET /budgets` answers `available: false` with an empty list.
+
+### Enforcement mode
+
+`A2A_BUDGET_ENFORCEMENT_MODE` (server option `budgetEnforcementMode`): `off` (default; unset or blank), `shadow` or `on`, case-insensitive. It is read at startup; **restart the broker to change it**. Any other value fails startup naming the variable. A mode other than `off` on a store without a spend ledger fails startup (spec decision 13).
+
+The effective mode for a period: `off` and `shadow` as configured; `on` runs as `shadow` while the period is not complete (`ledger.periodComplete` false: the period the ledger started in, or unknown coverage), with `reason: "period_incomplete"` (spec decision 9). Reasons: `mode_off`, `mode_shadow`, `mode_on`, `period_incomplete`.
+
+### Evaluator
+
+For a budget and a period: `usdSpent` sums `cost_usd` over the scope's `cost_known` rows; `tokensSpent` sums input + output tokens over all the scope's rows (exact BigInt). `usdExhausted` is `limitUsd` set and `usdSpent ≥ limitUsd`; `tokensExhausted` likewise; `warn` is either limit at `warnPct` percent or more. One indexed aggregate per budget.
+
+The claim-time decision (`evaluateClaimBudget`, implemented and tested, called from claim in slice 3b-2) looks up the month budget of the task's agent, lane and goal scopes and decides per scope:
+
+- a token-exhausted scope refuses any worker;
+- a USD-exhausted scope refuses only a worker that reports cost this period (at least one `cost_known` row with its id as `agent_id`; one probe over the `(period_key, agent_id)` index). A runtime that reports no cost is never refused by a USD limit (Decision 4);
+- a `pause` budget acts at create time and never refuses at claim.
+
+It returns `wouldRefuse` (some scope would refuse) and `refuse` (`wouldRefuse` in effective mode `on`). A budget read that throws fails open (decision 13): `checkFailed: true`, no refusal, the failure counted in memory (`checkFailed` in budget status) and one `broker.budget.check_failed` line (`workerId`, `count`, error message, `suppressed`) at most every 60 s. Whether repeated failures should downgrade `on` or fail closed is open for slice 3b-2.
 
 ## Smoke / golden fixture
 

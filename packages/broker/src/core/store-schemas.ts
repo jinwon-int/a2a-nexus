@@ -2,7 +2,15 @@ import { z } from "zod";
 
 import { BrokerError } from "./broker-error.js";
 import { SETTLED_TASK_STATUSES } from "./types.js";
-import type { BudgetScopeType, GoalStatus, GoalTransitionReason, SpendTotals } from "./types.js";
+import type {
+  BudgetEnforceAction,
+  BudgetEnforcementMode,
+  BudgetPeriod,
+  BudgetScopeType,
+  GoalStatus,
+  GoalTransitionReason,
+  SpendTotals,
+} from "./types.js";
 
 /**
  * Persisted broker state version. Defined here, beside the snapshot schema that
@@ -1135,6 +1143,34 @@ export function resolveBudgetPeriodTimeZone(raw: string | undefined): string {
       `invalid A2A_BUDGET_PERIOD_TIME_ZONE='${raw}' (expected an IANA time zone such as Asia/Seoul or UTC)`,
     );
   }
+}
+
+/**
+ * Budget vocabulary and bounds (#2499 slice 3b). A budget's period is the
+ * calendar month only; `enforce` is the closed Decision 2 list; a USD limit
+ * is a finite number in (0, 1e9]; a token limit an integer in
+ * (0, Number.MAX_SAFE_INTEGER]; `warnPct` an integer in [1, 100].
+ */
+export const BUDGET_PERIODS = ["month"] as const satisfies readonly BudgetPeriod[];
+export const BUDGET_ENFORCE_ACTIONS = ["refuse", "pause"] as const satisfies readonly BudgetEnforceAction[];
+export const BUDGET_ENFORCEMENT_MODES = ["off", "shadow", "on"] as const satisfies readonly BudgetEnforcementMode[];
+export const BUDGET_MAX_LIMIT_USD = 1e9;
+export const BUDGET_DEFAULT_WARN_PCT = 80;
+/** A terminal or reconciled row at or above this fraction of a per-task cap logs `broker.spend.near_cap`. */
+export const SPEND_NEAR_CAP_FRACTION = 0.5;
+
+/**
+ * Validate the budget enforcement mode (`A2A_BUDGET_ENFORCEMENT_MODE`,
+ * #2499 slice 3b). Same posture as the time zone: unset or blank is the safe
+ * default `off`; anything else outside `off | shadow | on` throws, so a typo
+ * fails startup instead of silently disabling (or enabling) enforcement.
+ * Read once at startup: a change applies on restart.
+ */
+export function resolveBudgetEnforcementMode(raw: string | undefined): BudgetEnforcementMode {
+  const value = (raw ?? "").trim().toLowerCase();
+  if (value === "") return "off";
+  if ((BUDGET_ENFORCEMENT_MODES as readonly string[]).includes(value)) return value as BudgetEnforcementMode;
+  throw new Error(`invalid A2A_BUDGET_ENFORCEMENT_MODE='${raw}' (expected off | shadow | on)`);
 }
 
 const budgetPeriodFormatters = new Map<string, Intl.DateTimeFormat>();

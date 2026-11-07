@@ -1,7 +1,9 @@
 /**
  * Goal routes (#2499 slice 1): POST /goals, GET /goals, GET /goals/:id.
  *
- * GET /budgets/status (#2499 slice 2) is covered at the end of the file.
+ * GET /budgets/status (#2499 slice 2) and the budget routes (#2499 slice 3b:
+ * POST /budgets, PATCH /budgets/:id, GET /budgets, status additions) are
+ * covered at the end of the file.
  *
  * Handler-level tests pin auth classes and validation; server-level tests
  * pin route-table registration, HTTP status mapping, and the goal-linked
@@ -468,10 +470,11 @@ test("handler: budget status validates its query and reports available:false wit
   await assert.rejects(() => route("GET", "/budgets/status", { identity: publisher }), rejectsWith("unauthorized", /budget\.status/));
   assert.equal((await route("GET", "/budgets/status", { identity: null, enforce: false })).status, 200);
 
-  // Unmatched shapes fall through.
+  // Unmatched shapes fall through (#2499 slice 3b: GET /budgets is the list route now).
   assert.equal((await route("POST", "/budgets/status")).handled, false);
-  assert.equal((await route("GET", "/budgets")).handled, false);
   assert.equal((await route("GET", "/budgets/status/x")).handled, false);
+  assert.equal((await route("DELETE", "/budgets/x")).handled, false);
+  assert.equal((await route("PATCH", "/budgets")).handled, false);
 });
 
 test("handler: token totals above Number.MAX_SAFE_INTEGER are exact decimal strings; safe totals stay numbers", async () => {
@@ -752,4 +755,298 @@ test("server: the budget period zone comes from A2A_BUDGET_PERIOD_TIME_ZONE and 
   await withEnv({ A2A_BUDGET_PERIOD_TIME_ZONE: "Mars/Olympus" }, async () => {
     await assert.rejects(() => startTestServer(), /invalid A2A_BUDGET_PERIOD_TIME_ZONE='Mars\/Olympus'/);
   });
+});
+
+// --- Budgets (#2499 slice 3b) ------------------------------------------------------
+
+function sqliteRouter(options: { budgetEnforcementMode?: string } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-budget-routes-"));
+  const store = new SqliteBrokerStateStore(join(dir, "state.sqlite"));
+  const broker = new InMemoryA2ABroker(store, store.load(), { budgetPeriodTimeZone: "UTC", ...options });
+  const { route } = makeRouter(broker);
+  return {
+    broker,
+    store,
+    route,
+    close() {
+      store.close();
+      rmSync(dir, { recursive: true, force: true });
+    },
+  };
+}
+
+test("handler: budget create / update / list — auth, validation, 404, 409, audit", async () => {
+  const r = sqliteRouter();
+  try {
+    const analyst = { id: "an-1", kind: "node" as const, role: "analyst" as const };
+    const publisher = { id: "pub-1", kind: "node" as const, role: "publisher" as const };
+    const create = (body: unknown, identity?: RequesterIdentity | null) => r.route("POST", "/budgets", { body, ...(identity !== undefined ? { identity } : {}) });
+
+    const created = await create({ id: "b-lane", scopeType: "lane", scopeId: "analyze", period: "month", limitUsd: 20, warnPct: 90 });
+    assert.equal(created.status, 201);
+    assert.deepEqual({ ...created.json.budget, createdAt: "t" }, {
+      id: "b-lane",
+      scopeType: "lane",
+      scopeId: "analyze",
+      period: "month",
+      limitUsd: 20,
+      limitTokens: null,
+      warnPct: 90,
+      enforce: "refuse",
+      createdBy: "op-1",
+      createdAt: "t",
+    });
+    assert.equal("updatedAt" in created.json.budget, false, "no updated_at column: createdAt only");
+
+    // Auth: writes are hub/operator; reads the GET /goals set.
+    await assert.rejects(() => create({ scopeType: "lane", scopeId: "chat", period: "month", limitUsd: 1 }, analyst), rejectsWith("unauthorized", /budget\.create/));
+    await assert.rejects(() => r.route("PATCH", "/budgets/b-lane", { body: { warnPct: 5 }, identity: analyst }), rejectsWith("unauthorized", /budget\.update/));
+    await assert.rejects(() => create({}, null), rejectsWith("unauthorized"));
+    assert.equal((await r.route("GET", "/budgets", { identity: analyst })).status, 200);
+    await assert.rejects(() => r.route("GET", "/budgets", { identity: publisher }), rejectsWith("unauthorized", /budget\.list/));
+
+    // Validation: 400, never trimmed.
+    const base = { scopeType: "agent", scopeId: "worker-a", period: "month" };
+    const invalid: Array<[unknown, RegExp]> = [
+      [[], /JSON object body/],
+      [{ ...base, limitUsd: 1, extra: true }, /unsupported fields: extra/],
+      [{ ...base }, /limitUsd, limitTokens, or both/],
+      [{ ...base, limitUsd: 0 }, /limitUsd/],
+      [{ ...base, limitUsd: 1e10 }, /limitUsd/],
+      [{ ...base, limitTokens: 2.5 }, /limitTokens/],
+      [{ ...base, limitTokens: 1, warnPct: 0 }, /warnPct/],
+      [{ ...base, limitTokens: 1, enforce: "stop" }, /enforce/],
+      [{ ...base, limitTokens: 1, period: "day" }, /period/],
+      [{ ...base, limitTokens: 1, scopeType: "team" }, /scopeType/],
+      [{ ...base, limitTokens: 1, scopeId: "worker-a " }, /scopeId must match/],
+      [{ ...base, limitTokens: 1, id: " b-1" }, /budget id must match/],
+    ];
+    for (const [body, pattern] of invalid) {
+      await assert.rejects(() => create(body), rejectsWith("bad_request", pattern), JSON.stringify(body));
+    }
+    await assert.rejects(
+      () => create({ scopeType: "goal", scopeId: "goal-missing", period: "month", limitUsd: 1 }),
+      rejectsWith("not_found", /goal not found/),
+    );
+    await assert.rejects(() => create({ id: "b-lane", ...base, limitUsd: 1 }), rejectsWith("invalid_transition", /already exists/));
+    await assert.rejects(() => create({ scopeType: "lane", scopeId: "analyze", period: "month", limitTokens: 5 }), rejectsWith("invalid_transition", /budget for lane 'analyze'/));
+
+    // PATCH: clear one limit, refuse clearing both, unknown fields, unknown id.
+    const patched = await r.route("PATCH", "/budgets/b-lane", { body: { limitTokens: 1_000, limitUsd: null } });
+    assert.equal(patched.status, 200);
+    assert.equal(patched.json.budget.limitUsd, null);
+    assert.equal(patched.json.budget.limitTokens, 1_000);
+    await assert.rejects(() => r.route("PATCH", "/budgets/b-lane", { body: { limitTokens: null } }), rejectsWith("bad_request", /at least one/));
+    await assert.rejects(() => r.route("PATCH", "/budgets/b-lane", { body: { scopeId: "chat" } }), rejectsWith("bad_request", /unsupported fields: scopeId/));
+    await assert.rejects(() => r.route("PATCH", "/budgets/b-missing", { body: { warnPct: 5 } }), rejectsWith("not_found", /budget not found/));
+    await assert.rejects(() => r.route("PATCH", "/budgets/bad%20id", { body: { warnPct: 5 } }), rejectsWith("bad_request", /budget id must match/));
+
+    // List: filters and bounds.
+    await create({ id: "b-agent", ...base, limitUsd: 2 });
+    const all = await r.route("GET", "/budgets");
+    assert.equal(all.json.kind, "budgets");
+    assert.equal(all.json.available, true);
+    assert.deepEqual(all.json.budgets.map((budget: { id: string }) => budget.id), ["b-agent", "b-lane"]);
+    assert.deepEqual((await r.route("GET", "/budgets?scope_type=lane")).json.budgets.map((budget: { id: string }) => budget.id), ["b-lane"]);
+    assert.equal((await r.route("GET", "/budgets?scope_type=agent&scope_id=worker-a")).json.count, 1);
+    assert.equal((await r.route("GET", "/budgets?limit=1")).json.count, 1);
+    await assert.rejects(() => r.route("GET", "/budgets?limit=0"), rejectsWith("bad_request", /limit/));
+    await assert.rejects(() => r.route("GET", "/budgets?scope_id=worker-a"), rejectsWith("bad_request", /scope_id requires scope_type/));
+    await assert.rejects(() => r.route("GET", "/budgets?scope_type=team"), rejectsWith("bad_request", /scope_type/));
+
+    // Audit events: created by the authenticated caller, update notes the changed fields.
+    const audits = r.broker.listAuditEvents().filter((event) => event.targetType === "budget");
+    assert.deepEqual(
+      audits.map((event) => `${event.action}:${event.targetId}:${event.actorId}:${event.note}`).sort(),
+      ["budget.created:b-agent:op-1:agent:worker-a", "budget.created:b-lane:op-1:lane:analyze", "budget.updated:b-lane:op-1:limitUsd,limitTokens"].sort(),
+    );
+  } finally {
+    r.close();
+  }
+});
+
+test("handler: budgets without the SQLite store — writes are 409 unsupported_operation, GET /budgets is available:false", async () => {
+  const { route } = makeRouter();
+  await assert.rejects(
+    () => route("POST", "/budgets", { body: { scopeType: "lane", scopeId: "chat", period: "month", limitUsd: 1 } }),
+    rejectsWith("unsupported_operation"),
+  );
+  await assert.rejects(() => route("PATCH", "/budgets/b-1", { body: { warnPct: 5 } }), rejectsWith("unsupported_operation"));
+  const list = await route("GET", "/budgets");
+  assert.equal(list.status, 200);
+  assert.deepEqual({ ...list.json, reason: "r" }, { kind: "budgets", available: false, reason: "r", count: 0, budgets: [] });
+  const status = await route("GET", "/budgets/status");
+  assert.deepEqual(status.json.enforcement, { configuredMode: "off", effectiveMode: "off", reason: "mode_off" });
+  assert.deepEqual(status.json.budgets, []);
+  assert.deepEqual(status.json.checkFailed, { count: 0, lastAt: null });
+  assert.equal(status.json.topRows, null);
+});
+
+test("handler: budget status — enforcement, budgets, limits, topRows, checkFailed; a failed ledger read still answers 200", async () => {
+  const r = sqliteRouter({ budgetEnforcementMode: "on" });
+  try {
+    const period = r.broker.budgetPeriodKey();
+    r.store.saveHotEntities({
+      spendEvents: [
+        { taskId: "s-1", recordedAt: "2026-11-06T00:00:00.000Z", periodKey: period, agentId: "worker-a", lane: "analyze", goalId: null, costUsd: 4, inputTokens: 10, outputTokens: 5, costKnown: true },
+        { taskId: "s-2", recordedAt: "2026-11-06T00:00:00.000Z", periodKey: period, agentId: "worker-b", lane: "analyze", goalId: null, costUsd: 0, inputTokens: 700, outputTokens: 300, costKnown: false },
+        { taskId: "s-3", recordedAt: "2026-11-06T00:00:00.000Z", periodKey: period, agentId: "worker-a", lane: "chat", goalId: null, costUsd: 1, inputTokens: 1, outputTokens: 1, costKnown: true },
+      ],
+    });
+    await r.route("POST", "/budgets", { body: { id: "b-analyze", scopeType: "lane", scopeId: "analyze", period: "month", limitUsd: 5, limitTokens: 2_000, warnPct: 50 } });
+    await r.route("POST", "/budgets", { body: { id: "b-a", scopeType: "agent", scopeId: "worker-a", period: "month", limitUsd: 100 } });
+
+    const all = await r.route("GET", "/budgets/status");
+    assert.equal(all.status, 200);
+    assert.deepEqual(all.json.enforcement, { configuredMode: "on", effectiveMode: "shadow", reason: "period_incomplete" }, "decision 9");
+    assert.deepEqual(all.json.checkFailed, { count: 0, lastAt: null });
+    assert.equal(all.json.topRows, null, "topRows needs a named scope");
+    assert.equal(all.json.budgetsTruncated, false);
+    assert.deepEqual(all.json.budgets, [
+      { id: "b-a", scopeType: "agent", scopeId: "worker-a", limitUsd: 100, limitTokens: null, warnPct: 80, enforce: "refuse", usdSpent: 5, tokensSpent: 17, usdExhausted: false, tokensExhausted: false, warn: false },
+      { id: "b-analyze", scopeType: "lane", scopeId: "analyze", limitUsd: 5, limitTokens: 2_000, warnPct: 50, enforce: "refuse", usdSpent: 4, tokensSpent: 1_015, usdExhausted: false, tokensExhausted: false, warn: true },
+    ]);
+    // `limits` (slice 2: always null) now carries the scope's month budget.
+    const limitsOf = (scopeType: string, scopeId: string) =>
+      all.json.scopes.find((scope: { scope_type: string; scope_id: string }) => scope.scope_type === scopeType && scope.scope_id === scopeId)?.limits;
+    assert.deepEqual(limitsOf("lane", "analyze"), { budgetId: "b-analyze", limitUsd: 5, limitTokens: 2_000, warnPct: 50, enforce: "refuse" });
+    assert.equal(limitsOf("lane", "chat"), null);
+    assert.equal(limitsOf("agent", "worker-a")?.budgetId, "b-a");
+
+    const lane = await r.route("GET", "/budgets/status?scope_type=lane&scope_id=analyze&top=1");
+    assert.deepEqual(lane.json.budgets.map((budget: { id: string }) => budget.id), ["b-analyze"], "budgets follow the scope filter");
+    assert.equal(lane.json.topRows.limit, 1);
+    assert.deepEqual(lane.json.topRows.byCost.map((row: { taskId: string }) => row.taskId), ["s-1"]);
+    assert.deepEqual(lane.json.topRows.byTokens, [
+      { taskId: "s-2", agentId: "worker-b", lane: "analyze", goalId: null, costUsd: 0, costKnown: false, tokens: 1_000, recordedAt: "2026-11-06T00:00:00.000Z" },
+    ]);
+    assert.equal((await r.route("GET", "/budgets/status?scope_type=lane&scope_id=analyze")).json.topRows.limit, 5, "default N");
+    await assert.rejects(() => r.route("GET", "/budgets/status?top=3"), rejectsWith("bad_request", /top requires scope_type and scope_id/));
+    await assert.rejects(() => r.route("GET", "/budgets/status?scope_type=lane&scope_id=analyze&top=21"), rejectsWith("bad_request", /top must be/));
+    await assert.rejects(() => r.route("GET", "/budgets/status?scope_type=lane&scope_id=analyze&top=0"), rejectsWith("bad_request", /top must be/));
+
+    // A failed claim-time read is counted; a failed status read still answers with it.
+    const original = r.store.readSpendScopeUsage;
+    r.store.readSpendScopeUsage = () => {
+      throw new Error("disk I/O error");
+    };
+    const originalWarn = console.warn;
+    console.warn = () => {};
+    try {
+      assert.equal(r.broker.evaluateClaimBudget({ lane: "analyze", workerId: "worker-a" }).checkFailed, true);
+      const failed = await r.route("GET", "/budgets/status");
+      assert.equal(failed.status, 200);
+      assert.equal(failed.json.available, false);
+      assert.equal(failed.json.readError, "ledger_read_failed");
+      assert.equal(failed.json.period_total, null);
+      assert.deepEqual(failed.json.budgets, []);
+      assert.equal(failed.json.checkFailed.count, 1, "served from memory");
+      assert.match(failed.json.checkFailed.lastAt, /^\d{4}-\d{2}-\d{2}T/);
+      assert.equal(failed.json.enforcement.configuredMode, "on");
+    } finally {
+      console.warn = originalWarn;
+      r.store.readSpendScopeUsage = original;
+    }
+    assert.equal((await r.route("GET", "/budgets/status")).json.available, true);
+  } finally {
+    r.close();
+  }
+});
+
+async function exerciseBudgetRoutesServer(baseUrl: string): Promise<void> {
+  const post = (body: unknown, headers: Record<string, string> = HUB) =>
+    fetch(`${baseUrl}/budgets`, { method: "POST", headers: jsonHeaders(headers), body: JSON.stringify(body) });
+  const created = await post({ id: "b-http", scopeType: "lane", scopeId: "analyze", period: "month", limitUsd: 10 });
+  assert.equal(created.status, 201, await created.clone().text());
+  assert.equal((await created.json()).budget.createdBy, "test-hub");
+  assert.equal((await post({ id: "b-http", scopeType: "lane", scopeId: "chat", period: "month", limitUsd: 1 })).status, 409);
+  assert.equal((await post({ scopeType: "lane", scopeId: "analyze", period: "month", limitUsd: 1 })).status, 409);
+  assert.equal((await post({ scopeType: "lane", scopeId: "chat", period: "month" })).status, 400);
+  assert.equal((await post({ scopeType: "goal", scopeId: "goal-none", period: "month", limitUsd: 1 })).status, 404);
+  assert.equal((await post({ scopeType: "lane", scopeId: "chat", period: "month", limitUsd: 1 }, { "x-a2a-requester-id": "an-1", "x-a2a-requester-role": "analyst" })).status, 401);
+  const patch = (id: string, body: unknown) =>
+    fetch(`${baseUrl}/budgets/${id}`, { method: "PATCH", headers: jsonHeaders(HUB), body: JSON.stringify(body) });
+  const patched = await patch("b-http", { limitTokens: 50, limitUsd: null });
+  assert.equal(patched.status, 200, await patched.clone().text());
+  assert.equal((await patched.json()).budget.limitTokens, 50);
+  assert.equal((await patch("b-http", { limitTokens: null })).status, 400);
+  assert.equal((await patch("b-none", { warnPct: 5 })).status, 404);
+  const list = await fetch(`${baseUrl}/budgets`, { headers: HUB });
+  assert.equal(list.status, 200);
+  assert.equal(list.headers.get("cache-control"), "no-store");
+  const body = await list.json();
+  assert.deepEqual(body.budgets.map((budget: { id: string; limitUsd: unknown }) => [budget.id, budget.limitUsd]), [["b-http", null]]);
+  assert.equal((await fetch(`${baseUrl}/budgets`)).status, 401);
+  const status = await (await fetch(`${baseUrl}/budgets/status?scope_type=lane&scope_id=analyze`, { headers: HUB })).json();
+  assert.deepEqual(status.budgets.map((budget: { id: string }) => budget.id), ["b-http"]);
+  assert.deepEqual(status.enforcement, { configuredMode: "off", effectiveMode: "off", reason: "mode_off" });
+}
+
+test("server (SQLite backend): budget routes are registered with HTTP status mapping", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-broker-budget-routes-"));
+  const server = await startTestServer({
+    stateStore: undefined,
+    persistenceBackend: "sqlite",
+    stateFile: join(dir, "state.json"),
+    sqliteFile: join(dir, "state.sqlite"),
+  });
+  try {
+    await exerciseBudgetRoutesServer(server.baseUrl);
+  } finally {
+    await server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("server (SQLite worker-thread persistence): budget routes and their audit rows", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-broker-budget-routes-wt-"));
+  await withEnv({ BROKER_PERSISTENCE_QUEUE_WORKER_THREAD: "1" }, async () => {
+    const server = await startTestServer({
+      stateStore: undefined,
+      persistenceBackend: "sqlite",
+      stateFile: join(dir, "state.json"),
+      sqliteFile: join(dir, "state.sqlite"),
+    });
+    try {
+      await exerciseBudgetRoutesServer(server.baseUrl);
+      const db = new DatabaseSync(join(dir, "state.sqlite"));
+      try {
+        const rows = db.prepare("SELECT action FROM broker_audit_events WHERE target_type = 'budget' ORDER BY action").all() as Array<{ action: string }>;
+        assert.deepEqual(rows.map((row) => row.action), ["budget.created", "budget.updated"], "each write route awaited its queued audit row");
+      } finally {
+        db.close();
+      }
+    } finally {
+      await server.close();
+    }
+  });
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("server: A2A_BUDGET_ENFORCEMENT_MODE — invalid fails startup; non-off without the spend ledger fails startup; shadow on SQLite starts", async () => {
+  await withEnv({ A2A_BUDGET_ENFORCEMENT_MODE: "enforce" }, async () => {
+    await assert.rejects(() => startTestServer(), /invalid A2A_BUDGET_ENFORCEMENT_MODE='enforce'/);
+  });
+  await withEnv({ A2A_BUDGET_ENFORCEMENT_MODE: "on" }, async () => {
+    await assert.rejects(() => startTestServer(), /A2A_BUDGET_ENFORCEMENT_MODE='on' requires the spend ledger/);
+  });
+  const dir = mkdtempSync(join(tmpdir(), "a2a-broker-budget-mode-"));
+  try {
+    await withEnv({ A2A_BUDGET_ENFORCEMENT_MODE: "shadow" }, async () => {
+      const server = await startTestServer({
+        stateStore: undefined,
+        persistenceBackend: "sqlite",
+        stateFile: join(dir, "state.json"),
+        sqliteFile: join(dir, "state.sqlite"),
+      });
+      try {
+        const body = await (await fetch(`${server.baseUrl}/budgets/status`, { headers: HUB })).json();
+        assert.deepEqual(body.enforcement, { configuredMode: "shadow", effectiveMode: "shadow", reason: "mode_shadow" });
+      } finally {
+        await server.close();
+      }
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -3,11 +3,15 @@ import type {
   AuditEvent,
   A2AExchangeMessageRecord,
   A2AExchangeState,
+  BudgetListFilters,
+  BudgetRecord,
+  BudgetScopeType,
   ChangeProposal,
   GoalListFilters,
   GoalRecord,
   SpendEventRecord,
   SpendLateMeteringRecord,
+  SpendTopRow,
   SpendTotalsQuery,
   SpendTotalsResult,
   TaskRecord,
@@ -166,6 +170,35 @@ export interface BrokerStateStore {
     previousTimeZone?: string;
   };
   readSpendLedgerMetadata?(): { firstPeriod?: string; timeZone?: string };
+  /**
+   * Budgets and their evaluator reads (#2499 slice 3b, SQLite only, optional
+   * like readSpendTotals; a store missing any of them has no budgets and the
+   * budget routes report it). `insertBudget` is create-only and one budget
+   * per (scopeType, scopeId, period): a duplicate id or scope is a
+   * `BrokerError` `invalid_transition` (409). `updateBudget` returns false
+   * for an unknown id. Writes are durable when they return on both
+   * topologies (main-connection transaction, like `insertGoal`).
+   */
+  insertBudget?(budget: BudgetRecord): void;
+  updateBudget?(budget: BudgetRecord): boolean;
+  readBudget?(id: string): BudgetRecord | undefined;
+  findBudgetByScope?(scopeType: BudgetScopeType, scopeId: string, period: BudgetRecord["period"]): BudgetRecord | undefined;
+  listBudgets?(filters?: BudgetListFilters): BudgetRecord[];
+  /** One scope's period spend: USD over cost_known rows, input + output tokens. */
+  readSpendScopeUsage?(query: { periodKey: string; scopeType: BudgetScopeType; scopeId: string }): {
+    usdSpent: number;
+    tokensSpent: bigint;
+  };
+  /** Whether the agent has a cost_known row in the period (Decision 4). */
+  hasCostReportingSpend?(query: { periodKey: string; agentId: string }): boolean;
+  /** The largest rows of one scope in a period, by cost (cost_known only) or tokens. */
+  listTopSpendRows?(query: {
+    periodKey: string;
+    scopeType: BudgetScopeType;
+    scopeId: string;
+    by: "cost" | "tokens";
+    limit: number;
+  }): SpendTopRow[];
 }
 
 export interface BrokerStateSaveHints {

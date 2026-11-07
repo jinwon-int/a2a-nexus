@@ -272,6 +272,8 @@ function isAuditEventProtected(
     // Goal audit events (#2499) are ordinary audit rows: the goal itself
     // lives in `broker_goals` (or the snapshot) and does not depend on them.
     case "goal":
+    // Budget audit events (#2499 slice 3b) likewise: the row is in `broker_budgets`.
+    case "budget":
       // Conversation audit events are digest-first (#1862) and small; they are
       // not hot-table protected yet because conversations persist through the
       // snapshot blob, not hot tables.
