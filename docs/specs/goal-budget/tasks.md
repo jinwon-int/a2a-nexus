@@ -82,18 +82,31 @@ Spec: [`spec.md`](spec.md) · Plan: [`plan.md`](plan.md) · Issue: [#2499](https
 
 ### Slice 3 — budgets and enforcement (default off)
 
-Preconditions before enforcement (from the slice 2 review; resolve or record a decision before any mode other than `off` ships):
+Split into two PRs (one finalizer each): 3a resolves the preconditions below, 3b adds budgets and enforcement. Decisions are recorded in the spec ("Enforcement preconditions (slice 3a)", items 6–14).
 
-- [ ] G1 — late telemetry after a cancel. A task canceled while running is recorded unmetered (insert-once), so a result the worker posts later (`lateEvidenceAfterCancel`) never reaches the ledger. Decide one of:
-  - a one-time update of the unmetered row (allowed only when `cost_known = 0` and both token counts are 0, only from the claimant recorded at cancel time, only once);
-  - or explicit semantics that canceled work is unmetered, plus a counter of late results after cancel, shown in budget status.
-- [ ] G2 — terminal tasks with no spend row. If a save fails after the in-memory transition, the staged row is gone and a later save can persist the terminal task row without it. Add a reconciliation check (`broker_tasks` in a terminal status LEFT JOIN `broker_spend_events`, missing rows counted in status and logged) and decide whether it repairs (create-only insert from the stored task) or only reports. An under-count lets spend through enforcement.
-- [ ] G3 — no backfill. Terminal tasks from before slice 2 have no rows, and the deploy month is partial. Either backfill create-only (`ON CONFLICT DO NOTHING`, same `buildTaskSpendEvent`) from terminal `broker_tasks` rows, or start enforcement no earlier than the first full period after the deploy.
-- [ ] Review risk — a failing spend insert fails the terminal transition. Slice 2 keeps this fail-closed on purpose: the row commits in the terminal task's transaction, the only schema constraint (`cost_known IN (0, 1)`) is satisfied by construction, and the failures left (I/O, disk full, lock timeout) would fail the task row write in the same transaction anyway. A non-fatal variant is cheap (a `SAVEPOINT` around the ledger insert, rolled back alone with a log line and counter), but it trades a blocked completion for a silent under-count (G2). Decide with G2; do not change it without stating the new semantics.
-- [ ] Review risk — time zone change mid-period. `period_key` is fixed at insert; changing `A2A_BUDGET_PERIOD_TIME_ZONE` within a month splits that month's rows across differently aligned buckets. Either store the zone in store metadata and refuse (or warn on) a change except at a period boundary, or document that a change applies to new rows only and must be made at a month boundary.
-- [ ] Review risk — telemetry is unsigned. A worker can report up to 1e6 USD per task into a shared lane or goal budget. Decide whether enforcement counts unsigned telemetry as-is, caps per task, or needs signed usage first.
-- [ ] Review risk — the spec "Budgets and spend" clarifications made in slice 2 (`input_tokens` = input + cache creation; "not reported" stored as 0) need spec-owner sign-off.
+#### Slice 3a — preconditions before enforcement
 
+From the slice 2 review and re-review; each is resolved or decided before any mode other than `off` ships:
+
+- [x] G1 — late telemetry after a cancel: one-time late metering of the unmetered row (only while `cost_known = 0` and both token counts are 0, only from the row's `agent_id`, once). Spec decision 6.
+- [x] G2 — terminal tasks with no spend row: create-only reconciliation (anti-join on the status column and the spend primary key) at startup and on every stale-reaper sweep; live count `ledger.missingSpendRows` in budget status; `broker.spend.reconciled` / `broker.spend.reconcile_failed` log lines. Spec decision 7.
+- [x] G3 — no backfill: the same reconciliation backfills pre-slice-2 terminal tasks still in the hot table; `spend_ledger_first_period` in store metadata and `ledger.periodComplete` in status; 3b runs `on` as `shadow` until the first full period. Spec decision 9.
+- [x] Fail-closed spend insert: kept, decided with G2. Spec decision 8.
+- [x] Time zone change mid-period: zone stored as `spend_ledger_time_zone`; a change logs `broker.spend.time_zone_changed` and applies to new rows only; change at a month boundary (runbook, slice 4). Spec decision 11.
+- [x] Unsigned telemetry: counted as reported within the per-task caps; signed usage is a follow-up. Spec decision 12.
+- [x] Spec sign-off for the slice 2 clarifications (`input_tokens` incl. cache creation; "not reported" = 0): accepted with the 3a merge. Spec decision 14.
+- [x] Re-review additions: spend of running tasks and worker-thread read lag (overshoot accepted, decision 10); retention pruning never removes spend rows, and a test proves it (reconciliation only repairs retained tasks); ledger read failure, SUM overflow and `available: false` (decision 13, implemented in 3b); startup check for terminal tasks without a spend row (the startup reconciliation).
+- [x] Re-review minors: `broker.spend.telemetry_fallback` when a malformed higher-precedence carrier falls through to a valid one; shared bigint-safe JSON projector `spendTotalsToJson` (token totals: number up to `Number.MAX_SAFE_INTEGER`, else decimal string — published in `packages/broker/docs/goal-objective-lifecycle.md`).
+- [x] Tests: `packages/broker/src/core/broker-spend-reconcile.test.ts` (G1 incl. worker-thread queue, G2/G3 restart idempotency and invariant, metadata, fallback, bigint JSON, retention) and `goal-routes.test.ts` (`ledger` object).
+
+#### Slice 3b — budgets and enforcement
+
+- [ ] Mode `on` behaves as `shadow` while `ledger.periodComplete` is false (decision 9); a mode other than `off` without a spend ledger refuses startup, and a failed budget read fails open with `broker.budget.check_failed` counted in status (decision 13).
+- [ ] Carried from the slice 3a reviews (Team 1 lane PASS, Team 2 lane REVISE → fixed):
+  - `broker.budget.check_failed`: rate-limited log line; count and last-at kept in memory and shown in status even when the status read itself fails; decide whether N consecutive failures downgrade `on` to `shadow` or fail closed.
+  - Show `ledger.missingSpendRows`, `ledger.periodComplete` and the time zone next to the mode in status; `periodComplete` does not consider missing rows.
+  - A late metering lost with a failed save is not reconciled (its row exists, unmetered). Either a second reconcile pass for canceled tasks with late evidence and an unmetered row, or count them in status.
+  - Outliers: log per-task reports near the caps and give operators a way to see a single row that exhausts a shared lane or goal budget.
 - [ ] Operator-authenticated budget routes: create, update limit, list. Use the existing operator auth; no new credential.
 - [ ] Enforcement mode setting `off | shadow | on`, default `off`; state whether it applies live or at restart.
 - [ ] Red first: commit failing tests for the claim refusal and the listing filter, then the implementation; link both CI runs.
@@ -125,6 +138,7 @@ Preconditions before enforcement (from the slice 2 review; resolve or record a d
   - cross-broker spend aggregation (Team 1 + Team 2);
   - reconcile `docs/specs/a2a-goal-mode/schema.json` with `GoalStatus`;
   - cost reporting for Codex, Hermes and patch lanes (worker adapters).
+  - signed usage telemetry, so budgets do not rely on unsigned worker reports (spec decision 12).
 - [ ] Produce worker evidence packets (A2A lane task IDs and verdicts) per slice.
 - [ ] Finalizer closeout decision on #2499.
 - [ ] Wiki runbook entry linked.

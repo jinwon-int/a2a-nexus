@@ -7,6 +7,7 @@ import type {
   GoalListFilters,
   GoalRecord,
   SpendEventRecord,
+  SpendLateMeteringRecord,
   SpendTotalsQuery,
   SpendTotalsResult,
   TaskRecord,
@@ -143,6 +144,28 @@ export interface BrokerStateStore {
    * spend rows for it and `GET /budgets/status` reports `available: false`.
    */
   readSpendTotals?(query: SpendTotalsQuery): SpendTotalsResult;
+  /**
+   * Spend ledger reconciliation (#2499 slice 3a, SQLite only, optional like
+   * readSpendTotals): ids of terminal `broker_tasks` rows (status succeeded,
+   * failed or canceled) with no `broker_spend_events` row, ascending, after
+   * `afterId`, at most `limit`. One anti-join over the task status column and
+   * the ledger primary key; never reads `broker_tasks.payload`.
+   */
+  listTerminalTasksMissingSpend?(options: { limit: number; afterId?: string }): string[];
+  /** The COUNT variant of listTerminalTasksMissingSpend (live, unbounded by limit). */
+  countTerminalTasksMissingSpend?(): number;
+  /**
+   * Ledger coverage metadata in `broker_metadata` (#2499 slice 3a):
+   * `spend_ledger_first_period` is written once (when absent) and
+   * `spend_ledger_time_zone` is set to `timeZone`. Returns the stored values
+   * from before the call. One statement per key on this connection (like
+   * `insertGoal`), so it is durable when this returns on either topology.
+   */
+  syncSpendLedgerMetadata?(input: { periodKey: string; timeZone: string }): {
+    previousFirstPeriod?: string;
+    previousTimeZone?: string;
+  };
+  readSpendLedgerMetadata?(): { firstPeriod?: string; timeZone?: string };
 }
 
 export interface BrokerStateSaveHints {
@@ -166,6 +189,14 @@ export interface BrokerStateSaveHints {
    * spend ledger ignore the field.
    */
   spendEvents?: SpendEventRecord[];
+  /**
+   * #2499 slice 3a (G1): one-time late meterings of canceled tasks' spend
+   * rows, applied after `spendEvents` in the same transaction. Like
+   * `spendEvents`, not a hot entity mirror and never pruned; each is a single
+   * guarded UPDATE that only touches a row that is still unmetered and
+   * attributed to the late poster, so a replay is a no-op.
+   */
+  spendMeterings?: SpendLateMeteringRecord[];
 }
 
 export interface BrokerPersistenceInfo {

@@ -35,6 +35,7 @@ import type {
   AuditEvent,
   ChangeProposal,
   SpendEventRecord,
+  SpendLateMeteringRecord,
   SubmitValidationRequest,
   TaskError,
   TaskRecord,
@@ -96,6 +97,14 @@ export interface TaskTerminalContext {
    * Absent on hand-built test contexts (no ledger).
    */
   stageTerminalSpend?(task: TaskRecord, attribution?: { claimant?: string }): void;
+  /**
+   * #2499 slice 3a (G1): stage the one-time late metering of a canceled
+   * task's spend row from its just-recorded `lateEvidenceAfterCancel`. Called
+   * inside the late-evidence commitMutation before persistState, so the
+   * update rides the same save as the task row. Absent on hand-built test
+   * contexts (no ledger).
+   */
+  stageLateSpend?(task: TaskRecord): void;
 }
 
 function commitMutation<T>(context: TaskTerminalContext, fn: () => T): T {
@@ -478,6 +487,9 @@ function recordLateEvidenceAfterCancel(
       actorId: workerId,
       reason: `worker posted ${kind} evidence after cancel`,
     });
+    // #2499 slice 3a (G1): reached once per task (the guard above), so the
+    // late metering is staged at most once.
+    context.stageLateSpend?.(task);
     context.persistState();
   });
   return task;
@@ -553,6 +565,19 @@ export interface TaskSpendEventBuild {
    * unmetered. A short, content-free reason code for the broker's one log line.
    */
   malformed?: string;
+  /**
+   * #2499 slice 3a: set when a higher-precedence carrier was present but
+   * malformed and a later carrier parsed (the row is metered from the later
+   * one). The reason code of the first malformed carrier; never a value.
+   */
+  fallback?: string;
+}
+
+/** The task fields `executionTelemetry` can travel on. */
+interface SpendTelemetryCarriers {
+  result?: TaskResult;
+  error?: TaskError;
+  negativeVerdictResult?: TaskResult;
 }
 
 /**
@@ -562,24 +587,25 @@ export interface TaskSpendEventBuild {
  * `error.details.nestedError.details` when the worker wraps a nonzero handler
  * exit; a failed review verdict keeps its result on `negativeVerdictEvidence`.
  *
- * Returns every present `executionTelemetry`, in precedence order. A failed
- * task prefers the failure carriers (the receipt precedence used by task
- * stats): bridgeFailure, nested bridgeFailure, result.output, negative
- * verdict output. Every other status prefers the result: result.output,
- * negative verdict output, bridgeFailure, nested bridgeFailure.
+ * Returns every present `executionTelemetry`, in precedence order.
+ * `failureFirst` (a failed task, or late `fail` evidence after a cancel)
+ * prefers the failure carriers (the receipt precedence used by task stats):
+ * bridgeFailure, nested bridgeFailure, result.output, negative verdict
+ * output. Otherwise the result comes first: result.output, negative verdict
+ * output, bridgeFailure, nested bridgeFailure.
  */
-function spendTelemetryCandidates(task: TaskRecord): unknown[] {
-  const details = isRecord(task.error?.details) ? task.error.details : undefined;
+function spendTelemetryCandidates(source: SpendTelemetryCarriers, failureFirst: boolean): unknown[] {
+  const details = isRecord(source.error?.details) ? source.error.details : undefined;
   const nestedDetails = isRecord(details?.nestedError) && isRecord(details.nestedError.details)
     ? details.nestedError.details
     : undefined;
   const carriers: unknown[] = [
     details?.bridgeFailure,
     nestedDetails?.bridgeFailure,
-    task.result?.output,
-    task.negativeVerdictEvidence?.result?.output,
+    source.result?.output,
+    source.negativeVerdictResult?.output,
   ];
-  const ordered = task.status === "failed" ? carriers : [carriers[2], carriers[3], carriers[0], carriers[1]];
+  const ordered = failureFirst ? carriers : [carriers[2], carriers[3], carriers[0], carriers[1]];
   return ordered.flatMap((carrier) =>
     isRecord(carrier) && carrier.executionTelemetry !== undefined ? [carrier.executionTelemetry] : []);
 }
@@ -630,6 +656,29 @@ function parseSpendTelemetry(raw: unknown): ParsedSpendTelemetry {
   };
 }
 
+interface SpendUsage {
+  usage?: Extract<ParsedSpendTelemetry, { ok: true }>;
+  /** No present carrier parsed: the reason of the highest-precedence one. */
+  malformed?: string;
+  /** A carrier parsed after a malformed higher-precedence one: that one's reason. */
+  fallback?: string;
+}
+
+/**
+ * The first carrier whose telemetry parses wins (shared by the terminal-time
+ * row and, #2499 slice 3a, the one-time late metering after a cancel, so both
+ * apply the same precedence and validation).
+ */
+function resolveSpendUsage(candidates: readonly unknown[]): SpendUsage {
+  let firstMalformed: string | undefined;
+  for (const raw of candidates) {
+    const parsed = parseSpendTelemetry(raw);
+    if (parsed.ok) return { usage: parsed, ...(firstMalformed ? { fallback: firstMalformed } : {}) };
+    firstMalformed ??= parsed.reason;
+  }
+  return firstMalformed ? { malformed: firstMalformed } : {};
+}
+
 /**
  * Project a terminal task onto its spend-ledger row. Never throws on
  * worker-reported data: missing telemetry is an unmetered row, malformed
@@ -637,8 +686,9 @@ function parseSpendTelemetry(raw: unknown): ParsedSpendTelemetry {
  *
  * - Usage: the first carrier (see spendTelemetryCandidates) whose telemetry
  *   parses. A malformed higher-precedence carrier falls through to the next
- *   one; only when no present carrier parses is the row unmetered and
- *   `malformed` set (the reason of the highest-precedence carrier).
+ *   one (`fallback` names its reason); only when no present carrier parses is
+ *   the row unmetered and `malformed` set (the reason of the
+ *   highest-precedence carrier).
  * - `agentId`: `claimedBy` (the worker that completed or failed the task;
  *   completeTask/failTask stamp it), else `claimant` (the worker that held
  *   the claim when a cancel cleared `claimedBy`), else `assignedWorkerId`,
@@ -651,20 +701,21 @@ export function buildTaskSpendEvent(
   task: TaskRecord,
   options: { timeZone: string; now?: () => string; claimant?: string },
 ): TaskSpendEventBuild {
-  const candidate = task.completedAt ?? task.updatedAt;
+  // A cancel stamps `completedAt` and `cancellation.requestedAt` to the same
+  // instant; late evidence after the cancel moves only `updatedAt`. A
+  // canceled task prefers the cancel time explicitly (#2499 slice 3a) so a
+  // row rebuilt by the reconciliation can never move into the period of a
+  // late post, even for a record missing `completedAt`.
+  const candidate = (task.status === "canceled" ? task.cancellation?.requestedAt : undefined)
+    ?? task.completedAt
+    ?? task.updatedAt;
   const recordedAt = typeof candidate === "string" && !Number.isNaN(Date.parse(candidate))
     ? candidate
     : (options.now ?? isoNow)();
-  let usage: Extract<ParsedSpendTelemetry, { ok: true }> | undefined;
-  let malformed: string | undefined;
-  for (const raw of spendTelemetryCandidates(task)) {
-    const parsed = parseSpendTelemetry(raw);
-    if (parsed.ok) {
-      usage = parsed;
-      break;
-    }
-    malformed ??= parsed.reason;
-  }
+  const { usage, malformed, fallback } = resolveSpendUsage(spendTelemetryCandidates(
+    { result: task.result, error: task.error, negativeVerdictResult: task.negativeVerdictEvidence?.result },
+    task.status === "failed",
+  ));
   const costKnown = usage?.costUsd !== undefined;
   const nonEmpty = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
   return {
@@ -680,6 +731,74 @@ export function buildTaskSpendEvent(
       outputTokens: usage?.outputTokens ?? 0,
       costKnown,
     },
-    ...(!usage && malformed ? { malformed } : {}),
+    ...(malformed ? { malformed } : {}),
+    ...(fallback ? { fallback } : {}),
+  };
+}
+
+export interface LateSpendMeteringBuild {
+  /** Absent when no late carrier parsed: nothing to meter. */
+  metering?: SpendLateMeteringRecord;
+  /** Late telemetry was present but no carrier parsed (reason code only). */
+  malformed?: string;
+  fallback?: string;
+}
+
+/**
+ * #2499 slice 3a (G1): usage from the late complete/fail evidence a worker
+ * posted after its task was canceled. A cancel records the row unmetered;
+ * this builds the one-time update the store applies only to a row that is
+ * still unmetered (`cost_known = 0`, zero tokens) and attributed to the late
+ * poster (the claimant recorded at cancel time). Same carriers, precedence
+ * and validation as buildTaskSpendEvent: late `complete` reads the result
+ * carriers first, late `fail` the failure carriers first. No negative-verdict
+ * carrier: late evidence carries only a result or an error.
+ */
+export function buildLateSpendMetering(task: TaskRecord): LateSpendMeteringBuild {
+  const late = task.lateEvidenceAfterCancel;
+  if (!late) return {};
+  const { usage, malformed, fallback } = resolveSpendUsage(
+    spendTelemetryCandidates({ result: late.result, error: late.error }, late.kind === "fail"),
+  );
+  if (!usage) return malformed ? { malformed } : {};
+  const costKnown = usage.costUsd !== undefined;
+  return {
+    metering: {
+      taskId: task.id,
+      agentId: late.submittedBy,
+      costUsd: costKnown ? usage.costUsd! : 0,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      costKnown,
+    },
+    ...(fallback ? { fallback } : {}),
+  };
+}
+
+/**
+ * #2499 slice 3a (G2/G3): the row the create-only reconciliation inserts for
+ * a terminal task the ledger has no row for. buildTaskSpendEvent from the
+ * task record, plus the late metering a canceled task would have received
+ * had its row existed (same rule as the store update: the row is unmetered
+ * and the late poster is the row's agent).
+ */
+export function buildReconciledSpendEvent(task: TaskRecord, options: { timeZone: string }): TaskSpendEventBuild {
+  const built = buildTaskSpendEvent(task, options);
+  const { event } = built;
+  if (task.status !== "canceled" || event.costKnown || event.inputTokens !== 0 || event.outputTokens !== 0) {
+    return built;
+  }
+  const lateBuild = buildLateSpendMetering(task);
+  const late = lateBuild.metering;
+  if (!late || late.agentId !== event.agentId) return built;
+  return {
+    event: {
+      ...event,
+      costUsd: late.costUsd,
+      inputTokens: late.inputTokens,
+      outputTokens: late.outputTokens,
+      costKnown: late.costKnown,
+    },
+    ...(lateBuild.fallback ? { fallback: lateBuild.fallback } : {}),
   };
 }

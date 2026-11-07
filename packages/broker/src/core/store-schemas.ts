@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { BrokerError } from "./broker-error.js";
 import { SETTLED_TASK_STATUSES } from "./types.js";
-import type { BudgetScopeType, GoalStatus, GoalTransitionReason } from "./types.js";
+import type { BudgetScopeType, GoalStatus, GoalTransitionReason, SpendTotals } from "./types.js";
 
 /**
  * Persisted broker state version. Defined here, beside the snapshot schema that
@@ -1157,6 +1157,39 @@ export function budgetPeriodKey(at: string | Date, timeZone: string): string {
   const year = parts.find((part) => part.type === "year")?.value ?? "";
   const month = parts.find((part) => part.type === "month")?.value ?? "";
   return `${year.padStart(4, "0")}-${month}`;
+}
+
+/**
+ * A BigInt token total as JSON (#2499 slice 3a; moved here from the
+ * budget-status route so every SpendTotals consumer shares it): a number
+ * while it is a safe integer (<= Number.MAX_SAFE_INTEGER, the normal case),
+ * else its exact decimal string. Clients must accept both; a string means
+ * "above 2^53 - 1". `JSON.stringify` throws on a bigint, so a SpendTotals
+ * must never be serialized without this projection.
+ */
+export function jsonSafeSpendInteger(value: bigint): number | string {
+  return value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : value.toString();
+}
+
+/** The JSON-safe (snake_case) projection of SpendTotals: the `/budgets/status` contract. */
+export interface SpendTotalsJson {
+  usd_known_total: number;
+  input_tokens_total: number | string;
+  output_tokens_total: number | string;
+  task_count: number;
+  cost_unknown_task_count: number;
+  unmetered_task_count: number;
+}
+
+export function spendTotalsToJson(totals: SpendTotals): SpendTotalsJson {
+  return {
+    usd_known_total: totals.usdKnownTotal,
+    input_tokens_total: jsonSafeSpendInteger(totals.inputTokensTotal),
+    output_tokens_total: jsonSafeSpendInteger(totals.outputTokensTotal),
+    task_count: totals.taskCount,
+    cost_unknown_task_count: totals.costUnknownTaskCount,
+    unmetered_task_count: totals.unmeteredTaskCount,
+  };
 }
 
 /**

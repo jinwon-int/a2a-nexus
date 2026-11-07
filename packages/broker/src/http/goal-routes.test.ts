@@ -449,6 +449,7 @@ test("handler: budget status validates its query and reports available:false wit
   assert.equal(ok.json.period_total, null);
   assert.equal(ok.json.scope_total, null);
   assert.equal("total" in ok.json, false);
+  assert.equal("ledger" in ok.json, false, "no ledger, no ledger coverage");
 
   await assert.rejects(() => route("GET", "/budgets/status?scope_type=team"), rejectsWith("bad_request", /scope_type must be one of agent, lane, goal/));
   await assert.rejects(() => route("GET", "/budgets/status?scope_id=worker-a"), rejectsWith("bad_request", /scope_id requires scope_type/));
@@ -506,6 +507,61 @@ test("handler: token totals above Number.MAX_SAFE_INTEGER are exact decimal stri
     const small = await route("GET", "/budgets/status?period=2026-11&scope_type=agent&scope_id=worker-small");
     assert.equal(small.json.scope_total.input_tokens_total, 5);
     assert.equal(small.json.period_total.input_tokens_total, "9008000000000005");
+    // #2499 slice 3a: rows written straight to the ledger have no task rows,
+    // so nothing is missing; the coverage metadata came from construction.
+    assert.deepEqual(all.json.ledger, {
+      firstPeriod: broker.budgetPeriodKey(),
+      timeZone: "UTC",
+      missingSpendRows: 0,
+      periodComplete: "2026-11" > broker.budgetPeriodKey(),
+    });
+    // periodComplete: only a period strictly after the first one.
+    assert.equal((await route("GET", `/budgets/status?period=${broker.budgetPeriodKey()}`)).json.ledger.periodComplete, false);
+    assert.equal((await route("GET", "/budgets/status?period=2999-01")).json.ledger.periodComplete, true);
+    assert.equal((await route("GET", "/budgets/status?period=1999-01")).json.ledger.periodComplete, false);
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("handler: ledger.missingSpendRows counts terminal task rows without a spend row; null when the count is unavailable or throws", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-budget-status-missing-"));
+  const store = new SqliteBrokerStateStore(join(dir, "state.sqlite"));
+  try {
+    const broker = new InMemoryA2ABroker(store, store.load(), { budgetPeriodTimeZone: "UTC" });
+    // Two terminal task rows the ledger has no row for (written past the broker), one queued.
+    const row = (id: string, status: string) => ({
+      id,
+      intent: "analyze",
+      requester: { id: "hub-a", kind: "node", role: "hub" },
+      target: { id: "worker-a", kind: "node", role: "analyst" },
+      targetNodeId: "worker-a",
+      status,
+      payload: {},
+      artifactIds: [],
+      createdAt: "2026-11-01T00:00:00.000Z",
+      updatedAt: "2026-11-01T00:00:00.000Z",
+      taskOrigin: "api",
+    }) as unknown as Parameters<SqliteBrokerStateStore["upsertHotTasks"]>[0][number];
+    store.upsertHotTasks([row("m-1", "succeeded"), row("m-2", "canceled"), row("m-3", "queued")]);
+    const { route } = makeRouter(broker);
+    const counted = await route("GET", "/budgets/status");
+    assert.equal(counted.status, 200);
+    assert.equal(counted.json.ledger.missingSpendRows, 2);
+
+    store.countTerminalTasksMissingSpend = () => {
+      throw new Error("disk I/O error");
+    };
+    const failed = await route("GET", "/budgets/status");
+    assert.equal(failed.status, 200, "a failed count does not fail the status read");
+    assert.equal(failed.json.ledger.missingSpendRows, null);
+    assert.equal(failed.json.available, true);
+    assert.equal(failed.json.ledger.timeZone, "UTC", "the other ledger fields stay");
+    assert.ok(failed.json.period_total);
+
+    Object.assign(store, { countTerminalTasksMissingSpend: undefined });
+    assert.equal((await route("GET", "/budgets/status")).json.ledger.missingSpendRows, null, "a store that cannot count");
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });
@@ -573,6 +629,9 @@ async function exerciseBudgetServer(baseUrl: string): Promise<void> {
     ["agent:worker-a:2:null", "lane:analyze:1:null", "lane:chat:1:null", "goal:goal-spend:1:null"],
   );
   assert.equal(all.truncated, false);
+  // #2499 slice 3a: ledger coverage (additive). The ledger started recording
+  // this period, so it is not complete (later periods: the handler test).
+  assert.deepEqual(all.ledger, { firstPeriod: all.period, timeZone: "Asia/Seoul", missingSpendRows: 0, periodComplete: false });
 
   const goal = await (await fetch(`${baseUrl}/budgets/status?scope_type=goal&scope_id=goal-spend&period=${all.period}`, { headers: HUB })).json();
   assert.equal(goal.scopeType, "goal");
@@ -613,6 +672,7 @@ async function exerciseBudgetServer(baseUrl: string): Promise<void> {
   const otherMonth = await (await fetch(`${baseUrl}/budgets/status?period=1999-01`, { headers: HUB })).json();
   assert.equal(otherMonth.period_total.task_count, 0);
   assert.deepEqual(otherMonth.scopes, []);
+  assert.equal(otherMonth.ledger.periodComplete, false, "a period before the ledger started is not complete");
 
   const bad = await fetch(`${baseUrl}/budgets/status?scope_type=team`, { headers: HUB });
   assert.equal(bad.status, 400);

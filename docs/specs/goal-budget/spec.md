@@ -137,6 +137,30 @@ Conclusions:
       else its decimal string.
     - Spend is SQLite-only. Other stores keep no ledger, and budget status
       reports `available: false` for them.
+  - *Clarified in slice 3a (2026-11-07):*
+    - **Late metering (G1).** A task canceled while running is recorded
+      unmetered at cancel time. The first late complete/fail result the worker
+      posts after the cancel (`lateEvidenceAfterCancel`) updates that row once,
+      only while it is still unmetered (`cost_known = 0`, zero tokens) and only
+      when the poster is the row's `agent_id`. Same carriers, precedence and
+      validation as a terminal-time row. `period_key` and `recorded_at` keep the
+      cancel's values.
+    - **Reconciliation (G2, G3).** Terminal `broker_tasks` rows with no spend row
+      are found by one anti-join (status column and the spend primary key, never
+      `payload`) and repaired create-only from the in-memory task record, at
+      startup and on every stale-reaper sweep (one page of 200). The same pass
+      backfills terminal tasks from before slice 2 that are still in the hot
+      table. Budget status reports the live count as `ledger.missingSpendRows`.
+    - **Ledger coverage.** The store records the first ledger period
+      (`spend_ledger_first_period`, written once) and the period zone
+      (`spend_ledger_time_zone`). Budget status shows both and `periodComplete`
+      (the requested period is after the first ledger period).
+    - **Retention.** Spend rows are never pruned; terminal task rows are, so the
+      reconciliation can only repair tasks still in the hot table. Its cadence
+      (startup plus every sweep) is far shorter than the retention window.
+    - **Telemetry fallback.** When a higher-precedence carrier is malformed and a
+      later one parses, the row is metered from the later one and the broker logs
+      one `broker.spend.telemetry_fallback` line (reason code only).
 - Monthly totals are derived from `broker_spend_events` by `period_key` instead of a
   mutable running counter. This keeps the ledger auditable and avoids a second write
   path that could drift.
@@ -222,6 +246,57 @@ question each decision answers.
 
 *(Draft Q1 is answered above: usage is present for some runtimes only, as an unsigned
 sidecar in `task.result.output.executionTelemetry`.)*
+
+### Enforcement preconditions (slice 3a, 2026-11-07)
+
+Proposed in the slice 3a PR and accepted when the owner approves its merge. They resolve
+the preconditions in `tasks.md` (slice 3) and the slice 2 re-review additions. Items 9–14
+constrain slice 3b, which adds the enforcement mode; none of them changes behaviour while
+enforcement is `off`.
+
+6. **G1 — late telemetry after a cancel: one-time late metering** (see "Clarified in
+   slice 3a"). Canceled work is metered when the worker reports it; work the worker never
+   reports stays unmetered. A row rebuilt by the reconciliation is attributed to the
+   assignee (the claimant at cancel time is not kept on the task record) and gets the
+   late usage when the late poster is that assignee. The late poster always is the
+   assignee (`assertTaskWorker`), so the live path and the rebuilt row differ only for a
+   task reassigned after its claim; that divergence is accepted.
+7. **G2 — missing rows: repair, not only report.** Create-only reconciliation at startup and
+   on every stale-reaper sweep (the periodic run keeps its page cursor across sweeps, so it
+   advances past ids it cannot repair); the remaining count is shown in budget status, or
+   `null` when the count cannot be read.
+   Enforcement proceeds while rows are missing; the count tells the operator how much
+   spend the totals may be missing.
+8. **Fail-closed spend insert: kept.** A failing ledger insert still fails the terminal
+   transition. The failures left (I/O, disk full, lock timeout) would fail the task row
+   in the same transaction anyway, the failure is visible and the worker retries, and a
+   silent under-count would weaken enforcement. With the reconciliation in place, a
+   non-fatal variant buys nothing. The same holds for the G1 late-metering update, which
+   rides the late-evidence transaction.
+9. **G3 — partial deploy period: no enforcement before the first full period.** The
+   reconciliation backfills what the hot table still has, but tasks pruned before the
+   deploy are gone. Slice 3b runs `on` as `shadow` for any period where
+   `periodComplete` is false (the deploy month).
+10. **Spend of running tasks: overshoot accepted.** Spend is counted at the terminal
+    transition only. A scope can overshoot by the tasks already claimed when it becomes
+    exhausted, plus tasks that completed within one worker-thread write flush (reads run on
+    the main-thread connection; writes are queued). In-flight tasks are never interrupted.
+11. **Time zone change: new rows only, at a month boundary.** `period_key` is fixed at
+    insert. A changed `A2A_BUDGET_PERIOD_TIME_ZONE` logs `broker.spend.time_zone_changed`
+    at startup and updates the stored zone; the runbook (slice 4) says to change it only at
+    a month boundary. The broker does not refuse the change.
+12. **Unsigned telemetry: counted as reported, within the per-task caps** (`costUsd`
+    ≤ 1e6, tokens ≤ 1e12; above a cap the carrier is malformed, never clamped). Budgets
+    are a cost guardrail between trusted fleet workers, not a security boundary. Signed
+    usage is a follow-up issue.
+13. **Ledger unavailable or unreadable (slice 3b behaviour).** A mode other than `off` on
+    a store without a spend ledger (`available: false`) refuses startup. A budget read that
+    throws at claim time fails open: the claim proceeds, the broker logs
+    `broker.budget.check_failed` and counts it in budget status. Token sums are exact
+    BigInt to 2^63 − 1 and USD uses `TOTAL()`, so no overflow path is expected; a SQLite
+    integer overflow is treated as a failed read.
+14. **Slice 2 clarifications accepted:** `input_tokens` is uncached input plus
+    cache-creation tokens; "not reported" is stored as `0`.
 
 ## Out of scope
 
