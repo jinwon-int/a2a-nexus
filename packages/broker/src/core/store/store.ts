@@ -501,8 +501,12 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     // rows. Absent markers (fresh or pre-versioning databases) pass through.
     this.assertPersistedStateOpenable();
     this.journalMode = this.initializeDatabase();
+    // #2512: the lineage store shares this connection, so lineage writes made
+    // while `runBatch` holds a transaction join it instead of nesting a BEGIN.
     this.reviewLineageObservations =
-      new SqliteReviewLineageObservationStore(this.db);
+      new SqliteReviewLineageObservationStore(this.db, {
+        outerTransactionOpen: () => this.transactionDepth > 0,
+      });
     // Publish the schema version only after the canonical lineage/ledger and
     // Phase 14 authenticated source-event tables initialize on the same
     // connection.
@@ -1918,13 +1922,20 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     // dedicated SQLite rows always win and a later stale blob cannot overwrite
     // them. Avoid marking an absent pre-import snapshot as imported because a
     // configured JSON import may still be loaded by loadHotRuntimeSnapshot().
-    if (!this.deferReviewLineageImport && legacyRecords !== undefined) {
+    //
+    // #2512: the one-time import normally happens at load (outside any batch)
+    // whenever a canonical snapshot exists. Once the marker is set, skip the
+    // import with a plain read: `save()` runs inside commitMutation's
+    // `runBatch`, and the import used to open a nested BEGIN IMMEDIATE (and
+    // re-validate every record) on every full save. A store that reaches its
+    // first save never imported still imports here, joining the open batch.
+    let imported = this.reviewLineageObservations.legacySnapshotImported();
+    if (!imported && !this.deferReviewLineageImport && legacyRecords !== undefined) {
       this.reviewLineageObservations.importLegacySnapshot(legacyRecords);
+      imported = true;
     }
     const canonical = this.reviewLineageObservations.listLineages();
-    const canonicalAuthorityReady =
-      canonical.length > 0
-      || this.reviewLineageObservations.legacySnapshotImported();
+    const canonicalAuthorityReady = canonical.length > 0 || imported;
     return {
       ...snapshot,
       reviewLineages: canonicalAuthorityReady

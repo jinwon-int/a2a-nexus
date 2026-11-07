@@ -73,11 +73,11 @@ interface Harness {
   close(): void;
 }
 
-function harness(wiring: Wiring, mode: Mode, storeOptions: { deferReviewLineageImport?: boolean } = {}): Harness {
+function harness(wiring: Wiring, mode: Mode): Harness {
   const dir = mkdtempSync(join(tmpdir(), "a2a-budget-enforce-"));
   const dbFile = join(dir, "state.sqlite");
   const open = (openMode: Mode) => {
-    const store = new SqliteBrokerStateStore(dbFile, { loadSource: "hot-tables", ...storeOptions });
+    const store = new SqliteBrokerStateStore(dbFile, { loadSource: "hot-tables" });
     const repositories = wiring === "repositories"
       ? {
           taskRepository: new SqliteTaskRuntimeRepository(store),
@@ -933,10 +933,8 @@ for (const wiring of WIRINGS) {
 
   test(`[${wiring}] goals: a budget-limited goal resumes when the period rolls`, () => {
     // The clock jump makes the next persist a full save inside the mutation's
-    // transaction; on a fresh in-process store the legacy review-lineage
-    // import then opens a nested transaction (unrelated to budgets), so the
-    // store defers that import as the worker-thread store does.
-    const h = harness(wiring, "on", { deferReviewLineageImport: true });
+    // transaction (the in-process default store; #2512 regression coverage).
+    const h = harness(wiring, "on");
     try {
       completePeriod(h);
       h.broker.createGoal({ id: "goal-1", title: "Goal one", requester: OPERATOR });

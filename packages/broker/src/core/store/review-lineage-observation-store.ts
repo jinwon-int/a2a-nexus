@@ -380,8 +380,19 @@ export class SqliteReviewLineageObservationStore
 implements DurableReviewLineageObservationStore {
   private readonly db: DatabaseSync;
   private readonly ownsDatabase: boolean;
+  private readonly outerTransactionOpen: (() => boolean) | undefined;
 
-  constructor(database: string | DatabaseSync) {
+  /**
+   * `options.outerTransactionOpen` lets the owner of a shared connection report
+   * that it holds a transaction (SqliteBrokerStateStore's `runBatch`), so the
+   * writes here join it instead of issuing a nested BEGIN (#2512). It backs up
+   * `DatabaseSync.isTransaction`, which older supported Node 22 releases lack.
+   */
+  constructor(
+    database: string | DatabaseSync,
+    options: { outerTransactionOpen?: () => boolean } = {},
+  ) {
+    this.outerTransactionOpen = options.outerTransactionOpen;
     this.ownsDatabase = typeof database === "string";
     this.db = typeof database === "string"
       ? new DatabaseSync(database)
@@ -890,7 +901,19 @@ implements DurableReviewLineageObservationStore {
     }
   }
 
+  /**
+   * Run `fn` atomically. With no transaction open on the connection this is a
+   * BEGIN IMMEDIATE unit as before. Inside an open one (the broker's
+   * `commitMutation` -> `runBatch`, which wraps a full `save()` and so the
+   * legacy import) a second BEGIN fails with "cannot start a transaction
+   * within a transaction" (#2512), so join it through a savepoint instead: the
+   * outer transaction owns the commit, and a failure here still undoes this
+   * unit's own writes before the error propagates.
+   */
   private immediateTransaction<T>(fn: () => T): T {
+    if (this.db.isTransaction === true || this.outerTransactionOpen?.() === true) {
+      return this.joinOpenTransaction(fn);
+    }
     this.db.exec("BEGIN IMMEDIATE");
     try {
       const result = fn();
@@ -901,6 +924,23 @@ implements DurableReviewLineageObservationStore {
         this.db.exec("ROLLBACK");
       } catch {
         // Preserve the first failure; partial success is never reported.
+      }
+      throw error;
+    }
+  }
+
+  private joinOpenTransaction<T>(fn: () => T): T {
+    this.db.exec("SAVEPOINT review_lineage_join");
+    try {
+      const result = fn();
+      this.db.exec("RELEASE review_lineage_join");
+      return result;
+    } catch (error) {
+      try {
+        this.db.exec("ROLLBACK TO review_lineage_join");
+        this.db.exec("RELEASE review_lineage_join");
+      } catch {
+        // Preserve the first failure; the outer transaction rolls back on it.
       }
       throw error;
     }
