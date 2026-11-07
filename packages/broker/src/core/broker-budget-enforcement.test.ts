@@ -29,10 +29,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import test from "node:test";
+import test, { mock } from "node:test";
 
+import { createBrokerAgentCard } from "../a2a/agent-card.js";
+import { executeA2AJsonRpc } from "../a2a/json-rpc.js";
 import { readSseEventsUntil, startTestServer } from "../server-test-helpers.js";
 import { BrokerError, InMemoryA2ABroker } from "./broker.js";
+import { PendingHotStateBuffer } from "./store/pending-hot-state-buffer.js";
 import {
   SqliteArtifactRuntimeRepository,
   SqliteAuditRuntimeRepository,
@@ -45,7 +48,7 @@ import {
   SqliteValidationRuntimeRepository,
   SqliteWorkerRuntimeRepository,
 } from "./store/store.js";
-import type { CreateBudgetRequest, CreateTaskRequest, SpendEventRecord } from "./types.js";
+import type { BudgetRecord, CreateBudgetRequest, CreateTaskRequest, GoalRecord, SpendEventRecord } from "./types.js";
 
 const OPERATOR = { id: "operator-1", kind: "user" as const, role: "operator" as const };
 const TELEMETRY_SCHEMA = "a2a.analysis-execution-telemetry.v1";
@@ -63,10 +66,10 @@ interface Harness {
   close(): void;
 }
 
-function harness(wiring: Wiring, mode: Mode): Harness {
+function harness(wiring: Wiring, mode: Mode, storeOptions: { deferReviewLineageImport?: boolean } = {}): Harness {
   const dir = mkdtempSync(join(tmpdir(), "a2a-budget-enforce-"));
   const dbFile = join(dir, "state.sqlite");
-  const store = new SqliteBrokerStateStore(dbFile, { loadSource: "hot-tables" });
+  const store = new SqliteBrokerStateStore(dbFile, { loadSource: "hot-tables", ...storeOptions });
   const repositories = wiring === "repositories"
     ? {
         taskRepository: new SqliteTaskRuntimeRepository(store),
@@ -85,7 +88,7 @@ function harness(wiring: Wiring, mode: Mode): Harness {
     budgetEnforcementMode: mode,
     ...repositories,
   });
-  for (const nodeId of ["worker-a", "worker-b", "worker-c"]) {
+  for (const nodeId of ["worker-a", "worker-b", "worker-c", "default-agent"]) {
     broker.registerWorker({
       nodeId,
       role: "analyst",
@@ -594,3 +597,585 @@ for (const wiring of WIRINGS) {
     }
   });
 }
+
+// --- Slice 3b-2 step B additions ----------------------------------------------------------
+
+function captureWarnings<T>(fn: () => T): { result: T; events: Array<Record<string, unknown>> } {
+  const lines: string[] = [];
+  const original = console.warn;
+  console.warn = (message?: unknown) => {
+    lines.push(String(message));
+  };
+  try {
+    const result = fn();
+    const events = lines.flatMap((line) => {
+      try {
+        return [JSON.parse(line) as Record<string, unknown>];
+      } catch {
+        return [];
+      }
+    });
+    return { result, events };
+  } finally {
+    console.warn = original;
+  }
+}
+
+function named(events: Array<Record<string, unknown>>, name: string): Array<Record<string, unknown>> {
+  return events.filter((event) => event.event === name);
+}
+
+function refusal(fn: () => unknown): BrokerError {
+  let error: unknown;
+  try {
+    quiet(fn);
+  } catch (caught) {
+    error = caught;
+  }
+  assert.ok(error instanceof BrokerError, `expected a BrokerError, got ${String(error)}`);
+  return error;
+}
+
+const TELEMETRY = { executionTelemetry: { schemaVersion: TELEMETRY_SCHEMA, inputTokens: 11, outputTokens: 4, costUsd: 0.02 } };
+
+for (const wiring of WIRINGS) {
+  test(`[${wiring}] claims: refusals and would-refuse decisions are counted and logged at most once per minute; status shows the counters`, async () => {
+    const on = harness(wiring, "on");
+    try {
+      completePeriod(on);
+      budget(on, { id: "b-lane", scopeType: "lane", scopeId: "analyze", limitTokens: 100 });
+      seedSpend(on, spendRow(on, "r-1", { inputTokens: 500 }));
+      on.broker.createTask(taskRequest("t-1", "worker-a"));
+      on.broker.createTask(taskRequest("t-2", "worker-a"));
+      const run = captureWarnings(() => {
+        for (const id of ["t-1", "t-2"]) assert.throws(() => on.broker.claimTask(id, "worker-a"), /budget/);
+      });
+      assert.deepEqual(named(run.events, "broker.budget.claim_refused"), [
+        { event: "broker.budget.claim_refused", taskId: "t-1", workerId: "worker-a", scopes: ["b-lane"], suppressed: 0 },
+      ]);
+      const claims = on.broker.getBudgetEnforcementCounters().claims;
+      assert.equal(claims.refusedTotal, 2);
+      assert.equal(claims.wouldRefuseTotal, 0);
+      assert.match(claims.lastAt ?? "", /^\d{4}-\d{2}-\d{2}T/);
+      await withServer(on, "on", async (baseUrl) => {
+        const status = await (await fetch(`${baseUrl}/budgets/status`)).json() as Record<string, Record<string, unknown>>;
+        assert.equal(status.claims?.refusedTotal, 2);
+        assert.deepEqual(Object.keys(status.creates ?? {}).sort(), ["lastAt", "refusedTotal", "wouldRefuseTotal"]);
+        assert.deepEqual(Object.keys(status.goals ?? {}).sort(), ["lastAt", "limitedTotal", "resumedTotal", "wouldLimitTotal", "wouldResumeTotal"]);
+        assert.equal(status.checkFailed?.consecutive, 0);
+      });
+    } finally {
+      on.close();
+    }
+    const shadow = harness(wiring, "shadow");
+    try {
+      completePeriod(shadow);
+      budget(shadow, { id: "b-lane", scopeType: "lane", scopeId: "analyze", limitTokens: 100 });
+      seedSpend(shadow, spendRow(shadow, "r-1", { inputTokens: 500 }));
+      shadow.broker.createTask(taskRequest("t-1", "worker-a"));
+      const run = captureWarnings(() => shadow.broker.claimTask("t-1", "worker-a"));
+      assert.equal(run.result.status, "claimed");
+      assert.deepEqual(named(run.events, "broker.budget.would_refuse"), [
+        { event: "broker.budget.would_refuse", taskId: "t-1", workerId: "worker-a", scopes: ["b-lane"], suppressed: 0 },
+      ]);
+      assert.equal(shadow.broker.getBudgetEnforcementCounters().claims.wouldRefuseTotal, 1);
+      assert.equal(shadow.broker.getBudgetEnforcementCounters().claims.refusedTotal, 0);
+    } finally {
+      shadow.close();
+    }
+  });
+
+  test(`[${wiring}] checkFailed: a metadata-only failure is checkFailed (fail-open); consecutive counts failures until the next successful read`, async () => {
+    const h = harness(wiring, "on");
+    try {
+      completePeriod(h);
+      budget(h, { id: "b-lane", scopeType: "lane", scopeId: "analyze", limitTokens: 100 });
+      seedSpend(h, spendRow(h, "r-1", { inputTokens: 500 }));
+      h.broker.createTask(taskRequest("t-1", "worker-a"));
+      h.broker.createTask(taskRequest("t-2", "worker-a"));
+      const metadata = h.store.readSpendLedgerMetadata.bind(h.store);
+      h.store.readSpendLedgerMetadata = () => {
+        throw new Error("disk I/O error");
+      };
+      const decision = quiet(() => h.broker.evaluateClaimBudget({ workerId: "worker-a", lane: "analyze" }));
+      assert.equal(decision.checkFailed, true, "the enforcement metadata read failed");
+      assert.equal(decision.refuse, false);
+      assert.equal(quiet(() => h.broker.claimTask("t-1", "worker-a")).status, "claimed", "fail-open");
+      assert.deepEqual(
+        (({ count, consecutive }) => ({ count, consecutive }))(h.broker.getBudgetCheckFailures()),
+        { count: 2, consecutive: 2 },
+      );
+      h.store.readSpendLedgerMetadata = metadata;
+      const usage = h.store.readSpendScopeUsage.bind(h.store);
+      h.store.readSpendScopeUsage = () => {
+        throw new Error("disk I/O error");
+      };
+      quiet(() => h.broker.evaluateClaimBudget({ workerId: "worker-a", lane: "analyze" }));
+      assert.equal(h.broker.getBudgetCheckFailures().consecutive, 3);
+      h.store.readSpendScopeUsage = usage;
+      // The next successful evaluation ends the run (the count stays).
+      assertClaimRefused(h, "t-2", "worker-a", { budgetId: "b-lane", scopeType: "lane", scopeId: "analyze", reason: "tokens_exhausted" });
+      assert.deepEqual(
+        (({ count, consecutive }) => ({ count, consecutive }))(h.broker.getBudgetCheckFailures()),
+        { count: 3, consecutive: 0 },
+      );
+      await withServer(h, "on", async (baseUrl) => {
+        const status = await (await fetch(`${baseUrl}/budgets/status`)).json() as { checkFailed: Record<string, unknown> };
+        assert.equal(status.checkFailed.count, 3);
+        assert.equal(status.checkFailed.consecutive, 0);
+      });
+    } finally {
+      h.close();
+    }
+  });
+
+  test(`[${wiring}] listing: one aggregate read per budget and one cost probe per listing; off reads nothing`, () => {
+    const h = harness(wiring, "on");
+    try {
+      completePeriod(h);
+      budget(h, { id: "b-lane", scopeType: "lane", scopeId: "analyze", limitUsd: 1 });
+      budget(h, { id: "b-agent", scopeType: "agent", scopeId: "worker-a", limitTokens: 1_000_000 });
+      seedSpend(h, spendRow(h, "r-b", { agentId: "worker-b", costKnown: true, costUsd: 5 }));
+      for (let index = 0; index < 5; index += 1) h.broker.createTask(taskRequest(`t-${index}`, "worker-a"));
+      const calls = { usage: 0, cost: 0 };
+      const usage = h.store.readSpendScopeUsage.bind(h.store);
+      const cost = h.store.hasCostReportingSpend.bind(h.store);
+      h.store.readSpendScopeUsage = (query) => {
+        calls.usage += 1;
+        return usage(query);
+      };
+      h.store.hasCostReportingSpend = (query) => {
+        calls.cost += 1;
+        return cost(query);
+      };
+      const listed = h.broker.listTasks({ assignedWorkerId: "worker-a", status: "queued" });
+      const kept = h.broker.filterQueuedListingForWorker("worker-a", listed);
+      assert.equal(kept.length, 5, "worker-a reports no cost: a USD-exhausted lane keeps its tasks");
+      assert.deepEqual(calls, { usage: 2, cost: 1 }, "memoized per listing");
+    } finally {
+      h.close();
+    }
+    const off = harness(wiring, "off");
+    try {
+      budget(off, { id: "b-lane", scopeType: "lane", scopeId: "analyze", limitTokens: 1 });
+      off.broker.createTask(taskRequest("t-1", "worker-a"));
+      let reads = 0;
+      off.store.readSpendScopeUsage = () => {
+        reads += 1;
+        throw new Error("must not be read");
+      };
+      off.store.readSpendLedgerMetadata = () => {
+        reads += 1;
+        throw new Error("must not be read");
+      };
+      const listed = off.broker.listTasks({ assignedWorkerId: "worker-a", status: "queued" });
+      assert.equal(off.broker.filterQueuedListingForWorker("worker-a", listed).length, 1);
+      assert.equal(reads, 0);
+    } finally {
+      off.close();
+    }
+  });
+
+  // --- pause at create -----------------------------------------------------------------
+
+  test(`[${wiring}] pause: an exhausted pause budget refuses the create (budget_paused); refuse budgets never refuse at create; USD only for a cost-reporting worker`, () => {
+    const h = harness(wiring, "on");
+    try {
+      completePeriod(h);
+      budget(h, { id: "b-pause", scopeType: "lane", scopeId: "analyze", limitTokens: 100, enforce: "pause" });
+      budget(h, { id: "b-refuse", scopeType: "lane", scopeId: "chat", limitTokens: 100 });
+      budget(h, { id: "b-usd", scopeType: "lane", scopeId: "verify", limitUsd: 1, enforce: "pause" });
+      budget(h, { id: "b-agent", scopeType: "agent", scopeId: "worker-c", limitTokens: 10, enforce: "pause" });
+      seedSpend(
+        h,
+        spendRow(h, "r-1", { lane: "analyze", inputTokens: 500 }),
+        spendRow(h, "r-2", { lane: "chat", inputTokens: 500 }),
+        spendRow(h, "r-3", { lane: "verify", agentId: "worker-a", costKnown: true, costUsd: 2 }),
+        spendRow(h, "r-4", { lane: "backfill", agentId: "worker-c", inputTokens: 50 }),
+      );
+      const paused = refusal(() => h.broker.createTask(taskRequest("t-paused", "worker-a")));
+      assert.equal(paused.code, "policy_denied");
+      assert.equal(paused.details?.reason, "budget_paused");
+      assert.deepEqual(
+        (paused.details?.scopes as Array<Record<string, unknown>>).map((scope) => [scope.budgetId, scope.scopeType, scope.scopeId, scope.reason]),
+        [["b-pause", "lane", "analyze", "tokens_exhausted"]],
+      );
+      assert.equal(h.broker.getTask("t-paused"), null, "nothing is created");
+      assert.deepEqual(h.broker.listAuditEvents({ action: "task.created" }).filter((event) => event.targetId === "t-paused"), []);
+      assert.equal(h.broker.createTask(taskRequest("t-chat", "worker-a", { intent: "chat" })).status, "queued", "a refuse budget acts at claim only");
+      const usd = refusal(() => h.broker.createTask(taskRequest("t-usd-a", "worker-a", { intent: "verify" })));
+      assert.equal(usd.details?.reason, "budget_paused");
+      assert.equal(h.broker.createTask(taskRequest("t-usd-b", "worker-b", { intent: "verify" })).status, "queued", "Decision 4: not a cost-reporting worker");
+      const agent = refusal(() => h.broker.createTask(taskRequest("t-agent", "worker-c", { intent: "backfill" })));
+      assert.equal((agent.details?.scopes as Array<Record<string, unknown>>)[0]?.scopeType, "agent");
+      const creates = h.broker.getBudgetEnforcementCounters().creates;
+      assert.equal(creates.refusedTotal, 3);
+      assert.equal(creates.wouldRefuseTotal, 0);
+    } finally {
+      h.close();
+    }
+  });
+
+  test(`[${wiring}] pause: shadow counts the would-refuse create and logs it; the task is created`, () => {
+    const h = harness(wiring, "shadow");
+    try {
+      completePeriod(h);
+      budget(h, { id: "b-pause", scopeType: "lane", scopeId: "analyze", limitTokens: 100, enforce: "pause" });
+      seedSpend(h, spendRow(h, "r-1", { inputTokens: 500 }));
+      const run = captureWarnings(() => h.broker.createTask(taskRequest("t-1", "worker-a")));
+      assert.equal(run.result.status, "queued");
+      assert.deepEqual(named(run.events, "broker.budget.create_would_refuse"), [
+        { event: "broker.budget.create_would_refuse", workerId: "worker-a", lane: "analyze", scopes: ["b-pause"], suppressed: 0 },
+      ]);
+      assert.equal(h.broker.getBudgetEnforcementCounters().creates.wouldRefuseTotal, 1);
+    } finally {
+      h.close();
+    }
+  });
+
+  test(`[${wiring}] pause: the retry task scheduled inside failTask is exempt (a terminal transition never fails on a budget)`, () => {
+    const h = harness(wiring, "on");
+    try {
+      completePeriod(h);
+      budget(h, { id: "b-pause", scopeType: "lane", scopeId: "analyze", limitTokens: 100, enforce: "pause" });
+      h.broker.createTask(taskRequest("t-retry", "worker-a", {
+        payload: { retryPolicy: { maxRetries: 1, retryOn: ["environment"], backoffMs: 0 } },
+      }));
+      h.broker.claimTask("t-retry", "worker-a");
+      h.broker.startTask("t-retry", "worker-a");
+      seedSpend(h, spendRow(h, "r-1", { inputTokens: 500 }));
+      assert.equal(refusal(() => h.broker.createTask(taskRequest("t-new", "worker-a"))).details?.reason, "budget_paused", "precondition");
+      const failed = quiet(() => h.broker.failTask("t-retry", "worker-a", {
+        code: "handler_exit_nonzero",
+        message: "handler failed",
+        details: { stage: "handler", nestedError: { code: "openclaw_analysis_failed" } },
+      }));
+      assert.equal(failed.status, "failed");
+      assert.ok(failed.retriedBy, "the retry is scheduled");
+      assert.equal(h.broker.getTask(failed.retriedBy!)?.status, "queued");
+    } finally {
+      h.close();
+    }
+  });
+
+  // --- goal budget_limited ---------------------------------------------------------------
+
+  test(`[${wiring}] goals: an exhausted goal budget limits a pursuing goal (budget_exhausted); a create for it is refused; raising the limit resumes it`, () => {
+    const h = harness(wiring, "on");
+    try {
+      completePeriod(h);
+      h.broker.createGoal({ id: "goal-1", title: "Goal one", requester: OPERATOR });
+      budget(h, { id: "b-goal", scopeType: "goal", scopeId: "goal-1", limitTokens: 100 });
+      assert.deepEqual(quiet(() => h.broker.applyGoalBudgetLimits()), { limited: [], resumed: [] }, "within the limit");
+      seedSpend(h, spendRow(h, "r-g", { goalId: "goal-1", inputTokens: 150 }));
+      const run = captureWarnings(() => h.broker.applyGoalBudgetLimits());
+      assert.deepEqual(run.result, { limited: ["goal-1"], resumed: [] });
+      assert.deepEqual(named(run.events, "broker.budget.goal_limited"), [{ event: "broker.budget.goal_limited", goalId: "goal-1", budgetId: "b-goal" }]);
+      const goal = h.broker.getGoal("goal-1")!;
+      assert.equal(goal.status, "budget_limited");
+      assert.equal(goal.outcome, undefined, "outcome.failed is not set (a budget limit is not a failure)");
+      assert.deepEqual(
+        (({ from, to, reason }) => ({ from, to, reason }))(goal.history[goal.history.length - 1]!),
+        { from: "pursuing", to: "budget_limited", reason: "budget_exhausted" },
+      );
+      assert.deepEqual(h.query<{ status: string }>("SELECT status FROM broker_goals WHERE id = 'goal-1'"), [{ status: "budget_limited" }], "the row is updated");
+      assert.deepEqual(
+        h.broker.listAuditEvents({ action: "goal.status_changed" }).map((event) => [event.actorId, event.targetId, event.note]),
+        [["broker", "goal-1", "pursuing->budget_limited:budget_exhausted"]],
+      );
+      assert.equal(h.broker.listGoals({ status: "budget_limited" }).length, 1);
+      assert.throws(
+        () => h.broker.createTask(taskRequest("t-goal", "worker-a", { goalId: "goal-1" })),
+        (error: unknown) => error instanceof BrokerError && error.code === "invalid_transition",
+        "slice 1: tasks attach to pursuing goals only",
+      );
+      assert.deepEqual(quiet(() => h.broker.applyGoalBudgetLimits()), { limited: [], resumed: [] }, "idempotent");
+      h.broker.updateBudget("b-goal", { limitTokens: 1_000, actorId: "operator-1" });
+      assert.deepEqual(quiet(() => h.broker.applyGoalBudgetLimits()), { limited: [], resumed: ["goal-1"] });
+      const resumed = h.broker.getGoal("goal-1")!;
+      assert.equal(resumed.status, "pursuing");
+      assert.deepEqual(
+        (({ from, to, reason, note }) => ({ from, to, reason, note }))(resumed.history[resumed.history.length - 1]!),
+        { from: "budget_limited", to: "pursuing", reason: "operator_requested", note: "budget_available" },
+      );
+      assert.equal(h.broker.createTask(taskRequest("t-goal", "worker-a", { goalId: "goal-1" })).status, "queued");
+      const goals = h.broker.getBudgetEnforcementCounters().goals;
+      assert.deepEqual([goals.limitedTotal, goals.resumedTotal], [1, 1]);
+    } finally {
+      h.close();
+    }
+  });
+
+  test(`[${wiring}] goals: a budget-limited goal resumes when the period rolls`, () => {
+    // The clock jump makes the next persist a full save inside the mutation's
+    // transaction; on a fresh in-process store the legacy review-lineage
+    // import then opens a nested transaction (unrelated to budgets), so the
+    // store defers that import as the worker-thread store does.
+    const h = harness(wiring, "on", { deferReviewLineageImport: true });
+    try {
+      completePeriod(h);
+      h.broker.createGoal({ id: "goal-1", title: "Goal one", requester: OPERATOR });
+      budget(h, { id: "b-goal", scopeType: "goal", scopeId: "goal-1", limitUsd: 1 });
+      seedSpend(h, spendRow(h, "r-g", { goalId: "goal-1", costKnown: true, costUsd: 3 }));
+      assert.deepEqual(quiet(() => h.broker.applyGoalBudgetLimits())?.limited, ["goal-1"], "USD counts for a goal (no Decision 4 here)");
+      const [year, month] = h.broker.budgetPeriodKey().split("-").map(Number) as [number, number];
+      mock.timers.enable({ apis: ["Date"], now: Date.UTC(year, month, 2) });
+      try {
+        assert.notEqual(h.broker.budgetPeriodKey(), `${year}-${String(month).padStart(2, "0")}`, "the period rolled");
+        assert.deepEqual(quiet(() => h.broker.applyGoalBudgetLimits())?.resumed, ["goal-1"]);
+        assert.equal(h.broker.getGoal("goal-1")?.status, "pursuing");
+      } finally {
+        mock.timers.reset();
+      }
+    } finally {
+      h.close();
+    }
+  });
+
+  test(`[${wiring}] goals: shadow only counts and logs; goals in other states, or limited for another reason, are untouched; off reads nothing`, () => {
+    const shadow = harness(wiring, "shadow");
+    try {
+      completePeriod(shadow);
+      shadow.broker.createGoal({ id: "goal-1", title: "Goal one", requester: OPERATOR });
+      budget(shadow, { id: "b-goal", scopeType: "goal", scopeId: "goal-1", limitTokens: 100 });
+      seedSpend(shadow, spendRow(shadow, "r-g", { goalId: "goal-1", inputTokens: 150 }));
+      const run = captureWarnings(() => shadow.broker.applyGoalBudgetLimits());
+      assert.deepEqual(run.result, { limited: [], resumed: [] });
+      assert.deepEqual(named(run.events, "broker.budget.goal_would_limit"), [
+        { event: "broker.budget.goal_would_limit", goalId: "goal-1", budgetId: "b-goal", suppressed: 0 },
+      ]);
+      assert.equal(shadow.broker.getGoal("goal-1")?.status, "pursuing");
+      assert.equal(shadow.broker.getBudgetEnforcementCounters().goals.wouldLimitTotal, 1);
+    } finally {
+      shadow.close();
+    }
+    const h = harness(wiring, "on");
+    try {
+      completePeriod(h);
+      const now = new Date().toISOString();
+      const goalRow = (id: string, status: GoalRecord["status"], reason: GoalRecord["history"][number]["reason"]): GoalRecord => ({
+        id,
+        title: id,
+        objective: id,
+        requester: OPERATOR,
+        status,
+        createdAt: now,
+        updatedAt: now,
+        taskAttachments: [],
+        history: [{ id: `${id}-h`, goalId: id, from: "pursuing", to: status, reason, createdAt: now }],
+      });
+      h.store.insertGoal(goalRow("goal-paused", "paused", "operator_requested"));
+      h.store.insertGoal(goalRow("goal-other", "budget_limited", "dependency_blocked"));
+      h.store.insertGoal(goalRow("goal-done", "achieved", "objective_satisfied"));
+      budget(h, { id: "b-paused", scopeType: "goal", scopeId: "goal-paused", limitTokens: 100 });
+      budget(h, { id: "b-other", scopeType: "goal", scopeId: "goal-other", limitTokens: 100 });
+      budget(h, { id: "b-done", scopeType: "goal", scopeId: "goal-done", limitTokens: 100 });
+      seedSpend(h, spendRow(h, "r-p", { goalId: "goal-paused", inputTokens: 500 }), spendRow(h, "r-d", { goalId: "goal-done", inputTokens: 500 }));
+      assert.deepEqual(quiet(() => h.broker.applyGoalBudgetLimits()), { limited: [], resumed: [] });
+      assert.deepEqual(
+        ["goal-paused", "goal-other", "goal-done"].map((id) => h.broker.getGoal(id)?.status),
+        ["paused", "budget_limited", "achieved"],
+      );
+      assert.deepEqual(h.broker.listAuditEvents({ action: "goal.status_changed" }), []);
+    } finally {
+      h.close();
+    }
+    const off = harness(wiring, "off");
+    try {
+      off.broker.createGoal({ id: "goal-1", title: "Goal one", requester: OPERATOR });
+      budget(off, { id: "b-goal", scopeType: "goal", scopeId: "goal-1", limitTokens: 1 });
+      off.store.readSpendScopeUsage = () => {
+        throw new Error("must not be read");
+      };
+      assert.equal(off.broker.applyGoalBudgetLimits(), undefined);
+      assert.equal(off.broker.getBudgetCheckFailures().count, 0);
+    } finally {
+      off.close();
+    }
+  });
+
+  // --- lost late metering ---------------------------------------------------------------
+
+  test(`[${wiring}] late metering lost with a failed save is restaged by the periodic pass; metered rows are untouched`, () => {
+    const h = harness(wiring, "off");
+    try {
+      for (const id of ["t-lost", "t-ok"]) {
+        h.broker.createTask(taskRequest(id, "worker-a"));
+        h.broker.claimTask(id, "worker-a");
+        h.broker.startTask(id, "worker-a");
+        quiet(() => h.broker.cancelTask(id, { actor: OPERATOR }));
+      }
+      quiet(() => h.broker.completeTask("t-ok", "worker-a", { summary: "late", output: TELEMETRY }));
+      h.sql(`CREATE TRIGGER meter_fail BEFORE UPDATE ON broker_spend_events
+             WHEN OLD.task_id = 't-lost' BEGIN SELECT RAISE(ABORT, 'metering write failed'); END`);
+      assert.throws(() => quiet(() => h.broker.completeTask("t-lost", "worker-a", { summary: "late", output: TELEMETRY })), /metering write failed/);
+      h.sql("DROP TRIGGER meter_fail");
+      assert.ok(h.broker.getTask("t-lost")?.lateEvidenceAfterCancel, "the late evidence stayed in memory");
+      // A worker retry is idempotent: no second staging.
+      quiet(() => h.broker.completeTask("t-lost", "worker-a", { summary: "late", output: TELEMETRY }));
+      const rows = () => h.query<{ task_id: string; input_tokens: number; output_tokens: number; cost_known: number }>(
+        "SELECT task_id, input_tokens, output_tokens, cost_known FROM broker_spend_events ORDER BY task_id",
+      );
+      assert.deepEqual(rows(), [
+        { task_id: "t-lost", input_tokens: 0, output_tokens: 0, cost_known: 0 },
+        { task_id: "t-ok", input_tokens: 11, output_tokens: 4, cost_known: 1 },
+      ]);
+      const run = captureWarnings(() => h.broker.restageLostLateMeterings());
+      assert.deepEqual(run.result, { restaged: 1, checked: 2 });
+      assert.deepEqual(named(run.events, "broker.spend.late_metering_restaged"), [
+        { event: "broker.spend.late_metering_restaged", count: 1, suppressed: 0 },
+      ]);
+      assert.deepEqual(rows(), [
+        { task_id: "t-lost", input_tokens: 11, output_tokens: 4, cost_known: 1 },
+        { task_id: "t-ok", input_tokens: 11, output_tokens: 4, cost_known: 1 },
+      ]);
+      assert.deepEqual(quiet(() => h.broker.restageLostLateMeterings()), { restaged: 0, checked: 1 }, "t-ok was settled");
+      assert.deepEqual(quiet(() => h.broker.restageLostLateMeterings()), { restaged: 0, checked: 0 }, "both settled");
+    } finally {
+      h.close();
+    }
+  });
+}
+
+// --- other claim entry points ---------------------------------------------------------------
+
+test("JSON-RPC convention send: a budget refusal of the inline claim leaves the created task queued and says why", () => {
+  const h = harness("hints", "on");
+  try {
+    completePeriod(h);
+    budget(h, { id: "b-agent", scopeType: "agent", scopeId: "default-agent", limitTokens: 10 });
+    seedSpend(h, spendRow(h, "r-1", { agentId: "default-agent", inputTokens: 50 }));
+    const response = quiet(() => executeA2AJsonRpc(
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "SendMessage",
+        params: { message: { role: "ROLE_USER", parts: [{ text: "complete me" }], messageId: "tck-complete-task-s1" } },
+      },
+      {
+        broker: h.broker,
+        agentCard: createBrokerAgentCard({ serviceName: "test-broker", publicBaseUrl: "https://broker.test/" }),
+        publicBaseUrl: "https://broker.test",
+        requesterIdentity: null,
+        enforceRequesterIdentity: false,
+        defaultAgentNodeId: "default-agent",
+        responseShape: "spec",
+      },
+    ));
+    assert.ok("error" in response, `expected an error, got ${JSON.stringify(response)}`);
+    const error = (response as { error: { code: number; message: string } }).error;
+    assert.equal(error.code, -32012, "policy_denied");
+    const match = /^budget_exhausted: claim of task (\S+) \(context (\S+)\) refused by a monthly budget; the task stays queued$/.exec(error.message);
+    assert.ok(match, error.message);
+    const task = h.broker.getTask(match[1]!);
+    assert.equal(task?.status, "queued");
+    assert.equal(task?.exchangeId, match[2]);
+    assert.equal(task?.claimedBy, undefined);
+  } finally {
+    h.close();
+  }
+});
+
+test("lease-gated HTTP claim: a budget refusal releases the granted lease, so a later claim is granted", async () => {
+  const h = harness("repositories", "on");
+  try {
+    completePeriod(h);
+    budget(h, { id: "b-lane", scopeType: "lane", scopeId: "analyze", limitTokens: 100 });
+    seedSpend(h, spendRow(h, "r-1", { inputTokens: 500 }));
+    h.broker.createTask(taskRequest("t-1", "worker-a"));
+    const server = await startTestServer({
+      broker: h.broker,
+      stateStore: h.store,
+      enforceRequesterIdentity: false,
+      budgetEnforcementMode: "on",
+      budgetPeriodTimeZone: "UTC",
+      rateLimitMaxRequests: 1_000,
+      sharedStateLeaseV1: true,
+      staleReaperOlderThanSec: 60,
+    });
+    try {
+      const claim = () => fetch(`${server.baseUrl}/tasks/t-1/claim`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workerId: "worker-a" }),
+      });
+      const refused = await quiet(claim);
+      const refusedBody = await refused.json() as { error?: { details?: Record<string, unknown> } };
+      assert.equal(refused.status, 403);
+      assert.equal(refusedBody.error?.details?.reason, "budget_exhausted");
+      assertStillQueued(h, "t-1");
+      // Raise the limit: the claim is granted, so the refused claim's lease was released.
+      h.broker.updateBudget("b-lane", { limitTokens: 10_000, actorId: "operator-1" });
+      const granted = await claim();
+      const body = await granted.json() as { status?: string; leaseV1?: unknown };
+      assert.equal(granted.status, 200, JSON.stringify(body));
+      assert.equal(body.status, "claimed");
+      assert.ok(body.leaseV1, "a lease stamp from the authority");
+    } finally {
+      await server.close();
+    }
+  } finally {
+    h.close();
+  }
+});
+
+// --- 3b-1 round-2 minors ------------------------------------------------------------------
+
+test("7a: a resync for an older write leaves a newer one; a write that did not land loses its audit event; the staged row is restored on rollback", () => {
+  const h = harness("hints", "off");
+  try {
+    budget(h, { id: "b-1", scopeType: "lane", scopeId: "analyze", limitUsd: 1 });
+    const first = h.broker.getBudgetWriteGeneration("b-1")!;
+    h.broker.updateBudget("b-1", { limitUsd: 5, actorId: "operator-1" });
+    const second = h.broker.getBudgetWriteGeneration("b-1")!;
+    assert.ok(second > first);
+    h.broker.reloadBudgetFromStore("b-1", first);
+    assert.equal(h.broker.getBudget("b-1")?.limitUsd, 5, "a newer write is pending: the older write's resync is a no-op");
+    // A write that did not land (the row still holds the previous value).
+    h.broker.updateBudget("b-1", { limitUsd: 7, actorId: "operator-1" });
+    const third = h.broker.getBudgetWriteGeneration("b-1")!;
+    h.sql("UPDATE broker_budgets SET limit_usd = 5 WHERE id = 'b-1'");
+    const updates = () => h.broker.listAuditEvents({ action: "budget.updated" }).length;
+    assert.equal(updates(), 2);
+    h.broker.reloadBudgetFromStore("b-1", third);
+    assert.equal(h.broker.getBudget("b-1")?.limitUsd, 5, "memory follows the row");
+    assert.equal(updates(), 1, "the failed write's audit event is removed");
+    // A write that landed keeps its audit event.
+    h.broker.updateBudget("b-1", { limitUsd: 9, actorId: "operator-1" });
+    h.broker.reloadBudgetFromStore("b-1", h.broker.getBudgetWriteGeneration("b-1"));
+    assert.equal(h.broker.getBudget("b-1")?.limitUsd, 9);
+    assert.equal(updates(), 2);
+  } finally {
+    h.close();
+  }
+  const buffer = new PendingHotStateBuffer();
+  const row = (limitUsd: number): BudgetRecord => ({
+    id: "b-1", scopeType: "lane", scopeId: "analyze", period: "month", limitUsd, limitTokens: null,
+    warnPct: 80, enforce: "refuse", createdBy: "o", createdAt: "2026-11-01T00:00:00.000Z",
+  });
+  buffer.stageBudget(row(1));
+  const previous = buffer.stagedBudget("b-1");
+  buffer.stageBudget(row(2));
+  buffer.unstageBudget("b-1", previous);
+  assert.deepEqual(buffer.consumeAll()?.budgets?.map((budget) => budget.limitUsd), [1], "the earlier staged row is restored");
+  buffer.stageBudget(row(3));
+  buffer.unstageBudget("b-1");
+  assert.equal(buffer.consumeAll(), undefined);
+});
+
+test("7b: budget reads return copies", () => {
+  const h = harness("hints", "off");
+  try {
+    budget(h, { id: "b-1", scopeType: "lane", scopeId: "analyze", limitUsd: 1 });
+    const created = h.broker.createBudget({ id: "b-2", scopeType: "lane", scopeId: "chat", period: "month", limitUsd: 2, createdBy: "o" });
+    for (const copy of [created, h.broker.getBudget("b-2")!, h.broker.findBudgetForScope("lane", "chat")!, h.broker.listBudgets()![1]!]) {
+      copy.limitUsd = 999;
+    }
+    const updated = h.broker.updateBudget("b-1", { limitUsd: 3, actorId: "o" });
+    updated.limitUsd = 999;
+    assert.equal(h.broker.getBudget("b-2")?.limitUsd, 2);
+    assert.equal(h.broker.getBudget("b-1")?.limitUsd, 3);
+  } finally {
+    h.close();
+  }
+});

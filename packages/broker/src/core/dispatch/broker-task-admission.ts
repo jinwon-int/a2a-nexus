@@ -498,10 +498,10 @@ export function assertTaskWorker(task: TaskRecord, workerId: string, action: str
 
 // --- Budget evaluation (#2499 slice 3b) ---------------------------------------
 // Pure decision functions over a budget and its period spend. The broker
-// reads the spend (one indexed aggregate per scope) and calls these; slice 3b
-// computes and reports the decisions only. The claim-time refusal, the
-// queued-listing filter and the create-time `pause` refusal call them in a
-// later slice; nothing here throws or refuses.
+// reads the spend (one indexed aggregate per scope) and calls these; nothing
+// here throws or refuses. #2499 slice 3b-2: the broker's claim-time refusal,
+// queued-listing filter, create-time `pause` refusal and goal budget limits
+// apply the decisions.
 
 /** Limits reached by a scope's period spend. `warn` also holds once a limit is exhausted. */
 export function evaluateBudgetUsage(
@@ -600,6 +600,69 @@ export function decideClaimBudgetScope(
   return workerReportsCost()
     ? { ...base, refuse: true, reason: "usd_exhausted" }
     : { ...base, refuse: false, reason: "usd_exhausted_cost_unknown_worker" };
+}
+
+export type CreateBudgetReason =
+  | "within_limit"
+  | "tokens_exhausted"
+  | "usd_exhausted"
+  | "usd_exhausted_cost_unknown_worker"
+  | "enforce_refuse";
+
+export interface CreateBudgetScopeDecision extends Omit<ClaimBudgetScopeDecision, "reason"> {
+  reason: CreateBudgetReason;
+}
+
+/**
+ * #2499 slice 3b-2: create-time decision for one scope's budget, the mirror of
+ * decideClaimBudgetScope for `pause` budgets (spec "Enforcement points",
+ * Decision 2):
+ * - a `refuse` budget acts at claim time, never at create;
+ * - a token-exhausted `pause` scope refuses the create;
+ * - a USD-exhausted `pause` scope refuses only when the task's worker reports
+ *   cost in this period (Decisions 4 and 15). `workerReportsCost` is called
+ *   at most once, and only when the answer matters.
+ */
+export function decideCreateBudgetScope(
+  evaluation: BudgetEvaluation,
+  workerReportsCost: () => boolean,
+): CreateBudgetScopeDecision {
+  const { budget } = evaluation;
+  const base = {
+    budgetId: budget.id,
+    scopeType: budget.scopeType,
+    scopeId: budget.scopeId,
+    enforce: budget.enforce,
+    usdExhausted: evaluation.usdExhausted,
+    tokensExhausted: evaluation.tokensExhausted,
+    warn: evaluation.warn,
+  };
+  if (!evaluation.usdExhausted && !evaluation.tokensExhausted) return { ...base, refuse: false, reason: "within_limit" };
+  if (budget.enforce !== "pause") return { ...base, refuse: false, reason: "enforce_refuse" };
+  if (evaluation.tokensExhausted) return { ...base, refuse: true, reason: "tokens_exhausted" };
+  return workerReportsCost()
+    ? { ...base, refuse: true, reason: "usd_exhausted" }
+    : { ...base, refuse: false, reason: "usd_exhausted_cost_unknown_worker" };
+}
+
+/**
+ * #2499 slice 3b-2: the refusing scopes as they appear in a refusal's
+ * `details.scopes` (claim: `budget_exhausted`, create: `budget_paused`).
+ */
+export function budgetRefusalScopes(
+  decisions: ReadonlyArray<ClaimBudgetScopeDecision | CreateBudgetScopeDecision>,
+): Array<Record<string, unknown>> {
+  return decisions
+    .filter((decision) => decision.refuse)
+    .map((decision) => ({
+      budgetId: decision.budgetId,
+      scopeType: decision.scopeType,
+      scopeId: decision.scopeId,
+      enforce: decision.enforce,
+      reason: decision.reason,
+      usdExhausted: decision.usdExhausted,
+      tokensExhausted: decision.tokensExhausted,
+    }));
 }
 
 /** The claim-time budget decision across a task's scopes (InMemoryA2ABroker.evaluateClaimBudget). */

@@ -855,9 +855,11 @@ test("handler: budget create / update / list — auth, validation, 404, 409, aud
     assert.equal((await r.route("GET", "/budgets?scope_type=agent&scope_id=worker-a")).json.count, 1);
     assert.equal((await r.route("GET", "/budgets?limit=1")).json.count, 1);
     assert.equal((await r.route("GET", "/budgets?limit=1000")).json.count, 2);
-    // m9: strict integers only, route-side maximum 1000.
-    for (const limit of ["0", "%205", "0x5", "1e3", "5.0", "1001", "-1", "", "05", "abc"]) {
-      await assert.rejects(() => r.route("GET", `/budgets?limit=${limit}`), rejectsWith("bad_request", /limit must be an integer from 1 to 1000/), limit);
+    // #2499 slice 3b-2 (7d): up to the broker's 10 000 budget load cap.
+    assert.equal((await r.route("GET", "/budgets?limit=10000")).json.count, 2);
+    // m9: strict integers only, route-side maximum 10000 (slice 3b-2; was 1000).
+    for (const limit of ["0", "%205", "0x5", "1e3", "5.0", "10001", "-1", "", "05", "abc"]) {
+      await assert.rejects(() => r.route("GET", `/budgets?limit=${limit}`), rejectsWith("bad_request", /limit must be an integer from 1 to 10000/), limit);
     }
     await assert.rejects(() => r.route("GET", "/budgets?scope_id=worker-a"), rejectsWith("bad_request", /scope_id requires scope_type/));
     await assert.rejects(() => r.route("GET", "/budgets?scope_type=team"), rejectsWith("bad_request", /scope_type/));
@@ -886,7 +888,7 @@ test("handler: budgets without the SQLite store — writes are 409 unsupported_o
   const status = await route("GET", "/budgets/status");
   assert.deepEqual(status.json.enforcement, { configuredMode: "off", effectiveMode: "off", reason: "mode_off" });
   assert.deepEqual(status.json.budgets, []);
-  assert.deepEqual(status.json.checkFailed, { count: 0, lastAt: null });
+  assert.deepEqual(status.json.checkFailed, { count: 0, lastAt: null, consecutive: 0 });
   assert.equal(status.json.topRows, null);
 });
 
@@ -907,7 +909,7 @@ test("handler: budget status — enforcement, budgets, limits, topRows, checkFai
     const all = await r.route("GET", "/budgets/status");
     assert.equal(all.status, 200);
     assert.deepEqual(all.json.enforcement, { configuredMode: "on", effectiveMode: "shadow", reason: "period_incomplete" }, "decision 9");
-    assert.deepEqual(all.json.checkFailed, { count: 0, lastAt: null });
+    assert.deepEqual(all.json.checkFailed, { count: 0, lastAt: null, consecutive: 0 });
     assert.equal(all.json.topRows, null, "topRows needs a named scope");
     assert.equal(all.json.budgetsTruncated, false);
     assert.deepEqual(all.json.budgets, [
@@ -1048,10 +1050,20 @@ test("M2: PATCH /budgets/:id invalid values, bodies and callers over HTTP", asyn
 
 test("server: an injected broker whose enforcement mode differs from A2A_BUDGET_ENFORCEMENT_MODE fails startup (m4)", async () => {
   await withEnv({ A2A_BUDGET_ENFORCEMENT_MODE: "shadow" }, async () => {
-    await assert.rejects(() => startTestServer({ broker: new InMemoryA2ABroker() }), /differs from the injected broker's budget enforcement mode 'off'/);
+    await assert.rejects(
+      () => startTestServer({ broker: new InMemoryA2ABroker() }),
+      /mode 'shadow' \(from A2A_BUDGET_ENFORCEMENT_MODE\) differs from the injected broker's budget enforcement mode 'off'/,
+    );
   });
-  const server = await startTestServer({ broker: new InMemoryA2ABroker() });
-  await server.close();
+  // #2499 slice 3b-2 (7e/7g): the message names the source; independent of the runner's env.
+  await withEnv({ A2A_BUDGET_ENFORCEMENT_MODE: undefined }, async () => {
+    await assert.rejects(
+      () => startTestServer({ broker: new InMemoryA2ABroker(), budgetEnforcementMode: "on" }),
+      /mode 'on' \(from the budgetEnforcementMode server option\) differs from the injected broker's budget enforcement mode 'off'/,
+    );
+    const server = await startTestServer({ broker: new InMemoryA2ABroker() });
+    await server.close();
+  });
 });
 
 async function exerciseBudgetRoutesServer(baseUrl: string): Promise<void> {
@@ -1150,4 +1162,79 @@ test("server: A2A_BUDGET_ENFORCEMENT_MODE — invalid fails startup; non-off wit
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("7c: budget status — only a failed store read is ledger_read_failed (budgetsTruncated null); a programming error is not swallowed", async () => {
+  const r = sqliteRouter({ budgetEnforcementMode: "on" });
+  const originalWarn = console.warn;
+  console.warn = () => {};
+  try {
+    await r.route("POST", "/budgets", { body: { id: "b-analyze", scopeType: "lane", scopeId: "analyze", period: "month", limitUsd: 5 } });
+    const totals = r.store.readSpendTotals;
+    r.store.readSpendTotals = () => {
+      throw new Error("disk I/O error");
+    };
+    const failed = await r.route("GET", "/budgets/status");
+    assert.equal(failed.status, 200);
+    assert.equal(failed.json.readError, "ledger_read_failed");
+    assert.equal(failed.json.budgetsTruncated, null, "unknown, not a hard-coded false");
+    assert.deepEqual(Object.keys(failed.json.listing).sort(), ["lastOmittedAt", "omittedTotal", "wouldOmitTotal"], "counters still served from memory");
+    r.store.readSpendTotals = totals;
+    // A throw outside the store reads (here: the in-memory budget list) propagates (HTTP 500).
+    r.broker.listBudgets = () => {
+      throw new TypeError("not a ledger read");
+    };
+    await assert.rejects(() => r.route("GET", "/budgets/status"), (error: unknown) => error instanceof TypeError && !(error instanceof BrokerError));
+  } finally {
+    console.warn = originalWarn;
+    r.close();
+  }
+});
+
+test("7f (worker-thread): a budget write whose queued save fails is answered with the error and resynced; a retry is not a false 409", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-broker-budget-ack-"));
+  const dbFile = join(dir, "state.sqlite");
+  const exec = (sql: string) => {
+    const db = new DatabaseSync(dbFile);
+    try {
+      db.exec(sql);
+    } finally {
+      db.close();
+    }
+  };
+  await withEnv({ BROKER_PERSISTENCE_QUEUE_WORKER_THREAD: "1" }, async () => {
+    const server = await startTestServer({
+      stateStore: undefined,
+      persistenceBackend: "sqlite",
+      stateFile: join(dir, "state.json"),
+      sqliteFile: dbFile,
+    });
+    const originalError = console.error;
+    try {
+      const post = () => fetch(`${server.baseUrl}/budgets`, {
+        method: "POST",
+        headers: jsonHeaders(HUB),
+        body: JSON.stringify({ id: "b-bad", scopeType: "lane", scopeId: "analyze", period: "month", limitUsd: 5 }),
+      });
+      exec(`CREATE TRIGGER budget_fail BEFORE INSERT ON broker_budgets
+            WHEN NEW.id = 'b-bad' BEGIN SELECT RAISE(ABORT, 'budget write failed'); END`);
+      console.error = () => {};
+      const failed = await post();
+      console.error = originalError;
+      assert.equal(failed.status, 500, "the queued write failed");
+      const listed = await (await fetch(`${server.baseUrl}/budgets`, { headers: HUB })).json();
+      assert.deepEqual(listed.budgets, [], "resynced: the budget SQLite does not hold is not served");
+      assert.deepEqual(
+        server.runtime.broker.listAuditEvents({ action: "budget.created" }).filter((event) => event.targetId === "b-bad"),
+        [],
+        "the failed write's in-memory audit event is gone",
+      );
+      exec("DROP TRIGGER budget_fail");
+      assert.equal((await post()).status, 201, "a retry is not a false 409");
+    } finally {
+      console.error = originalError;
+      await server.close();
+    }
+  });
+  rmSync(dir, { recursive: true, force: true });
 });

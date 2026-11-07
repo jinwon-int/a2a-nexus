@@ -71,7 +71,12 @@ export function handleWorkerAssignmentEventStream(
 
   attachSseConnectionCleanup(req, res, cleanup);
 
-  const queuedTasks = broker.listTasks({ assignedWorkerId: workerId, status: "queued" });
+  // #2499 slice 3b-2: the same budget filter as the worker poll route, so
+  // poll and snapshot list the same tasks.
+  const queuedTasks = broker.filterQueuedListingForWorker(
+    workerId,
+    broker.listTasks({ assignedWorkerId: workerId, status: "queued" }),
+  );
   writeSseEvent(res, "worker-assignment-snapshot", {
     workerId,
     count: queuedTasks.length,

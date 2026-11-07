@@ -158,7 +158,6 @@ import * as taskAdmission from "./dispatch/broker-task-admission.js";
 import type {
   BudgetEnforcementState,
   ClaimBudgetEvaluation,
-  ClaimBudgetScopeDecision,
   TaskAdmissionContext,
 } from "./dispatch/broker-task-admission.js";
 import * as staleTaskRequeue from "./claim/broker-stale-task-requeue.js";
@@ -331,6 +330,7 @@ import type {
   A2AExchangeState,
   BrokerDashboard,
   BudgetEnforceAction,
+  BudgetEnforcementCounters,
   BudgetEnforcementMode,
   BudgetEvaluation,
   BudgetListFilters,
@@ -344,11 +344,13 @@ import type {
   CreateTaskRequest,
   GoalListFilters,
   GoalRecord,
+  GoalStatusEvent,
   ProposalActorRequest,
   ProposalDetails,
   ProposalListFilters,
   RegisterWorkerRequest,
   SpendEventRecord,
+  SpendLateMeteringRecord,
   SpendLedgerCoverage,
   SpendTopRow,
   SpendTotalsQuery,
@@ -438,11 +440,30 @@ const DEFAULT_GOAL_LIST_LIMIT = 1_000;
 const SPEND_RECONCILE_PAGE_SIZE = 200;
 /** #2499 slice 3b: at most one line per rate-limited log key per interval. */
 const RATE_LIMITED_LOG_INTERVAL_MS = 60_000;
+/** #2499 slice 3b-2: goal budgets evaluated per goal-limit sweep, and tasks checked per lost-late-metering pass. */
+const GOAL_BUDGET_SWEEP_LIMIT = 200;
+const LATE_METERING_PASS_LIMIT = 200;
 
 /** #2499 slice 3b: budgets loaded at startup (all of them; more refuses startup). */
 const BUDGET_LOAD_LIMIT = 10_000;
 /** #2499 slice 3b: default `listBudgets` bound. */
 const DEFAULT_BUDGET_LIST_LIMIT = 1_000;
+
+/** #2499 slice 3b-2: per-call budget read state (period, enforcement, memoized reads). */
+interface BudgetReadContext {
+  periodKey: string;
+  enforcement: { state: BudgetEnforcementState; failed: boolean };
+  memo: { evaluations: Map<string, BudgetEvaluation>; reportsCost: Map<string, boolean> };
+}
+
+/** #2499 slice 3b-2: the reason of the goal's latest transition into `budget_limited`. */
+function lastGoalLimitReason(goal: GoalRecord): GoalStatusEvent["reason"] | undefined {
+  for (let index = goal.history.length - 1; index >= 0; index -= 1) {
+    const event = goal.history[index]!;
+    if (event.to === "budget_limited") return event.reason;
+  }
+  return undefined;
+}
 
 function budgetScopeKey(scopeType: BudgetScopeType, scopeId: string, period: string): string {
   return `${scopeType}\u0000${scopeId}\u0000${period}`;
@@ -622,8 +643,41 @@ export class InMemoryA2ABroker {
   /** #2499 slice 3b: every budget, by id and by scope key (loaded at startup; see loadBudgets). */
   private readonly budgets = new Map<string, BudgetRecord>();
   private readonly budgetIdsByScope = new Map<string, string>();
-  /** #2499 slice 3b: failed budget reads (fail-open), kept in memory for budget status. */
-  private budgetCheckFailures: { count: number; lastAt: string | null } = { count: 0, lastAt: null };
+  /**
+   * #2499 slice 3b: failed budget reads (fail-open), kept in memory for budget
+   * status. #2499 slice 3b-2: `consecutive` counts failures since the last
+   * successful budget read (reset by it); enforcement stays fail-open.
+   */
+  private budgetCheckFailures: { count: number; lastAt: string | null; consecutive: number } = {
+    count: 0,
+    lastAt: null,
+    consecutive: 0,
+  };
+  /** #2499 slice 3b-2: enforcement decisions since startup (in memory; `GET /budgets/status`). */
+  private readonly budgetCounters: BudgetEnforcementCounters = {
+    claims: { refusedTotal: 0, wouldRefuseTotal: 0, lastAt: null },
+    listing: { omittedTotal: 0, lastOmittedAt: null, wouldOmitTotal: 0 },
+    creates: { refusedTotal: 0, wouldRefuseTotal: 0, lastAt: null },
+    goals: { limitedTotal: 0, resumedTotal: 0, wouldLimitTotal: 0, wouldResumeTotal: 0, lastAt: null },
+  };
+  /** #2499 slice 3b-2: last goal budget id the previous goal-limit sweep evaluated (undefined: start). */
+  private goalBudgetSweepCursor: string | undefined;
+  /**
+   * #2499 slice 3b-2: goals this broker transitioned (budget_limited and
+   * back), served ahead of the goal table so a queued worker-thread write
+   * cannot be read back stale. Only this process updates goals.
+   */
+  private readonly goalUpdates = new Map<string, GoalRecord>();
+  /** #2499 slice 3b-2: last task id the lost-late-metering pass checked, and tasks it settled. */
+  private lateMeteringCursor: string | undefined;
+  private readonly lateMeteringSettled = new Set<string>();
+  /**
+   * #2499 slice 3b-2: the newest budget write per id (generation, its audit
+   * event, the record written), so a failed queued write's resync neither
+   * overwrites a newer queued change nor keeps the failed write's audit event.
+   */
+  private budgetWriteGeneration = 0;
+  private readonly budgetPendingWrites = new Map<string, { generation: number; auditEventId: string; record: BudgetRecord }>();
   private readonly fastLaneSingleWorkerFinalize: boolean;
   private readonly workerHeartbeatPersistIntervalMs: number;
   private lastFullRetentionPersistAtMs = Date.now();
@@ -963,8 +1017,9 @@ export class InMemoryA2ABroker {
 
   // --- Goals (#2499 slice 1) ---------------------------------------------------
   // GoalRecord / GoalStatus from types.ts are the only goal model. A goal is
-  // created `pursuing`; tasks link to it through `goalId` at create time. No
-  // budget enforcement, spend, or status transition happens here yet.
+  // created `pursuing`; tasks link to it through `goalId` at create time.
+  // #2499 slice 3b-2: the only status transitions are the goal budget limits
+  // (applyGoalBudgetLimits: pursuing <-> budget_limited).
 
   /** The store's goal table when it has one (SQLite), else undefined. */
   private goalStore(): Required<Pick<BrokerStateStore, "insertGoal" | "readGoal" | "listGoals" | "countGoalTasksByStatus">> | undefined {
@@ -1109,12 +1164,24 @@ export class InMemoryA2ABroker {
 
   getGoal(goalId: string): GoalRecord | undefined {
     const store = this.goalStore();
-    return store ? store.readGoal(goalId) : this.goals.get(goalId);
+    if (!store) return this.goals.get(goalId);
+    // #2499 slice 3b-2: a goal this broker transitioned wins over a goal row
+    // its queued (worker-thread) write may not have reached yet.
+    const updated = this.goalUpdates.get(goalId);
+    return updated ? structuredClone(updated) : store.readGoal(goalId);
   }
 
   listGoals(filters: GoalListFilters = {}): GoalRecord[] {
     const store = this.goalStore();
-    if (store) return store.listGoals(filters);
+    if (store) {
+      const rows = store.listGoals(filters);
+      if (this.goalUpdates.size === 0) return rows;
+      // #2499 slice 3b-2: the same overlay as getGoal (a lagging row whose
+      // status no longer matches the filter is dropped).
+      return rows
+        .map((goal) => (this.goalUpdates.has(goal.id) ? structuredClone(this.goalUpdates.get(goal.id)!) : goal))
+        .filter((goal) => !filters.status || goal.status === filters.status);
+    }
     const limit = filters.limit !== undefined && filters.limit > 0 ? filters.limit : DEFAULT_GOAL_LIST_LIMIT;
     return [...this.goals.values()]
       .filter((goal) => !filters.status || goal.status === filters.status)
@@ -1494,10 +1561,11 @@ export class InMemoryA2ABroker {
   }
 
   // --- Budgets (#2499 slice 3b) ------------------------------------------------
-  // SQLite only, like the spend ledger. Create/update/list plus the pure
-  // evaluator wiring; nothing here refuses a claim or a create yet (the
-  // claim-time refusal, queued-listing filter and `pause` refusal come later
-  // and call evaluateClaimBudget).
+  // SQLite only, like the spend ledger. Create/update/list plus the
+  // evaluator wiring. #2499 slice 3b-2: the claim-time refusal
+  // (assertClaimBudget), the queued-listing filter
+  // (filterQueuedListingForWorker), the create-time `pause` refusal
+  // (assertCreateBudget) and the goal budget limits (applyGoalBudgetLimits).
   //
   // The broker keeps every budget in memory (`budgets` by id, `budgetIdsByScope`
   // by scope and period), loaded once at startup. That map is the duplicate
@@ -1629,7 +1697,7 @@ export class InMemoryA2ABroker {
       createdAt: isoNow(),
     };
     this.commitBudgetWrite("budget.created", budget, budget.createdBy, `${budget.scopeType}:${budget.scopeId}`);
-    return budget;
+    return structuredClone(budget);
   }
 
   /**
@@ -1675,7 +1743,7 @@ export class InMemoryA2ABroker {
       throw new BrokerError("bad_request", "a budget must keep at least one of limitUsd and limitTokens");
     }
     this.commitBudgetWrite("budget.updated", next, request.actorId, changed.join(","));
-    return next;
+    return structuredClone(next);
   }
 
   /**
@@ -1693,25 +1761,44 @@ export class InMemoryA2ABroker {
     note: string,
   ): void {
     const previous = this.budgets.get(budget.id);
+    // #2499 slice 3b-2: a row staged by an earlier write that has not been
+    // flushed yet is restored (not dropped) when this write rolls back.
+    const previousStaged = this.pendingHot.stagedBudget(budget.id);
     const isThisAudit = (event: AuditEvent) =>
       event.action === action && event.targetType === "budget" && event.targetId === budget.id;
     const earlier = new Set([...this.auditEvents.values()].filter(isThisAudit).map((event) => event.id));
+    let auditEventId: string | undefined;
     try {
       this.commitMutation(() => {
         this.indexBudget(budget);
         this.pendingHot.stageBudget(budget);
-        this.appendAuditEvent({ actorId, action, targetType: "budget", targetId: budget.id, note });
+        auditEventId = this.appendAuditEvent({ actorId, action, targetType: "budget", targetId: budget.id, note }).id;
         this.persistState();
       });
     } catch (error) {
       this.unindexBudget(budget.id);
       if (previous) this.indexBudget(previous);
-      this.pendingHot.unstageBudget(budget.id);
+      this.pendingHot.unstageBudget(budget.id, previousStaged);
       for (const [eventId, event] of this.auditEvents) {
         if (isThisAudit(event) && !earlier.has(eventId)) this.auditEvents.delete(eventId);
       }
       throw error;
     }
+    this.budgetWriteGeneration += 1;
+    this.budgetPendingWrites.set(budget.id, {
+      generation: this.budgetWriteGeneration,
+      auditEventId: auditEventId!,
+      record: structuredClone(budget),
+    });
+  }
+
+  /**
+   * #2499 slice 3b-2: the generation of the newest write of a budget (the
+   * route reads it right after its write, before awaiting the queued save),
+   * for reloadBudgetFromStore.
+   */
+  getBudgetWriteGeneration(id: string): number | undefined {
+    return this.budgetPendingWrites.get(id)?.generation;
   }
 
   /**
@@ -1720,21 +1807,41 @@ export class InMemoryA2ABroker {
    * the route's durable-ack wait reports that save failed, the row (and its
    * audit row) did not commit, so the route calls this to drop (or restore)
    * the in-memory entry instead of serving a budget SQLite does not hold.
+   *
+   * #2499 slice 3b-2: with `generation` (the route's write), a newer write
+   * of the same budget that is still queued wins: nothing is re-read, and
+   * that write's own route resyncs if it fails. When the stored row is not
+   * the record this write produced, the write did not land, so its
+   * in-memory `budget.*` audit event is removed too.
    */
-  reloadBudgetFromStore(id: string): void {
+  reloadBudgetFromStore(id: string, generation?: number): void {
     const store = this.budgetStore();
     if (!store) return;
+    const pending = this.budgetPendingWrites.get(id);
+    if (generation !== undefined && pending && pending.generation !== generation) return;
     const stored = store.readBudget(id);
+    if (pending) {
+      const landed = stored !== undefined && JSON.stringify(stored) === JSON.stringify(pending.record);
+      if (!landed) this.auditEvents.delete(pending.auditEventId);
+      this.budgetPendingWrites.delete(id);
+    }
     this.unindexBudget(id);
     if (stored) this.indexBudget(stored);
   }
 
+  /** #2499 slice 3b-2: budget reads return copies, never the in-memory map objects. */
   getBudget(id: string): BudgetRecord | undefined {
-    return this.hasBudgets() ? this.budgets.get(id) : undefined;
+    const budget = this.hasBudgets() ? this.budgets.get(id) : undefined;
+    return budget ? structuredClone(budget) : undefined;
   }
 
-  /** The month budget of one scope, from memory. */
+  /** The month budget of one scope, from memory (a copy). */
   findBudgetForScope(scopeType: BudgetScopeType, scopeId: string, period: BudgetRecord["period"] = "month"): BudgetRecord | undefined {
+    const budget = this.budgetForScope(scopeType, scopeId, period);
+    return budget ? structuredClone(budget) : undefined;
+  }
+
+  private budgetForScope(scopeType: BudgetScopeType, scopeId: string, period: BudgetRecord["period"] = "month"): BudgetRecord | undefined {
     const id = this.budgetIdsByScope.get(budgetScopeKey(scopeType, scopeId, period));
     return id === undefined ? undefined : this.budgets.get(id);
   }
@@ -1753,7 +1860,8 @@ export class InMemoryA2ABroker {
       .filter((budget) => (filters.scopeType === undefined || budget.scopeType === filters.scopeType)
         && (filters.scopeId === undefined || budget.scopeId === filters.scopeId))
       .sort((a, b) => compare(a.scopeType, b.scopeType) || compare(a.scopeId, b.scopeId) || compare(a.period, b.period) || compare(a.id, b.id))
-      .slice(0, limit);
+      .slice(0, limit)
+      .map((budget) => structuredClone(budget));
   }
 
   /** The configured mode (`A2A_BUDGET_ENFORCEMENT_MODE`, read at startup). */
@@ -1771,16 +1879,23 @@ export class InMemoryA2ABroker {
    * weaken `on` to `shadow`. Never throws.
    */
   getBudgetEnforcement(periodKey: string = this.budgetPeriodKey()): BudgetEnforcementState {
+    return this.resolveBudgetEnforcement(periodKey).state;
+  }
+
+  /** getBudgetEnforcement plus whether its metadata read failed (#2499 slice 3b-2: surfaced as `checkFailed`). */
+  private resolveBudgetEnforcement(periodKey: string): { state: BudgetEnforcementState; failed: boolean } {
     let firstPeriod: string | null = null;
+    let failed = false;
     try {
       firstPeriod = this.stateStore?.readSpendLedgerMetadata?.().firstPeriod ?? null;
     } catch (error) {
+      failed = true;
       this.recordBudgetCheckFailure(error, { source: "enforcement" });
     }
-    return taskAdmission.resolveEffectiveBudgetEnforcement(
-      this.budgetEnforcementMode,
-      spendLedgerPeriodComplete(periodKey, firstPeriod),
-    );
+    return {
+      state: taskAdmission.resolveEffectiveBudgetEnforcement(this.budgetEnforcementMode, spendLedgerPeriodComplete(periodKey, firstPeriod)),
+      failed,
+    };
   }
 
   /** One budget against one period of the ledger (one indexed aggregate). Throws when the read fails. */
@@ -1807,8 +1922,64 @@ export class InMemoryA2ABroker {
     };
   }
 
+  /** The month budgets of a task's agent, lane and goal scopes, from memory (map objects). */
+  private budgetsForScopes(input: { workerId?: string | null; lane?: string | null; goalId?: string | null }): BudgetRecord[] {
+    const scopes: Array<[BudgetScopeType, string | null | undefined]> = [
+      ["agent", input.workerId],
+      ["lane", input.lane],
+      ["goal", input.goalId],
+    ];
+    const found: BudgetRecord[] = [];
+    for (const [scopeType, scopeId] of scopes) {
+      if (typeof scopeId !== "string" || scopeId === "") continue;
+      const budget = this.budgetForScope(scopeType, scopeId);
+      if (budget) found.push(budget);
+    }
+    return found;
+  }
+
   /**
-   * Claim-time budget decision (#2499 slice 3b; not called from claim yet).
+   * #2499 slice 3b-2: evaluate the given budgets with a per-call memo: one
+   * aggregate read per budget and one cost-reporting probe per worker for a
+   * whole listing. Throws when a read fails.
+   */
+  private decideBudgetScopes<D>(
+    budgets: readonly BudgetRecord[],
+    workerId: string | null | undefined,
+    context: BudgetReadContext,
+    decide: (evaluation: BudgetEvaluation, workerReportsCost: () => boolean) => D,
+  ): D[] {
+    const store = this.requireBudgetStore();
+    const workerReportsCost = (): boolean => {
+      if (typeof workerId !== "string" || workerId === "") return false;
+      let reports = context.memo.reportsCost.get(workerId);
+      if (reports === undefined) {
+        reports = store.hasCostReportingSpend({ periodKey: context.periodKey, agentId: workerId });
+        context.memo.reportsCost.set(workerId, reports);
+      }
+      return reports;
+    };
+    const decisions = budgets.map((budget) => {
+      let evaluation = context.memo.evaluations.get(budget.id);
+      if (!evaluation) {
+        evaluation = this.evaluateBudget(budget, context.periodKey);
+        context.memo.evaluations.set(budget.id, evaluation);
+      }
+      return decide(evaluation, workerReportsCost);
+    });
+    // A full evaluation succeeded: the run of consecutive failures ends.
+    if (budgets.length > 0) this.budgetCheckFailures.consecutive = 0;
+    return decisions;
+  }
+
+  private budgetReadContext(): BudgetReadContext {
+    const periodKey = this.budgetPeriodKey();
+    return { periodKey, enforcement: this.resolveBudgetEnforcement(periodKey), memo: { evaluations: new Map(), reportsCost: new Map() } };
+  }
+
+  /**
+   * Claim-time budget decision (#2499 slice 3b; called from claimTask and
+   * the queued-listing filter since slice 3b-2).
    * `workerId` is the claiming worker. It is both the agent scope key and
    * the cost-reporting probe: the ledger's `agent_id` is the worker that did
    * the work, which for a claim is the claimant. Looks up the month budget of
@@ -1822,36 +1993,33 @@ export class InMemoryA2ABroker {
    *
    * Fail-open (decision 13): any read failure returns `checkFailed: true`
    * with no refusal, counts the failure in memory (shown in budget status)
-   * and logs `broker.budget.check_failed` at most once per minute.
+   * and logs `broker.budget.check_failed` at most once per minute. #2499
+   * slice 3b-2: a failed enforcement-metadata read is a check failure too.
    */
   evaluateClaimBudget(input: {
     workerId: string;
     lane?: string | null;
     goalId?: string | null;
   }): ClaimBudgetEvaluation {
-    const periodKey = this.budgetPeriodKey();
-    const enforcement = this.getBudgetEnforcement(periodKey);
+    return this.evaluateClaimBudgetIn(input, this.budgetReadContext());
+  }
+
+  private evaluateClaimBudgetIn(
+    input: { workerId: string; lane?: string | null; goalId?: string | null },
+    context: BudgetReadContext,
+  ): ClaimBudgetEvaluation {
+    const { periodKey } = context;
+    const enforcement = context.enforcement.state;
     // No budget table (non-SQLite store, always mode off): nothing to check.
-    const store = this.budgetStore();
-    if (!store) return { periodKey, enforcement, checkFailed: false, scopes: [], wouldRefuse: false, refuse: false };
+    if (!this.budgetStore()) return { periodKey, enforcement, checkFailed: false, scopes: [], wouldRefuse: false, refuse: false };
+    if (context.enforcement.failed) return { periodKey, enforcement, checkFailed: true, scopes: [], wouldRefuse: false, refuse: false };
     try {
-      const scopes: Array<[BudgetScopeType, string | null | undefined]> = [
-        ["agent", input.workerId],
-        ["lane", input.lane],
-        ["goal", input.goalId],
-      ];
-      let reportsCost: boolean | undefined;
-      const workerReportsCost = (): boolean => {
-        reportsCost ??= store.hasCostReportingSpend({ periodKey, agentId: input.workerId });
-        return reportsCost;
-      };
-      const decisions: ClaimBudgetScopeDecision[] = [];
-      for (const [scopeType, scopeId] of scopes) {
-        if (typeof scopeId !== "string" || scopeId === "") continue;
-        const budget = this.findBudgetForScope(scopeType, scopeId);
-        if (!budget) continue;
-        decisions.push(taskAdmission.decideClaimBudgetScope(this.evaluateBudget(budget, periodKey), workerReportsCost));
-      }
+      const decisions = this.decideBudgetScopes(
+        this.budgetsForScopes(input),
+        input.workerId,
+        context,
+        (evaluation, workerReportsCost) => taskAdmission.decideClaimBudgetScope(evaluation, workerReportsCost),
+      );
       const wouldRefuse = decisions.some((decision) => decision.refuse);
       return {
         periodKey,
@@ -1867,8 +2035,340 @@ export class InMemoryA2ABroker {
     }
   }
 
-  private recordBudgetCheckFailure(error: unknown, context: { source: "claim" | "enforcement"; workerId?: string }): void {
-    this.budgetCheckFailures = { count: this.budgetCheckFailures.count + 1, lastAt: isoNow() };
+  /**
+   * #2499 slice 3b-2: the claim-time refusal, called from claimTask after the
+   * status check and before any mutation. Mode `off` (or no budget for the
+   * task's scopes, in memory) reads nothing. Effective `on` with an exhausted
+   * scope throws `policy_denied` (HTTP 403) with `details.reason`
+   * `budget_exhausted` and `details.scopes`; the task stays `queued`.
+   * `shadow` (and `on` while the period is incomplete) counts the would-refuse
+   * and lets the claim through; a failed read fails open (counted in
+   * `checkFailed` by the evaluator). Both decisions log one rate-limited
+   * line (`broker.budget.claim_refused` / `broker.budget.would_refuse`).
+   */
+  private assertClaimBudget(task: TaskRecord, workerId: string): void {
+    if (this.budgetEnforcementMode === "off" || this.budgets.size === 0) return;
+    const input = { workerId, lane: task.intent, goalId: task.goalId ?? null };
+    if (this.budgetsForScopes(input).length === 0) return;
+    const decision = this.evaluateClaimBudget(input);
+    if (decision.checkFailed || !decision.wouldRefuse) return;
+    const scopes = taskAdmission.budgetRefusalScopes(decision.scopes);
+    const counters = this.budgetCounters.claims;
+    counters.lastAt = isoNow();
+    const line = { taskId: task.id, workerId, scopes: scopes.map((scope) => scope.budgetId) };
+    if (decision.refuse) {
+      counters.refusedTotal += 1;
+      this.warnRateLimited("broker.budget.claim_refused", { event: "broker.budget.claim_refused", ...line });
+      throw new BrokerError("policy_denied", "claim refused: a monthly budget of this task's scope is exhausted", {
+        reason: "budget_exhausted",
+        periodKey: decision.periodKey,
+        scopes,
+      });
+    }
+    counters.wouldRefuseTotal += 1;
+    this.warnRateLimited("broker.budget.would_refuse", { event: "broker.budget.would_refuse", ...line });
+  }
+
+  /**
+   * #2499 slice 3b-2 (spec "Claim retry loop"): the worker queued listing
+   * filter, shared by the poll route (`GET /tasks?assignedWorkerId=W&status=queued`)
+   * and the SSE `worker-assignment-snapshot`, so both list the same tasks.
+   * Effective `on`: tasks whose claim by `workerId` would be refused are
+   * omitted (`listing.omittedTotal`, `lastOmittedAt`); `shadow`: kept and
+   * counted (`listing.wouldOmitTotal`); `off` (or no budgets): no reads.
+   * One aggregate read per budget and one cost probe per listing (memo);
+   * a task's lane and goal come from its record. A failed read keeps the
+   * task (fail-open, counted in `checkFailed`). The claim stays the authority.
+   */
+  filterQueuedListingForWorker<T extends { id: string }>(workerId: string, items: readonly T[]): T[] {
+    if (this.budgetEnforcementMode === "off" || this.budgets.size === 0 || items.length === 0) return [...items];
+    let context: BudgetReadContext | undefined;
+    const kept: T[] = [];
+    let omitted = 0;
+    let wouldOmit = 0;
+    for (const item of items) {
+      const task = this.getTask(item.id);
+      const input = { workerId, lane: task?.intent ?? null, goalId: task?.goalId ?? null };
+      if (!task || this.budgetsForScopes(input).length === 0) {
+        kept.push(item);
+        continue;
+      }
+      context ??= this.budgetReadContext();
+      const decision = this.evaluateClaimBudgetIn(input, context);
+      if (decision.refuse) {
+        omitted += 1;
+        continue;
+      }
+      if (decision.wouldRefuse) wouldOmit += 1;
+      kept.push(item);
+    }
+    const counters = this.budgetCounters.listing;
+    if (omitted > 0) {
+      counters.omittedTotal += omitted;
+      counters.lastOmittedAt = isoNow();
+    }
+    counters.wouldOmitTotal += wouldOmit;
+    return kept;
+  }
+
+  /**
+   * #2499 slice 3b-2: the create-time `pause` refusal, called from
+   * createTask before anything is created. Only `pause` budgets of the
+   * task's lane (intent), goal and agent (the assigned worker, which is also
+   * the cost-reporting probe) are evaluated (decideCreateBudgetScope:
+   * token-exhausted refuses; USD-exhausted only for a cost-reporting
+   * worker). Effective `on`: `policy_denied` with `details.reason`
+   * `budget_paused` and `details.scopes`; `shadow`: counted
+   * (`creates.wouldRefuseTotal`) and logged. A failed read fails open.
+   * The fail -> retry task materialized inside failTask never comes through
+   * createTask, so a terminal transition never fails on a budget.
+   */
+  private assertCreateBudget(request: CreateTaskRequest, goalId: string | undefined): void {
+    if (this.budgetEnforcementMode === "off" || this.budgets.size === 0) return;
+    const workerId = request.assignedWorkerId ?? request.target.id;
+    const budgets = this.budgetsForScopes({ workerId, lane: request.intent, goalId: goalId ?? null })
+      .filter((budget) => budget.enforce === "pause");
+    if (budgets.length === 0) return;
+    const context = this.budgetReadContext();
+    if (context.enforcement.failed) return;
+    let decisions: taskAdmission.CreateBudgetScopeDecision[];
+    try {
+      decisions = this.decideBudgetScopes(budgets, workerId, context, (evaluation, workerReportsCost) =>
+        taskAdmission.decideCreateBudgetScope(evaluation, workerReportsCost));
+    } catch (error) {
+      this.recordBudgetCheckFailure(error, { source: "create", workerId });
+      return;
+    }
+    const scopes = taskAdmission.budgetRefusalScopes(decisions);
+    if (scopes.length === 0) return;
+    const counters = this.budgetCounters.creates;
+    counters.lastAt = isoNow();
+    const line = { workerId, lane: request.intent, scopes: scopes.map((scope) => scope.budgetId) };
+    if (context.enforcement.state.effectiveMode === "on") {
+      counters.refusedTotal += 1;
+      this.warnRateLimited("broker.budget.create_refused", { event: "broker.budget.create_refused", ...line });
+      throw new BrokerError("policy_denied", "task create refused: a paused monthly budget of this task's scope is exhausted", {
+        reason: "budget_paused",
+        periodKey: context.periodKey,
+        scopes,
+      });
+    }
+    counters.wouldRefuseTotal += 1;
+    this.warnRateLimited("broker.budget.create_would_refuse", { event: "broker.budget.create_would_refuse", ...line });
+  }
+
+  /**
+   * #2499 slice 3b-2 (spec "Enforcement points", goal scope): run on every
+   * stale-reaper sweep. For each goal-scope month budget (from memory, at
+   * most GOAL_BUDGET_SWEEP_LIMIT per sweep, round-robin by budget id) the
+   * goal's budget is evaluated against the current period; either limit
+   * exhausted counts (a goal's state is not a per-worker decision, so
+   * Decision 4 does not apply). Effective `on`: a `pursuing` goal with an
+   * exhausted budget moves to `budget_limited` (history reason
+   * `budget_exhausted`); a `budget_limited` goal that a budget limited
+   * (its last limiting event has reason `budget_exhausted`) whose budget is
+   * no longer exhausted (limit raised, or the period rolled) moves back to
+   * `pursuing` (history reason `operator_requested`, note `budget_available`).
+   * Goals in any other state are never touched; `outcome` is not set.
+   * `shadow`: counted (`goals.wouldLimitTotal` / `wouldResumeTotal`) and
+   * logged only. `off`: nothing is read. Never throws: a failed read counts
+   * in `checkFailed`, a failed transition logs a rate-limited line.
+   */
+  applyGoalBudgetLimits(options: { limit?: number } = {}): { limited: string[]; resumed: string[] } | undefined {
+    if (this.budgetEnforcementMode === "off" || !this.budgetStore()) return undefined;
+    const limited: string[] = [];
+    const resumed: string[] = [];
+    const limit = Math.max(1, Math.floor(options.limit ?? GOAL_BUDGET_SWEEP_LIMIT));
+    const cursor = this.goalBudgetSweepCursor;
+    const page = [...this.budgets.values()]
+      .filter((budget) => budget.scopeType === "goal" && budget.period === "month" && (cursor === undefined || budget.id > cursor))
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      .slice(0, limit);
+    this.goalBudgetSweepCursor = page.length === limit ? page[page.length - 1]!.id : undefined;
+    if (page.length === 0) return { limited, resumed };
+    const context = this.budgetReadContext();
+    if (context.enforcement.failed) return { limited, resumed };
+    const on = context.enforcement.state.effectiveMode === "on";
+    const counters = this.budgetCounters.goals;
+    for (const budget of page) {
+      let goal: GoalRecord | undefined;
+      let exhausted: boolean;
+      try {
+        goal = this.getGoal(budget.scopeId);
+        const limitedByBudget = goal?.status === "budget_limited" && lastGoalLimitReason(goal) === "budget_exhausted";
+        if (!goal || (goal.status !== "pursuing" && !limitedByBudget)) continue;
+        const [evaluation] = this.decideBudgetScopes([budget], null, context, (value) => value);
+        exhausted = evaluation!.usdExhausted || evaluation!.tokensExhausted;
+      } catch (error) {
+        this.recordBudgetCheckFailure(error, { source: "goal" });
+        continue;
+      }
+      const toLimit = goal.status === "pursuing" && exhausted;
+      const toResume = goal.status === "budget_limited" && !exhausted;
+      if (!toLimit && !toResume) continue;
+      counters.lastAt = isoNow();
+      const line = { goalId: goal.id, budgetId: budget.id };
+      if (!on) {
+        if (toLimit) counters.wouldLimitTotal += 1;
+        else counters.wouldResumeTotal += 1;
+        const event = toLimit ? "broker.budget.goal_would_limit" : "broker.budget.goal_would_resume";
+        this.warnRateLimited(event, { event, ...line });
+        continue;
+      }
+      try {
+        if (toLimit) {
+          this.transitionGoalForBudget(goal, "budget_limited", "budget_exhausted", "budget_exhausted");
+          counters.limitedTotal += 1;
+          limited.push(goal.id);
+        } else {
+          this.transitionGoalForBudget(goal, "pursuing", "operator_requested", "budget_available");
+          counters.resumedTotal += 1;
+          resumed.push(goal.id);
+        }
+        const event = toLimit ? "broker.budget.goal_limited" : "broker.budget.goal_resumed";
+        console.warn(JSON.stringify({ event, ...line }));
+      } catch (error) {
+        this.warnRateLimited("broker.budget.goal_transition_failed", {
+          event: "broker.budget.goal_transition_failed",
+          ...line,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return { limited, resumed };
+  }
+
+  /**
+   * #2499 slice 3b-2: one goal status transition with its history event and
+   * `goal.status_changed` audit event, in one commitMutation (the goal row
+   * rides the save hints with the audit row on SQLite; a store without a goal
+   * table keeps goals in the snapshot, so it needs a full persist). A throw
+   * undoes the in-memory record, the staged row and the audit event.
+   */
+  private transitionGoalForBudget(
+    goal: GoalRecord,
+    to: GoalRecord["status"],
+    reason: GoalStatusEvent["reason"],
+    note: string,
+  ): void {
+    const now = isoNow();
+    const next: GoalRecord = {
+      ...structuredClone(goal),
+      status: to,
+      updatedAt: now,
+      history: [
+        ...structuredClone(goal.history),
+        { id: randomUUID(), goalId: goal.id, from: goal.status, to, reason, createdAt: now, note },
+      ],
+    };
+    const store = this.goalStore();
+    const previousUpdate = this.goalUpdates.get(goal.id);
+    const previousStaged = this.pendingHot.stagedGoal(goal.id);
+    let auditEventId: string | undefined;
+    try {
+      this.commitMutation(() => {
+        if (store) {
+          this.goalUpdates.set(goal.id, next);
+          this.pendingHot.stageGoal(next);
+        } else {
+          this.goals.set(goal.id, next);
+        }
+        auditEventId = this.appendAuditEvent({
+          actorId: "broker",
+          action: "goal.status_changed",
+          targetType: "goal",
+          targetId: goal.id,
+          note: `${goal.status}->${to}:${reason}`,
+        }).id;
+        if (store) this.persistState();
+        else this.persistState(undefined, { forceFull: true });
+      });
+    } catch (error) {
+      if (store) {
+        if (previousUpdate) this.goalUpdates.set(goal.id, previousUpdate);
+        else this.goalUpdates.delete(goal.id);
+        this.pendingHot.unstageGoal(goal.id, previousStaged);
+      } else {
+        this.goals.set(goal.id, goal);
+      }
+      if (auditEventId) this.auditEvents.delete(auditEventId);
+      throw error;
+    }
+  }
+
+  /**
+   * #2499 slice 3b-2: a late metering lost with a failed save. The G1 late
+   * metering rides the late-evidence save; when that save fails, the task
+   * keeps its late evidence in memory but the spend row stays unmetered, and
+   * a worker retry is idempotent (no second staging). On every stale-reaper
+   * sweep this pass walks the in-memory tasks map from a cursor, checks at
+   * most LATE_METERING_PASS_LIMIT canceled tasks with late evidence (one
+   * primary-key read each), and restages the same guarded metering
+   * (buildLateSpendMetering + the store's still-unmetered, same-agent guard)
+   * for rows that are still unmetered. Rows found metered, attributed to
+   * another agent, or without parseable telemetry are settled and not read
+   * again; a missing row is the reconciliation's job. Written with one
+   * direct saveHotEntities call, like the reconciliation. Never throws.
+   */
+  restageLostLateMeterings(options: { limit?: number } = {}): { restaged: number; checked: number } | undefined {
+    const store = this.stateStore;
+    if (!this.hasSpendLedger() || !store?.readSpendEventMetering || !store.saveHotEntities) return undefined;
+    const limit = Math.max(1, Math.floor(options.limit ?? LATE_METERING_PASS_LIMIT));
+    const cursor = this.lateMeteringCursor;
+    const meterings: SpendLateMeteringRecord[] = [];
+    let checked = 0;
+    let started = cursor === undefined || !this.tasks.has(cursor);
+    let nextCursor: string | undefined;
+    try {
+      for (const [id, task] of this.tasks) {
+        if (!started) {
+          started = id === cursor;
+          continue;
+        }
+        if (task.status !== "canceled" || !task.lateEvidenceAfterCancel || this.lateMeteringSettled.has(id)) continue;
+        if (checked >= limit) break;
+        checked += 1;
+        nextCursor = id;
+        const row = store.readSpendEventMetering(id);
+        if (!row) continue;
+        const unmetered = !row.costKnown && row.inputTokens === 0 && row.outputTokens === 0;
+        const built = unmetered && row.agentId === task.lateEvidenceAfterCancel.submittedBy
+          ? taskTerminal.buildLateSpendMetering(task)
+          : {};
+        if (!built.metering) {
+          this.lateMeteringSettled.add(id);
+          continue;
+        }
+        meterings.push(built.metering);
+      }
+      // A full page continues after its last task next sweep; a short one ends the pass.
+      this.lateMeteringCursor = checked >= limit ? nextCursor : undefined;
+      if (meterings.length > 0) {
+        store.saveHotEntities.call(store, { spendMeterings: meterings });
+        this.warnRateLimited("broker.spend.late_metering_restaged", {
+          event: "broker.spend.late_metering_restaged",
+          count: meterings.length,
+        });
+      }
+    } catch (error) {
+      this.warnRateLimited("broker.spend.late_metering_restage_failed", {
+        event: "broker.spend.late_metering_restage_failed",
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return undefined;
+    }
+    return { restaged: meterings.length, checked };
+  }
+
+  private recordBudgetCheckFailure(
+    error: unknown,
+    context: { source: "claim" | "enforcement" | "create" | "goal"; workerId?: string },
+  ): void {
+    this.budgetCheckFailures = {
+      count: this.budgetCheckFailures.count + 1,
+      lastAt: isoNow(),
+      consecutive: this.budgetCheckFailures.consecutive + 1,
+    };
     this.warnRateLimited("broker.budget.check_failed", {
       event: "broker.budget.check_failed",
       source: context.source,
@@ -1878,9 +2378,18 @@ export class InMemoryA2ABroker {
     });
   }
 
-  /** Failed budget reads since startup (in memory; served even when a status read fails). */
-  getBudgetCheckFailures(): { count: number; lastAt: string | null } {
+  /**
+   * Failed budget reads since startup (in memory; served even when a status
+   * read fails). #2499 slice 3b-2: `consecutive` is the run of failures since
+   * the last successful budget evaluation; enforcement stays fail-open.
+   */
+  getBudgetCheckFailures(): { count: number; lastAt: string | null; consecutive: number } {
     return { ...this.budgetCheckFailures };
+  }
+
+  /** #2499 slice 3b-2: enforcement counters since startup (a copy; `GET /budgets/status`). */
+  getBudgetEnforcementCounters(): BudgetEnforcementCounters {
+    return structuredClone(this.budgetCounters);
   }
 
   /** Rate-limited diagnostic for a failed budget status read (the route still answers 200). */
@@ -3425,6 +3934,8 @@ export class InMemoryA2ABroker {
     }
     this.assertA2ARoundWorkerAvailability(normalizedRequest);
     this.assertTaskProposalLink(normalizedRequest);
+    // #2499 slice 3b-2: an exhausted `pause` budget refuses the create (nothing is created).
+    this.assertCreateBudget(normalizedRequest, goalId);
 
     // Declarative worker-class policy (#1355 G1). An enforce-mode deny throws
     // here (nothing is created); a warn-mode deny is audited after the record
@@ -3916,6 +4427,8 @@ export class InMemoryA2ABroker {
     }
     this.assertClaimTaskPolicy(task, workerId);
     assertTaskStatus(task.status, ["queued"], "claim");
+    // #2499 slice 3b-2: budget refusal, before any mutation (the task stays queued).
+    this.assertClaimBudget(task, workerId);
 
     const now = isoNow();
     this.commitMutation(() => {

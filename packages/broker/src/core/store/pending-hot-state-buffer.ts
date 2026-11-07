@@ -16,6 +16,7 @@ import type {
   A2AExchangeState,
   BudgetRecord,
   ChangeProposal,
+  GoalRecord,
   SpendEventRecord,
   SpendLateMeteringRecord,
   TaskRecord,
@@ -41,6 +42,7 @@ const HINT_KEYS = [
   "spendEvents",
   "spendMeterings",
   "budgets",
+  "goals",
 ] as const;
 
 type HintKey = (typeof HINT_KEYS)[number];
@@ -66,6 +68,8 @@ const RETAINED_IDS: Record<HintKey, ((snapshot: BrokerSnapshot) => Iterable<stri
   spendMeterings: null,
   // #2499 slice 3b: budget rows live in broker_budgets only, never pruned.
   budgets: null,
+  // #2499 slice 3b-2: goal status updates live in broker_goals only.
+  goals: null,
 };
 
 export class PendingHotStateBuffer {
@@ -83,6 +87,7 @@ export class PendingHotStateBuffer {
     spendEvents: new Map(),
     spendMeterings: new Map(),
     budgets: new Map(),
+    goals: new Map(),
   };
 
   stageExchange(record: A2AExchangeState): void {
@@ -153,9 +158,40 @@ export class PendingHotStateBuffer {
     this.maps.budgets.set(record.id, { ...record });
   }
 
-  /** Drop a staged budget row (a failed mutation's rollback, #2499 slice 3b). */
-  unstageBudget(id: string): void {
-    this.maps.budgets.delete(id);
+  /** The staged budget row for `id`, if any (#2499 slice 3b-2). */
+  stagedBudget(id: string): BudgetRecord | undefined {
+    const staged = this.maps.budgets.get(id) as BudgetRecord | undefined;
+    return staged ? { ...staged } : undefined;
+  }
+
+  /**
+   * Undo a staged budget row (a failed mutation's rollback, #2499 slice 3b).
+   * #2499 slice 3b-2: `previous` (the row staged before the failed write)
+   * is restored instead of dropped.
+   */
+  unstageBudget(id: string, previous?: BudgetRecord): void {
+    if (previous) this.maps.budgets.set(id, { ...previous });
+    else this.maps.budgets.delete(id);
+  }
+
+  /**
+   * Stage one goal row update (#2499 slice 3b-2: a goal budget transition).
+   * Last write wins; the store updates the existing `broker_goals` row.
+   */
+  stageGoal(record: GoalRecord): void {
+    this.maps.goals.set(record.id, structuredClone(record));
+  }
+
+  /** The staged goal update for `id`, if any. */
+  stagedGoal(id: string): GoalRecord | undefined {
+    const staged = this.maps.goals.get(id) as GoalRecord | undefined;
+    return staged ? structuredClone(staged) : undefined;
+  }
+
+  /** Undo a staged goal update (rollback); `previous` is restored when given. */
+  unstageGoal(id: string, previous?: GoalRecord): void {
+    if (previous) this.maps.goals.set(id, structuredClone(previous));
+    else this.maps.goals.delete(id);
   }
 
   /** Whether any category has staged records awaiting a hot save. */

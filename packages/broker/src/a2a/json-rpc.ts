@@ -1013,7 +1013,7 @@ export function executeSendMessage(
     // have not happened yet, then complete with the convention result.
     const inFlight = options.broker.getTask(task.id) ?? task;
     if (inFlight.status === "queued") {
-      options.broker.claimTask(task.id, assignedWorker.nodeId);
+      claimConventionTask(options.broker, task.id, assignedWorker.nodeId, exchange.id);
     }
     if ((options.broker.getTask(task.id) ?? inFlight).status === "claimed") {
       options.broker.startTask(task.id, assignedWorker.nodeId);
@@ -1030,7 +1030,7 @@ export function executeSendMessage(
     // resumes it (existing resume path) and the agent then completes.
     const inFlight = options.broker.getTask(task.id) ?? task;
     if (inFlight.status === "queued") {
-      options.broker.claimTask(task.id, assignedWorker.nodeId);
+      claimConventionTask(options.broker, task.id, assignedWorker.nodeId, exchange.id);
     }
     if ((options.broker.getTask(task.id) ?? inFlight).status === "claimed") {
       options.broker.startTask(task.id, assignedWorker.nodeId);
@@ -1049,6 +1049,29 @@ export function executeSendMessage(
     messageId: exchange.rootMessageId,
     task: projectBrokerTask(current),
   };
+}
+
+/**
+ * #2499 slice 3b-2: the inline claim of the default-agent conventions. A
+ * budget refusal (`policy_denied`, reason `budget_exhausted`) happens before
+ * any claim mutation, so the created task stays queued; the send then fails
+ * with a policy error whose message names the reason, the task and the
+ * context, instead of a bare refusal the caller cannot tie to the created
+ * task. Every other claim error propagates unchanged, as before.
+ */
+function claimConventionTask(broker: InMemoryA2ABroker, taskId: string, workerId: string, contextId: string): void {
+  try {
+    broker.claimTask(taskId, workerId);
+  } catch (error) {
+    if (error instanceof BrokerError && error.code === "policy_denied" && error.details?.reason === "budget_exhausted") {
+      throw new BrokerError(
+        "policy_denied",
+        `budget_exhausted: claim of task ${taskId} (context ${contextId}) refused by a monthly budget; the task stays queued`,
+        { ...error.details, taskId, contextId },
+      );
+    }
+    throw error;
+  }
 }
 
 /**

@@ -398,6 +398,20 @@ export interface BudgetEvaluation {
   warn: boolean;
 }
 
+/**
+ * #2499 slice 3b-2: budget enforcement decisions since startup, kept in
+ * memory and shown in `GET /budgets/status` (`claims`, `listing`, `creates`,
+ * `goals`). `would*` counts decisions taken in `shadow` (including `on` while
+ * the period is incomplete), which never refuse, omit or transition.
+ */
+export interface BudgetEnforcementCounters {
+  claims: { refusedTotal: number; wouldRefuseTotal: number; lastAt: string | null };
+  /** Tasks omitted from (or, in shadow, kept in) worker queued listings; each listing adds its count. */
+  listing: { omittedTotal: number; lastOmittedAt: string | null; wouldOmitTotal: number };
+  creates: { refusedTotal: number; wouldRefuseTotal: number; lastAt: string | null };
+  goals: { limitedTotal: number; resumedTotal: number; wouldLimitTotal: number; wouldResumeTotal: number; lastAt: string | null };
+}
+
 /** One of the largest spend rows of a scope in a period (outlier view, #2499 slice 3b). */
 export interface SpendTopRow {
   taskId: string;
@@ -458,6 +472,7 @@ export type AuditAction =
   | "task.review_gate_skipped"
   | "task.finalizer_admission_skipped"
   | "goal.created"
+  | "goal.status_changed"
   | "budget.created"
   | "budget.updated";
 export type A2AWorkerEnvironment = "research" | "staging" | "live";

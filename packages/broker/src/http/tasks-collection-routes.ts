@@ -161,16 +161,22 @@ export async function handleTasksListRequest(ctx: TasksCollectionRouteContext): 
   }
   const filters = taskFiltersFromUrl(url, { defaultLimit: DEFAULT_TASK_LIST_LIMIT });
   const includeFullTaskRecords = url.searchParams.get("detail") === "full" || url.searchParams.get("include") === "full";
+  // #2499 slice 3b-2: the worker poll shape (a worker id and status=queued)
+  // omits tasks whose claim by that worker the budget would refuse; the SSE
+  // worker-assignment-snapshot applies the same broker filter.
+  const pollWorkerId = workerScoped && filters.status === "queued" ? filters.assignedWorkerId : undefined;
+  const budgetFiltered = <T extends { id: string }>(items: T[]): T[] =>
+    pollWorkerId ? ctx.broker.filterQueuedListingForWorker(pollWorkerId, items) : items;
   const listBody = () => {
     if (includeFullTaskRecords) {
-      const tasks = listTasksForReadPath(ctx.stateStore, ctx.broker, filters);
+      const tasks = budgetFiltered(listTasksForReadPath(ctx.stateStore, ctx.broker, filters));
       return {
         count: tasks.length,
         limit: filters.limit,
         items: tasks as TaskRecord[],
       };
     }
-    const items = listTaskItemsForReadPath(ctx.stateStore, ctx.broker, filters);
+    const items = budgetFiltered(listTaskItemsForReadPath(ctx.stateStore, ctx.broker, filters));
     return {
       count: items.length,
       limit: filters.limit,
