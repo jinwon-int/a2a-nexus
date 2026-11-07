@@ -108,28 +108,28 @@ Split into two PRs (finalizer decision, 2026-11-07, recorded on #2499): **3b-1**
 - [x] (3b-1) Evaluator: USD counts `cost_known` rows, tokens count input + output; claim decision function (decision 15) unit-tested but not yet called; read failures fail open with an in-memory `checkFailed` count/last-at and a rate-limited `broker.budget.check_failed` line.
 - [x] (3b-1) `GET /budgets/status`: `enforcement`, per-budget usage, `limits` filled, `topRows`, `checkFailed` (also when the ledger read fails).
 - [x] (3b-1) 3a round-2 minors: first parseable cancel-time candidate; periodic page skipped after 3 consecutive failures (`reconcile_page_skipped`) and rate-limited `reconcile_failed`; diagnostics logged after the page write; reconciled cancel logs late `malformed`; `reconciled.passEnded`; `broker.spend.near_cap`.
-- [ ] (3b-2) Decide whether repeated `checkFailed` downgrades `on` or fails closed.
-- [ ] (3b-2) A late metering lost with a failed save: second reconcile pass or a count in status.
+- [x] (3b-2) Repeated `checkFailed` stays fail-open; `checkFailed.consecutive` in status (alert in slice 4).
+- [x] (3b-2) A late metering lost with a failed save is restaged by a second sweep pass (`late_metering_restaged`).
 
-- [ ] Mode `on` behaves as `shadow` while `ledger.periodComplete` is false (decision 9); a mode other than `off` without a spend ledger refuses startup, and a failed budget read fails open with `broker.budget.check_failed` counted in status (decision 13).
-- [ ] Carried from the slice 3a reviews (Team 1 lane PASS, Team 2 lane REVISE → fixed):
+- [x] (3b-1) Mode `on` behaves as `shadow` while `ledger.periodComplete` is false (decision 9); a mode other than `off` without a spend ledger refuses startup, and a failed budget read fails open with `broker.budget.check_failed` counted in status (decision 13).
+- [x] (3b-1/3b-2) Carried from the slice 3a reviews (Team 1 lane PASS, Team 2 lane REVISE → fixed):
   - `broker.budget.check_failed`: rate-limited log line; count and last-at kept in memory and shown in status even when the status read itself fails; decide whether N consecutive failures downgrade `on` to `shadow` or fail closed.
   - Show `ledger.missingSpendRows`, `ledger.periodComplete` and the time zone next to the mode in status; `periodComplete` does not consider missing rows.
   - A late metering lost with a failed save is not reconciled (its row exists, unmetered). Either a second reconcile pass for canceled tasks with late evidence and an unmetered row, or count them in status.
   - Outliers: log per-task reports near the caps and give operators a way to see a single row that exhausts a shared lane or goal budget.
-- [ ] Operator-authenticated budget routes: create, update limit, list. Use the existing operator auth; no new credential.
-- [ ] Enforcement mode setting `off | shadow | on`, default `off`; state whether it applies live or at restart.
-- [ ] Red first: commit failing tests for the claim refusal and the listing filter, then the implementation; link both CI runs.
-- [ ] Claim-time check next to `assertClaimTaskPolicy`: `policy_denied` with reason `budget_exhausted` (HTTP 403); the task stays `queued`.
-- [ ] Filter exhausted-scope tasks out of the worker queued listing:
+- [x] (3b-1) Operator-authenticated budget routes: create, update limit, list. Use the existing operator auth; no new credential.
+- [x] (3b-1) Enforcement mode setting `off | shadow | on`, default `off`; state whether it applies live or at restart.
+- [x] (3b-2) Red first: commit failing tests for the claim refusal and the listing filter, then the implementation; link both CI runs.
+- [x] (3b-2) Claim-time check next to `assertClaimTaskPolicy`: `policy_denied` with reason `budget_exhausted` (HTTP 403); the task stays `queued`.
+- [x] (3b-2) Filter exhausted-scope tasks out of the worker queued listing:
   - the poll route `GET /tasks?assignedWorkerId=&status=queued`;
   - the SSE `worker-assignment-snapshot`;
   - expose the omitted count in budget status.
-- [ ] `pause` budgets refuse at create time.
-- [ ] USD limits count only `cost_known` rows; token limits count rows with tokens (Decisions 1 and 4).
-- [ ] Goal-scope exhaustion moves the goal to `budget_limited` with reason `budget_exhausted`.
-- [ ] `shadow` records would-refuse decisions in status and logs without refusing.
-- [ ] Tests:
+- [x] (3b-2) `pause` budgets refuse at create time.
+- [x] (3b-2) USD limits count only `cost_known` rows; token limits count rows with tokens (Decisions 1 and 4).
+- [x] (3b-2) Goal-scope exhaustion moves the goal to `budget_limited` with reason `budget_exhausted`.
+- [x] (3b-2) `shadow` records would-refuse decisions in status and logs without refusing.
+- [x] (3b-2) Tests:
   - all three modes;
   - poll and SSE agree;
   - in-flight tasks untouched;

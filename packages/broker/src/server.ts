@@ -620,8 +620,14 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   // #2499 slice 3b: an injected broker carries its own enforcement mode; a
   // different configured mode would otherwise be silently ignored.
   if (options.broker && options.broker.getBudgetEnforcementMode() !== budgetEnforcementMode) {
+    // #2499 slice 3b-2: name where the configured value came from.
+    const source = options.budgetEnforcementMode !== undefined
+      ? "the budgetEnforcementMode server option"
+      : process.env.A2A_BUDGET_ENFORCEMENT_MODE !== undefined
+        ? "A2A_BUDGET_ENFORCEMENT_MODE"
+        : "the default (A2A_BUDGET_ENFORCEMENT_MODE unset)";
     throw new Error(
-      `A2A_BUDGET_ENFORCEMENT_MODE='${budgetEnforcementMode}' differs from the injected broker's budget enforcement mode `
+      `configured budget enforcement mode '${budgetEnforcementMode}' (from ${source}) differs from the injected broker's budget enforcement mode `
         + `'${options.broker.getBudgetEnforcementMode()}'; set budgetEnforcementMode when constructing the broker`,
     );
   }
@@ -1088,6 +1094,13 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       // lost to a failed save is repaired without a restart. Non-fatal by
       // itself; no-op without a spend ledger.
       broker.reconcileSpendLedger({ maxPages: 1 });
+      // #2499 slice 3b-2: lost late meterings get a second pass (ledger
+      // correctness: runs in every enforcement mode, no-op without a spend
+      // ledger), and goal-scope budgets move goals to budget_limited and back
+      // (in a mode other than `on` budget-limited goals are only resumed,
+      // without spend reads). Both are bounded per sweep and never throw.
+      broker.restageLostLateMeterings();
+      broker.applyGoalBudgetLimits();
       if (requeued.length > 0 || deadLettered.length > 0 || stalledWaves.length > 0) {
         publishOperatorEvents();
       }

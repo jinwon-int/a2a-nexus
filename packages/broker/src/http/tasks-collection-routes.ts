@@ -22,6 +22,7 @@ import type { A2AHttpSignatureVerifiedWorker } from "../server.js";
 import { assertCreateTaskRequestParties, optionalString } from "../request-parsers.js";
 import {
   assertCreateTaskPayloadWithinLimit,
+  listBudgetFilteredWorkerQueue,
   listTaskItemsForReadPath,
   listTasksForReadPath,
 } from "../task-read-paths.js";
@@ -161,20 +162,37 @@ export async function handleTasksListRequest(ctx: TasksCollectionRouteContext): 
   }
   const filters = taskFiltersFromUrl(url, { defaultLimit: DEFAULT_TASK_LIST_LIMIT });
   const includeFullTaskRecords = url.searchParams.get("detail") === "full" || url.searchParams.get("include") === "full";
+  // #2499 slice 3b-2: the worker poll shape (a worker id and status=queued)
+  // omits tasks whose claim by that worker the budget would refuse, applied
+  // before the page cut (listBudgetFilteredWorkerQueue); the SSE
+  // worker-assignment stream applies the same broker predicate. The response
+  // gains `budgetOmitted` (refused tasks skipped by this listing) and
+  // `budgetScanCapped` (the scan bound stopped the refill) when the filter is
+  // active; `limit` stays the requested limit. A fresh filter per evaluation,
+  // so a held long poll that a budget write wakes sees the new limits.
+  const pollWorkerId = workerScoped && filters.status === "queued" ? filters.assignedWorkerId : undefined;
+  const budgetPage = <T extends { id: string }>(read: (limit: number) => T[]) => {
+    const filter = pollWorkerId ? ctx.broker.createQueuedListingBudgetFilter(pollWorkerId) : undefined;
+    if (!filter) return { items: read(filters.limit!), extra: {} };
+    const page = listBudgetFilteredWorkerQueue(read, filters.limit!, filter);
+    return { items: page.items, extra: { budgetOmitted: page.omitted, budgetScanCapped: page.scanCapped } };
+  };
   const listBody = () => {
     if (includeFullTaskRecords) {
-      const tasks = listTasksForReadPath(ctx.stateStore, ctx.broker, filters);
+      const { items: tasks, extra } = budgetPage((limit) => listTasksForReadPath(ctx.stateStore, ctx.broker, { ...filters, limit }));
       return {
         count: tasks.length,
         limit: filters.limit,
         items: tasks as TaskRecord[],
+        ...extra,
       };
     }
-    const items = listTaskItemsForReadPath(ctx.stateStore, ctx.broker, filters);
+    const { items, extra } = budgetPage((limit) => listTaskItemsForReadPath(ctx.stateStore, ctx.broker, { ...filters, limit }));
     return {
       count: items.length,
       limit: filters.limit,
       items,
+      ...extra,
     };
   };
 

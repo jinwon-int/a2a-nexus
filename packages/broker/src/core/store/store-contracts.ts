@@ -124,6 +124,14 @@ export interface BrokerStateStore {
    * success, preserving the existing "persistState returned" ACK boundary.
    */
   awaitDurablePersistenceAck?(): Promise<void>;
+  /**
+   * #2499 slice 3b-2: the most recently queued write (worker-thread
+   * topology), without taking it out of the set awaitDurablePersistenceAck
+   * reports on; undefined when no write is queued or writes are synchronous
+   * (in-process SQLite). Lets the broker settle in-memory state that waits on
+   * one write (budget write generations, the goal overlay).
+   */
+  latestQueuedWrite?(): Promise<unknown> | undefined;
   getPersistenceInfo?(): BrokerPersistenceInfo;
   /** Atomically record first use of a live-approval scope key. Returns false on replay. */
   consumeLiveApprovalKey?(key: string, consumedAt: string): boolean;
@@ -133,8 +141,9 @@ export interface BrokerStateStore {
    * gets broker-held goals carried in its snapshot instead.
    *
    * `insertGoal` is create-only: an existing id is a `BrokerError`
-   * `invalid_transition` (409), never an overwrite. Slice 1 has no goal
-   * update path, so there is no update method yet.
+   * `invalid_transition` (409), never an overwrite. #2499 slice 3b-2: goal
+   * status updates (the budget limits) reach the row through the save hints
+   * (`BrokerStateSaveHints.goals`), with their audit row.
    */
   insertGoal?(goal: GoalRecord): void;
   readGoal?(id: string): GoalRecord | undefined;
@@ -170,6 +179,16 @@ export interface BrokerStateStore {
     previousTimeZone?: string;
   };
   readSpendLedgerMetadata?(): { firstPeriod?: string; timeZone?: string };
+  /**
+   * #2499 slice 3b-2: one spend row's metering columns by task id (primary
+   * key point read), for the lost-late-metering pass; undefined when absent.
+   */
+  readSpendEventMetering?(taskId: string): {
+    agentId: string | null;
+    costKnown: boolean;
+    inputTokens: number;
+    outputTokens: number;
+  } | undefined;
   /**
    * Budgets and their evaluator reads (#2499 slice 3b, SQLite only, optional
    * like readSpendTotals; a store missing any of them has no budgets and the
@@ -234,6 +253,14 @@ export interface BrokerStateSaveHints {
    * without a budget table ignore the field.
    */
   budgets?: BudgetRecord[];
+  /**
+   * #2499 slice 3b-2: goal records whose status changed (goal budget limits),
+   * written over their existing `broker_goals` row in the same transaction as
+   * the rest of these hints (so with their `goal.status_changed` audit row).
+   * Never inserts: goals are created by insertGoal. Stores without a goal
+   * table ignore the field.
+   */
+  goals?: GoalRecord[];
 }
 
 export interface BrokerPersistenceInfo {

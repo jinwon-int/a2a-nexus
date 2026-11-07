@@ -321,6 +321,17 @@ Proposed in the slice 3b-1 PR and accepted when the owner approves its merge.
     effective mode, reason), per-budget usage, `topRows` for a named scope, and
     `checkFailed` (served from memory, also when the ledger read fails).
 
+### Enforcement hooks (slice 3b-2, 2026-11-07)
+
+Proposed in the slice 3b-2 PR and accepted when the owner approves its merge.
+
+18. **Hook details.**
+    - **Claim refusal:** `policy_denied` with `{reason: "budget_exhausted", periodKey, scopes}` (HTTP 403). JSON-RPC message-send claims return `-32012` with the reason in the message; the task stays `queued`.
+    - **`pause` at create:** `{reason: "budget_paused", ...}`. The agent scope is the task's effective worker (`assignedWorkerId`, else the target), and the same worker is the cost-reporting probe. Retries scheduled inside `failTask` do not go through `createTask`, so a terminal transition never fails on a budget.
+    - **Listing filter:** applies to the worker poll (`assignedWorkerId`/`worker` with `status=queued`) and the SSE `worker-assignment-snapshot`. Live `worker-assignment` events and their replay are not filtered; a worker acting on one gets the 403. `listing.omittedTotal` counts per listing, not per task.
+    - **Goal `budget_limited`:** the stale-reaper sweep moves a `pursuing` goal whose budget is exhausted (either limit) to `budget_limited`, and back to `pursuing` when the limit is raised or the period rolls. The resume uses the existing history reason `operator_requested` with note `budget_available`; there is no new reason value, so goal rows stay readable by older binaries. Mode `off` does not resume goals limited while the mode was `on`.
+    - **Fail-open:** repeated read failures stay fail-open; `checkFailed.consecutive` is shown, and the alert comes in slice 4.
+
 ## Out of scope
 
 - Dashboard UI and spend charts.

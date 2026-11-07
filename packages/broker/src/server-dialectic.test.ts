@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { DECISION_DIALECTIC_KIND, DECISION_DIALECTIC_VERSION, type DecisionDialecticTaskInputV1, type DecisionDialecticTaskV1 } from "./decision-dialectic/types.js";
 import { DecisionDialecticExecutionError, extractDecisionDialecticTaskInput, applyDecisionDialecticPatch, buildDecisionDialecticPhaseTaskRequest } from "./decision-dialectic/execution.js";
 import { BrokerError, InMemoryA2ABroker } from "./core/broker.js";
+import { SqliteBrokerStateStore } from "./core/store/store.js";
 import type { TaskRecord } from "./core/types.js";
 import { TRADING_DIALECTIC_KIND, TRADING_DIALECTIC_VERSION, type TradingDialecticTaskInputV1, type TradingDialecticTaskV1 } from "./trading-dialectic/types.js";
 import { startTestServer, jsonHeaders, registerTestWorker } from "./server-test-helpers.js";
@@ -1205,5 +1206,63 @@ test("trading-dialectic route rejects unsupported version with 400", async () =>
     assert.match(body.error.message, /unsupported.*version/);
   } finally {
     await server.close();
+  }
+});
+
+test("decision-dialectic phase creation is not exempt from a paused monthly budget (#2499 slice 3b-2)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-dialectic-pause-"));
+  const dbFile = join(dir, "state.sqlite");
+  const store = new SqliteBrokerStateStore(dbFile, { loadSource: "hot-tables" });
+  try {
+    const broker = new InMemoryA2ABroker(store, store.load(), { budgetPeriodTimeZone: "UTC", budgetEnforcementMode: "on" });
+    broker.registerWorker({
+      nodeId: "workerbeta",
+      role: "analyst",
+      capabilities: { canAnalyze: true, canBackfill: false, canPatchWorkspace: false, canPromoteLive: false, workspaceIds: ["t"], environments: ["research"] },
+    });
+    const db = new DatabaseSync(dbFile);
+    try {
+      db.prepare("UPDATE broker_metadata SET value = '2000-01' WHERE key = 'spend_ledger_first_period'").run();
+    } finally {
+      db.close();
+    }
+    broker.createBudget({ id: "b-pause", scopeType: "lane", scopeId: "analyze", period: "month", limitTokens: 10, enforce: "pause", createdBy: "o" });
+    store.saveHotEntities({
+      spendEvents: [{
+        taskId: "r-1", recordedAt: new Date().toISOString(), periodKey: broker.budgetPeriodKey(), agentId: "workerbeta",
+        lane: "analyze", goalId: null, costUsd: 0, inputTokens: 50, outputTokens: 0, costKnown: false,
+      }],
+    });
+    const parentPayload = buildDecisionDialecticPayload(
+      { revision: 0, state: "OPEN", thesis: undefined, antithesis: undefined, rebuttal: undefined, synthesis: undefined, decision: undefined, outcome: undefined },
+      "thesis",
+    ) as unknown as Record<string, unknown>;
+    const parent: TaskRecord = {
+      id: "dd-parent",
+      intent: "analyze",
+      requester: { id: "hub-a", kind: "node", role: "hub" },
+      target: { id: "workerbeta", kind: "node", role: "analyst" },
+      targetNodeId: "workerbeta",
+      payload: parentPayload,
+      status: "queued",
+      createdAt: "2026-05-18T00:00:00.000Z",
+      updatedAt: "2026-05-18T00:00:00.000Z",
+      taskOrigin: "api",
+    };
+    const { request } = buildDecisionDialecticPhaseTaskRequest(parent);
+    const originalWarn = console.warn;
+    console.warn = () => {};
+    try {
+      assert.throws(
+        () => broker.createTask(request),
+        (error: unknown) => error instanceof BrokerError && error.code === "policy_denied" && error.details?.reason === "budget_paused",
+      );
+    } finally {
+      console.warn = originalWarn;
+    }
+    assert.equal(broker.getTask(request.id!), null, "no phase task is created");
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
   }
 });

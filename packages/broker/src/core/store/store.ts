@@ -1208,6 +1208,20 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     }
   }
 
+  /**
+   * #2499 slice 3b-2: goal status updates from the save hints (the goal
+   * budget limits), called only inside the save transactions so each row
+   * commits with its `goal.status_changed` audit row. Updates the existing
+   * row by id; never inserts (goals are created by insertGoal).
+   */
+  private updateGoalsUnsafe(goals: GoalRecord[] | undefined): void {
+    if (!goals || goals.length === 0) return;
+    const update = this.stmt("UPDATE broker_goals SET status = ?, updated_at = ?, payload = ? WHERE id = ?");
+    for (const goal of goals) {
+      update.run(goal.status, goal.updatedAt, JSON.stringify(goal), goal.id);
+    }
+  }
+
   readGoal(id: string): GoalRecord | undefined {
     const row = this.stmt("SELECT payload FROM broker_goals WHERE id = ?").get(id);
     if (!row) return undefined;
@@ -1356,6 +1370,20 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     return {
       ...(previousFirstPeriod !== undefined ? { previousFirstPeriod } : {}),
       ...(previousTimeZone !== undefined ? { previousTimeZone } : {}),
+    };
+  }
+
+  /** #2499 slice 3b-2: one spend row's metering columns (primary key point read). */
+  readSpendEventMetering(taskId: string): { agentId: string | null; costKnown: boolean; inputTokens: number; outputTokens: number } | undefined {
+    const row = this
+      .stmt("SELECT agent_id, cost_known, input_tokens, output_tokens FROM broker_spend_events WHERE task_id = ?")
+      .get(taskId) as { agent_id: string | null; cost_known: number; input_tokens: number; output_tokens: number } | undefined;
+    if (!row) return undefined;
+    return {
+      agentId: row.agent_id,
+      costKnown: Number(row.cost_known) === 1,
+      inputTokens: Number(row.input_tokens),
+      outputTokens: Number(row.output_tokens),
     };
   }
 
@@ -1985,6 +2013,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       this.insertSpendEventsUnsafe(hints?.spendEvents);
       this.applySpendMeteringsUnsafe(hints?.spendMeterings);
       this.upsertBudgetsUnsafe(hints?.budgets);
+      this.updateGoalsUnsafe(hints?.goals);
       this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION_VALUE));
       this.writePersistDiagnostics(updatedAt, hints, { skipFullSnapshot }, fit);
     });
@@ -1997,6 +2026,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       this.insertSpendEventsUnsafe(hints.spendEvents);
       this.applySpendMeteringsUnsafe(hints.spendMeterings);
       this.upsertBudgetsUnsafe(hints.budgets);
+      this.updateGoalsUnsafe(hints.goals);
       this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION_VALUE));
       this.writePersistDiagnostics(updatedAt, hints, { skipFullSnapshot: true });
     });

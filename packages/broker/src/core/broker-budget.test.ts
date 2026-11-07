@@ -438,7 +438,7 @@ test("stores without SQLite: budget writes are unsupported_operation (409), read
     { checkFailed: false, refuse: false, scopes: [] },
     "no budget table: nothing to check, not a check failure",
   );
-  assert.deepEqual(broker.getBudgetCheckFailures(), { count: 0, lastAt: null });
+  assert.deepEqual(broker.getBudgetCheckFailures(), { count: 0, lastAt: null, consecutive: 0 });
 });
 
 test("real worker-thread persistence: row and audit ride one queued write; the map is the duplicate check; a failed write leaves neither", async () => {
@@ -762,7 +762,7 @@ test("evaluator: a read failure fails open with checkFailed, an in-memory counte
   mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-07T00:00:00.000Z") });
   try {
     h.broker.createBudget({ id: "lane-analyze", scopeType: "lane", scopeId: "analyze", period: "month", limitUsd: 1, createdBy: "o" });
-    assert.deepEqual(h.broker.getBudgetCheckFailures(), { count: 0, lastAt: null });
+    assert.deepEqual(h.broker.getBudgetCheckFailures(), { count: 0, lastAt: null, consecutive: 0 });
     h.store.readSpendScopeUsage = () => {
       throw new Error("disk I/O error");
     };
@@ -774,12 +774,12 @@ test("evaluator: a read failure fails open with checkFailed, an in-memory counte
     assert.deepEqual(named(first.events, "broker.budget.check_failed"), [
       { event: "broker.budget.check_failed", source: "claim", workerId: "worker-a", count: 1, error: "disk I/O error", suppressed: 0 },
     ]);
-    assert.deepEqual(h.broker.getBudgetCheckFailures(), { count: 1, lastAt: "2026-11-07T00:00:00.000Z" });
+    assert.deepEqual(h.broker.getBudgetCheckFailures(), { count: 1, lastAt: "2026-11-07T00:00:00.000Z", consecutive: 1 });
     mock.timers.tick(30_000);
     const second = captureWarnings(() => h.broker.evaluateClaimBudget({ lane: "analyze", workerId: "worker-a" }));
     assert.equal(second.result.checkFailed, true);
     assert.deepEqual(named(second.events, "broker.budget.check_failed"), [], "at most one line per minute");
-    assert.deepEqual(h.broker.getBudgetCheckFailures(), { count: 2, lastAt: "2026-11-07T00:00:30.000Z" });
+    assert.deepEqual(h.broker.getBudgetCheckFailures(), { count: 2, lastAt: "2026-11-07T00:00:30.000Z", consecutive: 2 });
     mock.timers.tick(30_000);
     const third = captureWarnings(() => h.broker.evaluateClaimBudget({ lane: "analyze", workerId: "worker-b" }));
     assert.deepEqual(named(third.events, "broker.budget.check_failed"), [

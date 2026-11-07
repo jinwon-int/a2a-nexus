@@ -184,8 +184,8 @@ const BUDGET_STATUS_BUDGET_LIMIT = 200;
 /** Default and maximum `top` rows per order in a named-scope status read. */
 const BUDGET_STATUS_TOP_DEFAULT = 5;
 const BUDGET_STATUS_TOP_MAX = 20;
-/** Maximum `limit` on GET /budgets. */
-const BUDGET_LIST_LIMIT_MAX = 1_000;
+/** Maximum `limit` on GET /budgets (#2499 slice 3b-2: the broker's 10 000 budget load cap; default 1000). */
+const BUDGET_LIST_LIMIT_MAX = 10_000;
 
 /**
  * Strict positive integer query value (#2499 slice 3b): decimal digits only,
@@ -233,11 +233,14 @@ function topRowJson(row: SpendTopRow) {
  * store (dropped or restored) before the error is returned.
  */
 async function awaitBudgetWrite(ctx: GoalRouteContext, budgetId: string): Promise<void> {
+  // #2499 slice 3b-2: read before awaiting, so a newer queued write of the
+  // same budget is not overwritten by this write's resync.
+  const generation = ctx.broker.getBudgetWriteGeneration(budgetId);
   try {
     await awaitDurablePersistenceAck(ctx.stateStore);
   } catch (error) {
     try {
-      ctx.broker.reloadBudgetFromStore(budgetId);
+      ctx.broker.reloadBudgetFromStore(budgetId, generation);
     } catch {
       // Keep the write failure as the answer; the next restart reloads the map.
     }
@@ -369,7 +372,7 @@ function scopeFiltersFromUrl(url: URL): { scopeType?: BudgetScopeType; scopeId?:
 /**
  * GET /budgets (#2499 slice 3b) — budgets ordered by scope type, scope id,
  * period and id, from the broker's in-memory map; `scope_type` / `scope_id`
- * filter, `limit` (strict integer 1..1000, default 1000). Without budgets (non-SQLite store):
+ * filter, `limit` (strict integer 1..10000, default 1000). Without budgets (non-SQLite store):
  * `available: false` and an empty list, like `GET /budgets/status`.
  */
 function handleBudgetList(ctx: GoalRouteContext): void {
@@ -393,6 +396,16 @@ function handleBudgetList(ctx: GoalRouteContext): void {
     { kind: "budgets", available: true, count: budgets.length, budgets: budgets.map(budgetJson) },
     { "cache-control": "no-store" },
   );
+}
+
+/**
+ * #2499 slice 3b-2: a failed ledger read, classified by error type: a SQLite
+ * error (`code` ERR_SQLITE_*, which includes an integer overflow, decision
+ * 13). Any other throw is not a ledger read failure.
+ */
+function isLedgerReadError(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return error instanceof Error && typeof code === "string" && code.startsWith("ERR_SQLITE");
 }
 
 const ZERO_TOTALS: SpendTotals = {
@@ -440,12 +453,21 @@ const ZERO_TOTALS: SpendTotals = {
  *     largest rows of the scope in the period (`top`, strict integer 1..20,
  *     default 5; `top` without a named scope is 400); null otherwise;
  *     `tokens` is a number or decimal string like the totals;
- *   - `checkFailed` `{ count, lastAt }`: failed budget reads since startup
+ *   - `checkFailed` `{ count, lastAt, consecutive }`: failed budget reads since startup
  *     (claim-time evaluator and enforcement-mode metadata), from memory. A
  *     ledger read that throws still answers 200 with `available: true`,
  *     `readError: "ledger_read_failed"`, null totals and `ledger`, empty
  *     `scopes`/`budgets`, and the in-memory `enforcement` and `checkFailed`
  *     (`available: false` keeps meaning "no SQLite ledger");
+ * - slice 3b-2, additive, from memory: `consecutive` in `checkFailed`
+ *   (failures since the last successful budget read); `claims`
+ *   `{ refusedTotal, wouldRefuseTotal, lastAt }`, `listing`
+ *   `{ omittedTotal, lastOmittedAt, lastOmittedCount, wouldOmitTotal }`, `creates`
+ *   `{ refusedTotal, wouldRefuseTotal, lastAt }` and `goals`
+ *   `{ limitedTotal, resumedTotal, wouldLimitTotal, lastAt }`
+ *   since startup (`listing` also `lastOmittedCount`). Only a SQLite read
+ *   error (ERR_SQLITE_*) is `ledger_read_failed` (`budgetsTruncated: null`,
+ *   so the field is boolean | null); any other error is mapped as usual;
  * - the spend ledger is SQLite-only: other stores answer `available: false`.
  */
 function handleBudgetStatus(ctx: GoalRouteContext): void {
@@ -473,9 +495,12 @@ function handleBudgetStatus(ctx: GoalRouteContext): void {
   };
   // Served from memory (plus one metadata lookup; getBudgetEnforcement never
   // throws and counts a failed lookup in checkFailed, so read it first).
+  // #2499 slice 3b-2: the enforcement counters (`claims`, `listing`,
+  // `creates`, `goals`) are served from memory too.
   const live = {
     enforcement: ctx.broker.getBudgetEnforcement(period),
     checkFailed: ctx.broker.getBudgetCheckFailures(),
+    ...ctx.broker.getBudgetEnforcementCounters(),
   };
   const empty = (marker: Record<string, unknown>) => {
     sendJson(
@@ -499,6 +524,9 @@ function handleBudgetStatus(ctx: GoalRouteContext): void {
     empty(noLedger);
     return;
   }
+  // #2499 slice 3b-2: only a SQLite read error (isLedgerReadError), from
+  // any read in this block, is `ledger_read_failed`; a BrokerError keeps its
+  // mapping and any other throw (a programming error) is a 500.
   let body: Record<string, unknown>;
   try {
     const result = ctx.broker.readSpendTotals({
@@ -552,9 +580,11 @@ function handleBudgetStatus(ctx: GoalRouteContext): void {
       ...live,
     };
   } catch (error) {
+    if (!isLedgerReadError(error)) throw error;
     // The ledger exists (available stays true); the read failed.
     ctx.broker.noteBudgetStatusReadFailure(error);
-    empty({ available: true, readError: "ledger_read_failed", ledger: null, budgetsTruncated: false });
+    // `budgetsTruncated` is unknown when the read failed (null, like the totals).
+    empty({ available: true, readError: "ledger_read_failed", ledger: null, budgetsTruncated: null });
     return;
   }
   sendJson(ctx.res, 200, body, { "cache-control": "no-store" });
