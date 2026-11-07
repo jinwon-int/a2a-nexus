@@ -102,6 +102,11 @@ From the slice 2 review and re-review; each is resolved or decided before any mo
 #### Slice 3b — budgets and enforcement
 
 - [ ] Mode `on` behaves as `shadow` while `ledger.periodComplete` is false (decision 9); a mode other than `off` without a spend ledger refuses startup, and a failed budget read fails open with `broker.budget.check_failed` counted in status (decision 13).
+- [ ] Carried from the slice 3a reviews (T1 nosuk PASS, T2 jingun REVISE → fixed):
+  - `broker.budget.check_failed`: rate-limited log line; count and last-at kept in memory and shown in status even when the status read itself fails; decide whether N consecutive failures downgrade `on` to `shadow` or fail closed.
+  - Show `ledger.missingSpendRows`, `ledger.periodComplete` and the time zone next to the mode in status; `periodComplete` does not consider missing rows.
+  - A late metering lost with a failed save is not reconciled (its row exists, unmetered). Either a second reconcile pass for canceled tasks with late evidence and an unmetered row, or count them in status.
+  - Outliers: log per-task reports near the caps and give operators a way to see a single row that exhausts a shared lane or goal budget.
 - [ ] Operator-authenticated budget routes: create, update limit, list. Use the existing operator auth; no new credential.
 - [ ] Enforcement mode setting `off | shadow | on`, default `off`; state whether it applies live or at restart.
 - [ ] Red first: commit failing tests for the claim refusal and the listing filter, then the implementation; link both CI runs.

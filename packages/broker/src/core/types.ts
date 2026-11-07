@@ -271,10 +271,16 @@ export interface SpendLateMeteringRecord {
 export interface SpendLedgerCoverage {
   /** `spend_ledger_first_period`: the period the ledger started recording in (written once). */
   firstPeriod: string | null;
-  /** `spend_ledger_time_zone`: the zone the stored `period_key` values were computed in. */
+  /**
+   * `spend_ledger_time_zone`: the currently configured zone (rows written
+   * before a change keep their period_key).
+   */
   timeZone: string | null;
-  /** Terminal `broker_tasks` rows with no spend row (live count). */
-  missingSpendRows: number;
+  /**
+   * Terminal `broker_tasks` rows with no spend row (live count); null when
+   * the store cannot count them or the count failed.
+   */
+  missingSpendRows: number | null;
 }
 
 /** Spend totals for one scope (or a whole period) from the spend ledger. */

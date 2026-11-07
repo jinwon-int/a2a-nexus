@@ -256,16 +256,23 @@ enforcement is `off`.
 
 6. **G1 — late telemetry after a cancel: one-time late metering** (see "Clarified in
    slice 3a"). Canceled work is metered when the worker reports it; work the worker never
-   reports stays unmetered.
+   reports stays unmetered. A row rebuilt by the reconciliation is attributed to the
+   assignee (the claimant at cancel time is not kept on the task record) and gets the
+   late usage when the late poster is that assignee. The late poster always is the
+   assignee (`assertTaskWorker`), so the live path and the rebuilt row differ only for a
+   task reassigned after its claim; that divergence is accepted.
 7. **G2 — missing rows: repair, not only report.** Create-only reconciliation at startup and
-   on every stale-reaper sweep; the remaining count is shown in budget status.
+   on every stale-reaper sweep (the periodic run keeps its page cursor across sweeps, so it
+   advances past ids it cannot repair); the remaining count is shown in budget status, or
+   `null` when the count cannot be read.
    Enforcement proceeds while rows are missing; the count tells the operator how much
    spend the totals may be missing.
 8. **Fail-closed spend insert: kept.** A failing ledger insert still fails the terminal
    transition. The failures left (I/O, disk full, lock timeout) would fail the task row
    in the same transaction anyway, the failure is visible and the worker retries, and a
    silent under-count would weaken enforcement. With the reconciliation in place, a
-   non-fatal variant buys nothing.
+   non-fatal variant buys nothing. The same holds for the G1 late-metering update, which
+   rides the late-evidence transaction.
 9. **G3 — partial deploy period: no enforcement before the first full period.** The
    reconciliation backfills what the hot table still has, but tasks pruned before the
    deploy are gone. Slice 3b runs `on` as `shadow` for any period where

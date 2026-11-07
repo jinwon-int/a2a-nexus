@@ -205,8 +205,8 @@ const ZERO_TOTALS: SpendTotals = {
  * - `limits` is null until budgets exist (slice 3);
  * - `ledger` (#2499 slice 3a, additive): `firstPeriod` and `timeZone` from
  *   the ledger coverage metadata, `missingSpendRows` (terminal task rows with
- *   no spend row, live) and `periodComplete` (the period is strictly after
- *   `firstPeriod`);
+ *   no spend row, live; null when the store cannot count them or the count
+ *   failed) and `periodComplete` (the period is strictly after `firstPeriod`);
  * - the spend ledger is SQLite-only: other stores answer `available: false`.
  */
 function handleBudgetStatus(ctx: GoalRouteContext): void {
@@ -270,7 +270,7 @@ function handleBudgetStatus(ctx: GoalRouteContext): void {
   const ledger = {
     firstPeriod: coverage?.firstPeriod ?? null,
     timeZone: coverage?.timeZone ?? null,
-    missingSpendRows: coverage?.missingSpendRows ?? 0,
+    missingSpendRows: coverage ? coverage.missingSpendRows : null,
     periodComplete: coverage?.firstPeriod ? period > coverage.firstPeriod : false,
   };
   const named = scopeType !== undefined && scopeId !== undefined;

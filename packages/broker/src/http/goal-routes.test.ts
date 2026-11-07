@@ -525,6 +525,49 @@ test("handler: token totals above Number.MAX_SAFE_INTEGER are exact decimal stri
   }
 });
 
+test("handler: ledger.missingSpendRows counts terminal task rows without a spend row; null when the count is unavailable or throws", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-budget-status-missing-"));
+  const store = new SqliteBrokerStateStore(join(dir, "state.sqlite"));
+  try {
+    const broker = new InMemoryA2ABroker(store, store.load(), { budgetPeriodTimeZone: "UTC" });
+    // Two terminal task rows the ledger has no row for (written past the broker), one queued.
+    const row = (id: string, status: string) => ({
+      id,
+      intent: "analyze",
+      requester: { id: "hub-a", kind: "node", role: "hub" },
+      target: { id: "worker-a", kind: "node", role: "analyst" },
+      targetNodeId: "worker-a",
+      status,
+      payload: {},
+      artifactIds: [],
+      createdAt: "2026-11-01T00:00:00.000Z",
+      updatedAt: "2026-11-01T00:00:00.000Z",
+      taskOrigin: "api",
+    }) as unknown as Parameters<SqliteBrokerStateStore["upsertHotTasks"]>[0][number];
+    store.upsertHotTasks([row("m-1", "succeeded"), row("m-2", "canceled"), row("m-3", "queued")]);
+    const { route } = makeRouter(broker);
+    const counted = await route("GET", "/budgets/status");
+    assert.equal(counted.status, 200);
+    assert.equal(counted.json.ledger.missingSpendRows, 2);
+
+    store.countTerminalTasksMissingSpend = () => {
+      throw new Error("disk I/O error");
+    };
+    const failed = await route("GET", "/budgets/status");
+    assert.equal(failed.status, 200, "a failed count does not fail the status read");
+    assert.equal(failed.json.ledger.missingSpendRows, null);
+    assert.equal(failed.json.available, true);
+    assert.equal(failed.json.ledger.timeZone, "UTC", "the other ledger fields stay");
+    assert.ok(failed.json.period_total);
+
+    Object.assign(store, { countTerminalTasksMissingSpend: undefined });
+    assert.equal((await route("GET", "/budgets/status")).json.ledger.missingSpendRows, null, "a store that cannot count");
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 const WORKER_A = { "x-a2a-requester-id": "worker-a", "x-a2a-requester-role": "analyst" };
 
 async function exerciseBudgetServer(baseUrl: string): Promise<void> {

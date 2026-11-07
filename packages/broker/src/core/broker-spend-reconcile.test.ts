@@ -25,6 +25,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import { InMemoryA2ABroker, type InMemoryA2ABrokerOptions } from "./broker.js";
+import { isTerminalTaskStatus } from "./broker-status-predicates.js";
 import { buildLateSpendMetering, buildTaskSpendEvent } from "./completion/broker-task-terminal.js";
 import { budgetPeriodKey, jsonSafeSpendInteger, spendTotalsToJson } from "./store-schemas.js";
 import {
@@ -42,7 +43,7 @@ import {
   type BrokerStateSaveHints,
 } from "./store/store.js";
 import { createWorkerThreadPersistence } from "./store/sqlite-worker-thread-persistence.js";
-import type { CreateTaskRequest, SpendEventRecord, SpendLateMeteringRecord, TaskRecord } from "./types.js";
+import type { CreateTaskRequest, SpendEventRecord, SpendLateMeteringRecord, TaskRecord, TaskStatus } from "./types.js";
 
 const OPERATOR = { id: "operator-1", kind: "user" as const, role: "operator" as const };
 const TELEMETRY_SCHEMA = "a2a.analysis-execution-telemetry.v1";
@@ -258,8 +259,8 @@ for (const wiring of ["hints", "repositories"] as const) {
       assert.equal(metered.period_key, canceled.period_key, "spend stays in the cancel's period");
       assert.equal(metered.recorded_at, canceled.recorded_at);
       assert.equal(metered.agent_id, "worker-a");
-      assert.deepEqual(spendEvents(events, "broker.spend.late_metered"), [
-        { event: "broker.spend.late_metered", taskId: "late-ok", kind: "complete", costKnown: true },
+      assert.deepEqual(spendEvents(events, "broker.spend.late_metering_staged"), [
+        { event: "broker.spend.late_metering_staged", taskId: "late-ok", kind: "complete", costKnown: true },
       ]);
       assert.equal(h.broker.getTask("late-ok")?.status, "canceled", "the task stays canceled");
 
@@ -271,7 +272,7 @@ for (const wiring of ["hints", "repositories"] as const) {
           details: { bridgeFailure: { executionTelemetry: telemetry({ costUsd: 9 }) } },
         }));
       assert.deepEqual(h.row("late-ok"), metered);
-      assert.deepEqual(spendEvents(second.events, "broker.spend.late_metered"), []);
+      assert.deepEqual(spendEvents(second.events, "broker.spend.late_metering_staged"), []);
 
       // A restart keeps the metered row and reconcile has nothing to do.
       const startup = h.reopen();
@@ -283,16 +284,23 @@ for (const wiring of ["hints", "repositories"] as const) {
   });
 }
 
-test("G1: late evidence without usable telemetry stages nothing and logs nothing", () => {
+test("G1: late telemetry that is present but malformed stages nothing and logs one late telemetry_malformed line; none at all logs nothing", () => {
   const h = harness();
   try {
     runToRunning(h.broker, taskRequest("late-none"));
     h.broker.cancelTask("late-none", { actor: OPERATOR });
     const canceled = h.row("late-none");
     const { events } = captureWarnings(() =>
-      h.broker.completeTask("late-none", "worker-a", { summary: "late", output: { executionTelemetry: { schemaVersion: "v0" } } }));
+      h.broker.completeTask("late-none", "worker-a", { summary: "late", output: { executionTelemetry: { schemaVersion: "v0", costUsd: 7 } } }));
     assert.deepEqual(h.row("late-none"), canceled);
-    assert.deepEqual(events.filter((event) => String(event.event).startsWith("broker.spend.")), []);
+    assert.deepEqual(events.filter((event) => String(event.event).startsWith("broker.spend.")), [
+      { event: "broker.spend.telemetry_malformed", taskId: "late-none", status: "canceled", reason: "schema_version", late: true },
+    ], "reason code only, never the values");
+
+    runToRunning(h.broker, taskRequest("late-absent"));
+    h.broker.cancelTask("late-absent", { actor: OPERATOR });
+    const quiet = captureWarnings(() => h.broker.completeTask("late-absent", "worker-a", { summary: "late, no telemetry" }));
+    assert.deepEqual(quiet.events.filter((event) => String(event.event).startsWith("broker.spend.")), []);
   } finally {
     h.close();
   }
@@ -394,9 +402,14 @@ test("G1: a late poster that is not the row's agent (legacy claimant != assignee
       const canceled = read();
       assert.equal(canceled.agent_id, "worker-x", "precondition: the row belongs to the claimant");
       // The assignee may post late evidence (claimedBy was cleared), but it is not the row's agent.
-      captureWarnings(() =>
+      const { events } = captureWarnings(() =>
         broker.completeTask("legacy-late", "worker-a", { summary: "late", output: { executionTelemetry: telemetry() } }));
       assert.equal(broker.getTask("legacy-late")?.lateEvidenceAfterCancel?.submittedBy, "worker-a");
+      // Staged (and logged as staged) by the broker, which cannot see the row;
+      // the store guard then leaves the row unchanged.
+      assert.deepEqual(spendEvents(events, "broker.spend.late_metering_staged"), [
+        { event: "broker.spend.late_metering_staged", taskId: "legacy-late", kind: "complete", costKnown: true },
+      ]);
       assert.deepEqual(read(), canceled, "not applied: agent_id IS the late poster fails");
     } finally {
       store.close();
@@ -432,8 +445,8 @@ test("G1: late fail reads the failure carriers first, late complete the result c
   }));
   assert.equal(nested.metering?.costUsd, 0.5);
   assert.equal(nested.fallback, "costUsd_invalid");
-  // Nothing parses / no late evidence: nothing to meter.
-  assert.deepEqual(buildLateSpendMetering(late("fail", { error: bridge("1") })), {});
+  // Nothing parses: nothing to meter, the reason code for the one log line; no late evidence: nothing at all.
+  assert.deepEqual(buildLateSpendMetering(late("fail", { error: bridge("1") })), { malformed: "costUsd_invalid" });
   assert.deepEqual(buildLateSpendMetering({ id: "t", status: "canceled" } as TaskRecord), {});
 });
 
@@ -450,8 +463,8 @@ test("G1 through the broker: a late fail with bridgeFailure telemetry meters the
       }));
     assert.equal(h.row("late-fail")?.cost_usd, 0.25);
     assert.equal(h.row("late-fail")?.input_tokens, 120);
-    assert.deepEqual(spendEvents(events, "broker.spend.late_metered"), [
-      { event: "broker.spend.late_metered", taskId: "late-fail", kind: "fail", costKnown: true },
+    assert.deepEqual(spendEvents(events, "broker.spend.late_metering_staged"), [
+      { event: "broker.spend.late_metering_staged", taskId: "late-fail", kind: "fail", costKnown: true },
     ]);
   } finally {
     h.close();
@@ -531,7 +544,7 @@ for (const wiring of ["hints", "repositories"] as const) {
 
       const startup = h.reopen();
       assert.deepEqual(spendEvents(startup, "broker.spend.reconciled"), [
-        { event: "broker.spend.reconciled", repaired: 3, unrepairable: 0 },
+        { event: "broker.spend.reconciled", submitted: 3, unrepairable: 0 },
       ]);
       // Rebuilt from the task records with the terminal-time builder: same rows
       // (agent, lane, period from completedAt, usage). The cancel's claimant is
@@ -572,7 +585,7 @@ test("G2: a failed save after the in-memory transition, then a later save of the
 
     const startup = h.reopen();
     assert.deepEqual(spendEvents(startup, "broker.spend.reconciled"), [
-      { event: "broker.spend.reconciled", repaired: 1, unrepairable: 0 },
+      { event: "broker.spend.reconciled", submitted: 1, unrepairable: 0 },
     ]);
     assert.equal(h.row("g2-lost")?.cost_usd, 0.7);
     assert.equal(h.broker.readSpendLedgerCoverage()?.missingSpendRows, 0);
@@ -611,7 +624,7 @@ test("G3: a pre-slice-2 terminal task row gets its row with period_key from comp
     try {
       const { events } = captureWarnings(() => new InMemoryA2ABroker(store, store.load()));
       assert.deepEqual(spendEvents(events, "broker.spend.reconciled"), [
-        { event: "broker.spend.reconciled", repaired: 1, unrepairable: 0 },
+        { event: "broker.spend.reconciled", submitted: 1, unrepairable: 0 },
       ]);
       const db = new DatabaseSync(dbFile);
       try {
@@ -631,7 +644,7 @@ test("G3: a pre-slice-2 terminal task row gets its row with period_key from comp
       third.upsertHotTasks([legacy("old-unloaded", "failed", "2026-03-02T00:00:00.000Z")]);
       const { events } = captureWarnings(() => new InMemoryA2ABroker(third, emptySnapshot()));
       assert.deepEqual(spendEvents(events, "broker.spend.reconciled"), [
-        { event: "broker.spend.reconciled", repaired: 0, unrepairable: 1 },
+        { event: "broker.spend.reconciled", submitted: 0, unrepairable: 1 },
       ]);
       assert.equal(third.countTerminalTasksMissingSpend(), 1);
     } finally {
@@ -682,9 +695,9 @@ test("reconcile pages past unrepairable ids, is non-fatal, and stops at maxPages
     h.sql("DELETE FROM broker_spend_events WHERE task_id = 'z-real'");
     // The ghosts are not in this broker's memory.
     const firstPage = captureWarnings(() => h.broker.reconcileSpendLedger({ maxPages: 1 }));
-    assert.deepEqual(firstPage.result, { repaired: 0, unrepairable: 200 });
+    assert.deepEqual(firstPage.result, { submitted: 0, unrepairable: 200 });
     const all = captureWarnings(() => h.broker.reconcileSpendLedger());
-    assert.deepEqual(all.result, { repaired: 1, unrepairable: 205 });
+    assert.deepEqual(all.result, { submitted: 1, unrepairable: 205 });
     assert.ok(h.row("z-real"));
     assert.equal(h.rows().length, 1, "no row for an unrepairable id");
 
@@ -702,10 +715,214 @@ test("reconcile pages past unrepairable ids, is non-fatal, and stops at maxPages
     });
     assert.equal(failing.result, undefined);
     assert.deepEqual(spendEvents(failing.events, "broker.spend.reconcile_failed"), [
-      { event: "broker.spend.reconcile_failed", repaired: 0, unrepairable: 0, error: "disk I/O error" },
+      { event: "broker.spend.reconcile_failed", submitted: 0, unrepairable: 0, error: "disk I/O error" },
     ]);
   } finally {
     h.close();
+  }
+});
+
+/** A terminal task row the broker never hydrated (written straight to broker_tasks). */
+function ghostTask(id: string, status: TaskStatus = "failed"): TaskRecord {
+  return {
+    id,
+    intent: "analyze",
+    requester: { id: "hub-a", kind: "node", role: "hub" },
+    target: { id: "worker-a", kind: "node", role: "analyst" },
+    targetNodeId: "worker-a",
+    status,
+    payload: {},
+    artifactIds: [],
+    createdAt: "2026-03-01T00:00:00.000Z",
+    updatedAt: "2026-03-01T00:00:00.000Z",
+    taskOrigin: "api",
+  } as unknown as TaskRecord;
+}
+
+test("periodic reconcile: the cursor moves past a full page of unrepairable ids, a stable set logs once, a later-lost row is repaired without restart", () => {
+  const h = harness();
+  try {
+    // Page size 3 (test-only override): five unrepairable ids sort first.
+    h.store.upsertHotTasks(["a-0", "a-1", "a-2", "a-3", "a-4"].map((id) => ghostTask(id)));
+    runToRunning(h.broker, taskRequest("z-real"));
+    h.broker.completeTask("z-real", "worker-a", { summary: "ok", output: { executionTelemetry: telemetry({ costUsd: 0.4 }) } });
+    const metered = h.row("z-real");
+    h.sql("DELETE FROM broker_spend_events WHERE task_id = 'z-real'");
+    const sweep = () => {
+      const run = captureWarnings(() => h.broker.reconcileSpendLedger({ maxPages: 1, pageSize: 3 }));
+      return { result: run.result, logged: spendEvents(run.events, "broker.spend.reconciled") };
+    };
+
+    // Sweep 1: a-0..a-2, all unrepairable, mid-pass: no line.
+    assert.deepEqual(sweep(), { result: { submitted: 0, unrepairable: 3 }, logged: [] });
+    // Sweep 2 continues after a-2 (it no longer re-reads the first page): a-3, a-4, z-real.
+    assert.deepEqual(sweep(), {
+      result: { submitted: 1, unrepairable: 2 },
+      logged: [{ event: "broker.spend.reconciled", submitted: 1, unrepairable: 2 }],
+    });
+    assert.deepEqual(h.row("z-real"), metered, "repaired without a restart");
+    // Sweep 3: an empty page ends the pass: the pass total (5) is new, so one line.
+    assert.deepEqual(sweep(), {
+      result: { submitted: 0, unrepairable: 0 },
+      logged: [{ event: "broker.spend.reconciled", submitted: 0, unrepairable: 5 }],
+    });
+    // The next pass starts again from the first id; the same 5 log nothing.
+    assert.deepEqual(sweep(), { result: { submitted: 0, unrepairable: 3 }, logged: [] });
+    assert.deepEqual(sweep(), { result: { submitted: 0, unrepairable: 2 }, logged: [] }, "a short page ends the pass; total unchanged");
+
+    // A row lost later (an id after the unrepairable ones) is found on the next pass.
+    h.sql("DELETE FROM broker_spend_events WHERE task_id = 'z-real'");
+    assert.equal(sweep().result?.submitted, 0, "a-0..a-2");
+    assert.deepEqual(sweep(), {
+      result: { submitted: 1, unrepairable: 2 },
+      logged: [{ event: "broker.spend.reconciled", submitted: 1, unrepairable: 2 }],
+    });
+    assert.deepEqual(h.row("z-real"), metered);
+
+    // A full run (the startup mode) walks from the first id and leaves the cursor reset.
+    assert.deepEqual(sweep().result, { submitted: 0, unrepairable: 0 }, "ends the pass at the empty page");
+    assert.deepEqual(sweep().result, { submitted: 0, unrepairable: 3 }, "mid-pass again: cursor after a-2");
+    assert.deepEqual(captureWarnings(() => h.broker.reconcileSpendLedger({ pageSize: 3 })).result, { submitted: 0, unrepairable: 5 });
+    assert.deepEqual(sweep().result, { submitted: 0, unrepairable: 3 }, "after a full run the sweep starts from a-0 again");
+  } finally {
+    h.close();
+  }
+});
+
+test("the reconcile status IN-list is exactly the isTerminalTaskStatus set", () => {
+  const h = harness();
+  try {
+    // Record<TaskStatus, true>: adding a status to TaskStatus fails this file's compile until listed.
+    const every: Record<TaskStatus, true> = {
+      blocked: true, queued: true, claimed: true, running: true, succeeded: true, failed: true, canceled: true,
+    };
+    const statuses = Object.keys(every) as TaskStatus[];
+    h.store.upsertHotTasks(statuses.map((status) => ghostTask(`s-${status}`, status)));
+    const listed = h.store.listTerminalTasksMissingSpend({ limit: 100 }).filter((id) => id.startsWith("s-")).map((id) => id.slice(2));
+    assert.deepEqual(listed.sort(), statuses.filter((status) => isTerminalTaskStatus(status)).sort());
+    assert.deepEqual(listed.sort(), ["canceled", "failed", "succeeded"]);
+    assert.equal(h.store.countTerminalTasksMissingSpend(), listed.length);
+  } finally {
+    h.close();
+  }
+});
+
+test("reconciled rows log telemetry_malformed / telemetry_fallback like terminal-time rows (reconciled: true)", () => {
+  const h = harness();
+  try {
+    runToRunning(h.broker, taskRequest("rc-bad"));
+    runToRunning(h.broker, taskRequest("rc-fb"));
+    captureWarnings(() => {
+      h.broker.completeTask("rc-bad", "worker-a", { summary: "s", output: { executionTelemetry: telemetry({ outputTokens: -1 }) } });
+      h.broker.failTask("rc-fb", "worker-a", {
+        code: "handler_exit_nonzero",
+        message: "x",
+        details: {
+          bridgeFailure: { executionTelemetry: telemetry({ costUsd: 2e6 }) },
+          nestedError: { details: { bridgeFailure: { executionTelemetry: telemetry({ costUsd: 0.3 }) } } },
+        },
+      });
+    });
+    h.sql("DELETE FROM broker_spend_events");
+    const startup = h.reopen();
+    assert.deepEqual(spendEvents(startup, "broker.spend.telemetry_malformed"), [
+      { event: "broker.spend.telemetry_malformed", taskId: "rc-bad", status: "succeeded", reason: "outputTokens_invalid", reconciled: true },
+    ]);
+    assert.deepEqual(spendEvents(startup, "broker.spend.telemetry_fallback"), [
+      { event: "broker.spend.telemetry_fallback", taskId: "rc-fb", status: "failed", reason: "costUsd_exceeds_cap", reconciled: true },
+    ]);
+    assert.equal(h.row("rc-fb")?.cost_usd, 0.3);
+    assert.equal(h.row("rc-bad")?.cost_known, 0);
+  } finally {
+    h.close();
+  }
+});
+
+test("a reconciled canceled task stays in the cancel's period when its late evidence arrived the next month", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-spend-cancel-period-"));
+  const dbFile = join(dir, "state.sqlite");
+  try {
+    // 10:00 UTC on 31 March = 19:00 KST on 31 March (2026-03); the late post is on 2 April.
+    const canceledAt = "2026-03-31T10:00:00.000Z";
+    const lateAt = "2026-04-02T00:00:00.000Z";
+    const canceled = (id: string, withCompletedAt: boolean) => ({
+      ...ghostTask(id, "canceled"),
+      assignedWorkerId: "worker-a",
+      ...(withCompletedAt ? { completedAt: canceledAt } : {}),
+      updatedAt: lateAt,
+      cancellation: { requestedAt: canceledAt, requestedBy: "operator-1", kind: "operator_cancel" },
+      lateEvidenceAfterCancel: {
+        kind: "complete",
+        result: { summary: "late", output: { executionTelemetry: telemetry({ costUsd: 0.8 }) } },
+        submittedAt: lateAt,
+        submittedBy: "worker-a",
+      },
+    }) as unknown as TaskRecord;
+    const seed = new SqliteBrokerStateStore(dbFile, { loadSource: "hot-tables" });
+    seed.upsertHotTasks([canceled("c-stamped", true), canceled("c-legacy", false)]);
+    seed.close();
+    const store = new SqliteBrokerStateStore(dbFile, { loadSource: "hot-tables" });
+    try {
+      captureWarnings(() => new InMemoryA2ABroker(store, store.load()));
+      const db = new DatabaseSync(dbFile);
+      try {
+        const rows = db.prepare("SELECT task_id, recorded_at, period_key, cost_usd FROM broker_spend_events ORDER BY task_id").all();
+        assert.deepEqual(rows.map((row) => ({ ...row })), [
+          { task_id: "c-legacy", recorded_at: canceledAt, period_key: "2026-03", cost_usd: 0.8 },
+          { task_id: "c-stamped", recorded_at: canceledAt, period_key: "2026-03", cost_usd: 0.8 },
+        ], "the cancel's period (not the late post's), with the late usage applied");
+      } finally {
+        db.close();
+      }
+    } finally {
+      store.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("real worker-thread persistence: reconcile repairs a missing row, metadata is written and read back, coverage works", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-spend-reconcile-worker-thread-"));
+  const dbFile = join(dir, "state.sqlite");
+  const handle = createWorkerThreadPersistence({ dbFile, loadSource: "hot-tables", queueCapacity: 256 });
+  const drain = () => handle.stateStore.awaitDurablePersistenceAck();
+  try {
+    const proxy = handle.stateStore;
+    const broker = new InMemoryA2ABroker(proxy, proxy.load(), { budgetPeriodTimeZone: "UTC" });
+    registerWorkers(broker, "worker-a");
+    runToRunning(broker, taskRequest("wt-ok"));
+    broker.completeTask("wt-ok", "worker-a", { summary: "ok", output: { executionTelemetry: telemetry({ costUsd: 0.5 }) } });
+    await drain();
+    const read = () => {
+      const db = new DatabaseSync(dbFile);
+      try {
+        return db.prepare("SELECT cost_usd FROM broker_spend_events WHERE task_id = 'wt-ok'").get() as { cost_usd: number } | undefined;
+      } finally {
+        db.close();
+      }
+    };
+    assert.equal(read()?.cost_usd, 0.5);
+    // (b) Metadata written at construction (main connection) and read back through the proxy.
+    assert.deepEqual(proxy.readSpendLedgerMetadata(), { firstPeriod: broker.budgetPeriodKey(), timeZone: "UTC" });
+
+    const db = new DatabaseSync(dbFile);
+    try {
+      db.exec("DELETE FROM broker_spend_events WHERE task_id = 'wt-ok'");
+    } finally {
+      db.close();
+    }
+    // (c) Coverage through the proxy (main-thread read).
+    assert.deepEqual(broker.readSpendLedgerCoverage(), { firstPeriod: broker.budgetPeriodKey(), timeZone: "UTC", missingSpendRows: 1 });
+    // (a) Reconcile submits a queued write; the row is there after the queue flushes.
+    const run = captureWarnings(() => broker.reconcileSpendLedger({ maxPages: 1 }));
+    assert.deepEqual(run.result, { submitted: 1, unrepairable: 0 });
+    await drain();
+    assert.equal(read()?.cost_usd, 0.5);
+    assert.equal(broker.readSpendLedgerCoverage()?.missingSpendRows, 0);
+  } finally {
+    await handle.close();
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -735,6 +952,65 @@ test("ledger metadata: the first period is written once; a zone change warns and
     assert.equal(h.broker.readSpendLedgerCoverage()?.timeZone, "Asia/Seoul");
     // Same zone again: no warning.
     assert.deepEqual(spendEvents(h.reopen({ budgetPeriodTimeZone: "Asia/Seoul" }), "broker.spend.time_zone_changed"), []);
+  } finally {
+    h.close();
+  }
+});
+
+test("ledger metadata: both keys commit in one transaction; a failed sync logs ledger_metadata_failed and reconcile still runs", () => {
+  const h = harness();
+  try {
+    // One transaction: a failure on the second write rolls back the first.
+    h.sql("DELETE FROM broker_metadata WHERE key IN ('spend_ledger_first_period', 'spend_ledger_time_zone')");
+    h.sql(`CREATE TRIGGER zone_fail BEFORE INSERT ON broker_metadata
+           WHEN NEW.key = 'spend_ledger_time_zone' BEGIN SELECT RAISE(ABORT, 'metadata write failed'); END`);
+    const before = h.store.commits;
+    assert.throws(() => h.store.syncSpendLedgerMetadata({ periodKey: "2026-11", timeZone: "UTC" }), /metadata write failed/);
+    assert.equal(h.metadata("spend_ledger_first_period"), undefined, "rolled back with the failed zone write");
+    h.sql("DROP TRIGGER zone_fail");
+    h.store.syncSpendLedgerMetadata({ periodKey: "2026-11", timeZone: "UTC" });
+    assert.equal(h.store.commits - before, 2, "one commit (and one rollback) per sync");
+    assert.deepEqual([h.metadata("spend_ledger_first_period"), h.metadata("spend_ledger_time_zone")], ["2026-11", "UTC"]);
+
+    // Startup with a failing sync: one line, then the reconciliation still repairs.
+    runToRunning(h.broker, taskRequest("md-ok"));
+    h.broker.completeTask("md-ok", "worker-a", { summary: "ok" });
+    h.sql("DELETE FROM broker_spend_events");
+    h.sql("DELETE FROM broker_metadata WHERE key IN ('spend_ledger_first_period', 'spend_ledger_time_zone')");
+    const original = SqliteBrokerStateStore.prototype.syncSpendLedgerMetadata;
+    SqliteBrokerStateStore.prototype.syncSpendLedgerMetadata = () => {
+      throw new Error("database is locked");
+    };
+    let startup: Array<Record<string, unknown>>;
+    try {
+      startup = h.reopen();
+    } finally {
+      SqliteBrokerStateStore.prototype.syncSpendLedgerMetadata = original;
+    }
+    assert.deepEqual(spendEvents(startup, "broker.spend.ledger_metadata_failed"), [
+      { event: "broker.spend.ledger_metadata_failed", error: "database is locked" },
+    ]);
+    assert.deepEqual(spendEvents(startup, "broker.spend.reconciled"), [{ event: "broker.spend.reconciled", submitted: 1, unrepairable: 0 }]);
+    assert.ok(h.row("md-ok"));
+    assert.deepEqual(h.broker.readSpendLedgerCoverage(), { firstPeriod: null, timeZone: null, missingSpendRows: 0 });
+  } finally {
+    h.close();
+  }
+});
+
+test("ledger coverage: missingSpendRows is null when the store cannot count or the count throws", () => {
+  const h = harness();
+  try {
+    const store = h.store;
+    const original = store.countTerminalTasksMissingSpend;
+    store.countTerminalTasksMissingSpend = () => {
+      throw new Error("disk I/O error");
+    };
+    assert.equal(h.broker.readSpendLedgerCoverage()?.missingSpendRows, null);
+    Object.assign(store, { countTerminalTasksMissingSpend: undefined });
+    assert.equal(h.broker.readSpendLedgerCoverage()?.missingSpendRows, null);
+    store.countTerminalTasksMissingSpend = original;
+    assert.equal(h.broker.readSpendLedgerCoverage()?.missingSpendRows, 0);
   } finally {
     h.close();
   }
@@ -843,7 +1119,7 @@ test("retention: pruning terminal task rows keeps their spend rows, and reconcil
     const again = h.reopen();
     assert.deepEqual(spendEvents(again, "broker.spend.reconciled"), []);
     assert.deepEqual(h.rows(), spend, "nothing recreated or duplicated");
-    assert.deepEqual(captureWarnings(() => h.broker.reconcileSpendLedger()).result, { repaired: 0, unrepairable: 0 });
+    assert.deepEqual(captureWarnings(() => h.broker.reconcileSpendLedger()).result, { submitted: 0, unrepairable: 0 });
     // The period total still counts all three.
     assert.equal(h.broker.readSpendTotals({ periodKey: budgetPeriodKey(spend[0]!.recorded_at, "Asia/Seoul") })?.total.taskCount, 3);
   } finally {

@@ -701,7 +701,14 @@ export function buildTaskSpendEvent(
   task: TaskRecord,
   options: { timeZone: string; now?: () => string; claimant?: string },
 ): TaskSpendEventBuild {
-  const candidate = task.completedAt ?? task.updatedAt;
+  // A cancel stamps `completedAt` and `cancellation.requestedAt` to the same
+  // instant; late evidence after the cancel moves only `updatedAt`. A
+  // canceled task prefers the cancel time explicitly (#2499 slice 3a) so a
+  // row rebuilt by the reconciliation can never move into the period of a
+  // late post, even for a record missing `completedAt`.
+  const candidate = (task.status === "canceled" ? task.cancellation?.requestedAt : undefined)
+    ?? task.completedAt
+    ?? task.updatedAt;
   const recordedAt = typeof candidate === "string" && !Number.isNaN(Date.parse(candidate))
     ? candidate
     : (options.now ?? isoNow)();
@@ -730,8 +737,10 @@ export function buildTaskSpendEvent(
 }
 
 export interface LateSpendMeteringBuild {
-  /** Absent when no late carrier parsed: nothing to meter, nothing to log. */
+  /** Absent when no late carrier parsed: nothing to meter. */
   metering?: SpendLateMeteringRecord;
+  /** Late telemetry was present but no carrier parsed (reason code only). */
+  malformed?: string;
   fallback?: string;
 }
 
@@ -748,10 +757,10 @@ export interface LateSpendMeteringBuild {
 export function buildLateSpendMetering(task: TaskRecord): LateSpendMeteringBuild {
   const late = task.lateEvidenceAfterCancel;
   if (!late) return {};
-  const { usage, fallback } = resolveSpendUsage(
+  const { usage, malformed, fallback } = resolveSpendUsage(
     spendTelemetryCandidates({ result: late.result, error: late.error }, late.kind === "fail"),
   );
-  if (!usage) return {};
+  if (!usage) return malformed ? { malformed } : {};
   const costKnown = usage.costUsd !== undefined;
   return {
     metering: {
@@ -779,7 +788,8 @@ export function buildReconciledSpendEvent(task: TaskRecord, options: { timeZone:
   if (task.status !== "canceled" || event.costKnown || event.inputTokens !== 0 || event.outputTokens !== 0) {
     return built;
   }
-  const late = buildLateSpendMetering(task).metering;
+  const lateBuild = buildLateSpendMetering(task);
+  const late = lateBuild.metering;
   if (!late || late.agentId !== event.agentId) return built;
   return {
     event: {
@@ -789,5 +799,6 @@ export function buildReconciledSpendEvent(task: TaskRecord, options: { timeZone:
       outputTokens: late.outputTokens,
       costKnown: late.costKnown,
     },
+    ...(lateBuild.fallback ? { fallback: lateBuild.fallback } : {}),
   };
 }

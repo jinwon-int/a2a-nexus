@@ -528,6 +528,15 @@ export class InMemoryA2ABroker {
   private readonly fastLaneSkipReviewRound: boolean;
   /** #2499 slice 2: validated IANA zone for spend-ledger `period_key`. */
   private readonly budgetPeriodTimeZone: string;
+  /**
+   * #2499 slice 3a: periodic spend reconciliation state. The cursor is the
+   * last id the previous periodic run read (undefined: start of a pass); the
+   * pass total accumulates unrepairable ids across the sweeps of one pass;
+   * the logged total is the last pass total written to the log.
+   */
+  private spendReconcileCursor: string | undefined;
+  private spendReconcilePassUnrepairable = 0;
+  private spendReconcileLoggedUnrepairable = 0;
   private readonly fastLaneSingleWorkerFinalize: boolean;
   private readonly workerHeartbeatPersistIntervalMs: number;
   private lastFullRetentionPersistAtMs = Date.now();
@@ -1062,31 +1071,47 @@ export class InMemoryA2ABroker {
       timeZone: this.budgetPeriodTimeZone,
       claimant: attribution?.claimant,
     });
+    this.logSpendTelemetryDiagnostics(task, built);
+    this.pendingHot.stageSpendEvent(built.event);
+  }
+
+  /**
+   * Content-free telemetry diagnostics, one line each (reason code only;
+   * telemetry values are never echoed). `broker.spend.telemetry_malformed`:
+   * telemetry was present but no carrier parsed (the row is recorded, or
+   * the late metering skipped, unmetered). `broker.spend.telemetry_fallback`
+   * (#2499 slice 3a): a higher-precedence carrier was malformed and a later
+   * one metered the row. A row is built once per task, so each fires at most
+   * once per task and path; `marker` tags the late-evidence path
+   * (`late: true`) and reconciled rows (`reconciled: true`).
+   */
+  private logSpendTelemetryDiagnostics(
+    task: TaskRecord,
+    built: { malformed?: string; fallback?: string },
+    marker: { late?: true; reconciled?: true } = {},
+  ): void {
     if (built.malformed) {
-      // One content-free line per task: the row is recorded once, so this
-      // fires once. Telemetry values are never echoed.
       console.warn(
         JSON.stringify({
           event: "broker.spend.telemetry_malformed",
           taskId: task.id,
           status: task.status,
           reason: built.malformed,
+          ...marker,
         }),
       );
     }
-    this.logSpendTelemetryFallback(task, built.fallback);
-    this.pendingHot.stageSpendEvent(built.event);
-  }
-
-  /**
-   * #2499 slice 3a: a higher-precedence carrier was malformed and a later
-   * one metered the row. One content-free line (reason code only).
-   */
-  private logSpendTelemetryFallback(task: TaskRecord, reason: string | undefined): void {
-    if (!reason) return;
-    console.warn(
-      JSON.stringify({ event: "broker.spend.telemetry_fallback", taskId: task.id, status: task.status, reason }),
-    );
+    if (built.fallback) {
+      console.warn(
+        JSON.stringify({
+          event: "broker.spend.telemetry_fallback",
+          taskId: task.id,
+          status: task.status,
+          reason: built.fallback,
+          ...marker,
+        }),
+      );
+    }
   }
 
   /**
@@ -1103,11 +1128,13 @@ export class InMemoryA2ABroker {
   private stageLateSpendMetering(task: TaskRecord): void {
     if (!this.hasSpendLedger()) return;
     const built = taskTerminal.buildLateSpendMetering(task);
+    this.logSpendTelemetryDiagnostics(task, built, { late: true });
     if (!built.metering) return;
-    this.logSpendTelemetryFallback(task, built.fallback);
+    // Logged when staged, before the store guard: whether a row changed is
+    // the guarded UPDATE's decision (still unmetered, same agent).
     console.warn(
       JSON.stringify({
-        event: "broker.spend.late_metered",
+        event: "broker.spend.late_metering_staged",
         taskId: task.id,
         kind: task.lateEvidenceAfterCancel?.kind,
         costKnown: built.metering.costKnown,
@@ -1119,15 +1146,29 @@ export class InMemoryA2ABroker {
   /**
    * Ledger coverage for `GET /budgets/status` (#2499 slice 3a): the stored
    * first period and zone, and the live count of terminal task rows with no
-   * spend row. Undefined when the store keeps no spend ledger.
+   * spend row. Undefined when the store keeps no spend ledger. A read the
+   * store does not support, or one that throws, is null rather than a
+   * guess, so the status route still answers with its other fields.
    */
   readSpendLedgerCoverage(): SpendLedgerCoverage | undefined {
     if (!this.hasSpendLedger()) return undefined;
-    const metadata = this.stateStore?.readSpendLedgerMetadata?.() ?? {};
+    const store = this.stateStore;
+    let metadata: { firstPeriod?: string; timeZone?: string } = {};
+    try {
+      metadata = store?.readSpendLedgerMetadata?.() ?? {};
+    } catch {
+      // Unknown coverage: firstPeriod null, so periodComplete stays false.
+    }
+    let missingSpendRows: number | null = null;
+    try {
+      missingSpendRows = store?.countTerminalTasksMissingSpend ? store.countTerminalTasksMissingSpend() : null;
+    } catch {
+      missingSpendRows = null;
+    }
     return {
       firstPeriod: metadata.firstPeriod ?? null,
       timeZone: metadata.timeZone ?? null,
-      missingSpendRows: this.stateStore?.countTerminalTasksMissingSpend?.() ?? 0,
+      missingSpendRows,
     };
   }
 
@@ -1136,22 +1177,36 @@ export class InMemoryA2ABroker {
    * ledger coverage metadata (first period written once; the zone follows
    * the configuration, with one warning when it changed: rows already
    * written keep their `period_key`), then runs the reconciliation.
+   * Non-fatal: a failed metadata write logs
+   * `broker.spend.ledger_metadata_failed` and the reconciliation still runs;
+   * an absent first period reads as null, so no period is reported complete.
    */
   private initializeSpendLedger(): void {
     const store = this.stateStore;
-    if (!this.hasSpendLedger() || !store?.syncSpendLedgerMetadata) return;
-    const previous = store.syncSpendLedgerMetadata({
-      periodKey: this.budgetPeriodKey(),
-      timeZone: this.budgetPeriodTimeZone,
-    });
-    if (previous.previousTimeZone !== undefined && previous.previousTimeZone !== this.budgetPeriodTimeZone) {
-      console.warn(
-        JSON.stringify({
-          event: "broker.spend.time_zone_changed",
-          previous: previous.previousTimeZone,
-          current: this.budgetPeriodTimeZone,
-        }),
-      );
+    if (!this.hasSpendLedger()) return;
+    if (store?.syncSpendLedgerMetadata) {
+      try {
+        const previous = store.syncSpendLedgerMetadata({
+          periodKey: this.budgetPeriodKey(),
+          timeZone: this.budgetPeriodTimeZone,
+        });
+        if (previous.previousTimeZone !== undefined && previous.previousTimeZone !== this.budgetPeriodTimeZone) {
+          console.warn(
+            JSON.stringify({
+              event: "broker.spend.time_zone_changed",
+              previous: previous.previousTimeZone,
+              current: this.budgetPeriodTimeZone,
+            }),
+          );
+        }
+      } catch (error) {
+        console.warn(
+          JSON.stringify({
+            event: "broker.spend.ledger_metadata_failed",
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      }
     }
     this.reconcileSpendLedger();
   }
@@ -1161,38 +1216,56 @@ export class InMemoryA2ABroker {
    * through terminal `broker_tasks` rows that have no spend row (one indexed
    * anti-join per page; ids and status only, never the payload) and inserts
    * each one's row built from the in-memory task record with the same
-   * builder as a terminal transition, so its `period_key` derives from
-   * `completedAt` as usual. This one mechanism repairs a row lost with a
+   * builder as a terminal transition, so its `period_key` derives from the
+   * terminal time as usual. This one mechanism repairs a row lost with a
    * failed save (G2) and backfills terminal tasks from before slice 2 that
    * are still in the hot table (G3). An id with no terminal in-memory record
    * (not hydrated, or a status mismatch) is counted `unrepairable` and left
    * alone; non-terminal tasks are never listed.
    *
+   * Two modes. A full run (no `maxPages`; the startup run) walks every page
+   * from the first id and leaves the periodic cursor reset. A periodic run
+   * (`maxPages`, the stale-reaper sweep) continues after the last id the
+   * previous periodic run read, so a full page of unrepairable ids sorting
+   * first cannot pin it to the same page forever; a page shorter than the
+   * page size ends the pass and resets the cursor to the start.
+   *
    * Write path: a dedicated `saveHotEntities({ spendEvents })` call per page,
    * not persistState. The repair changes no in-memory record, so it needs no
    * staging, snapshot export or retention pass (persistState would also
    * announce a state change to listeners for nothing), and a throw here must
-   * not leave half-drained pending hints behind; saveHotEntities is the
-   * store's own hints transaction, and on
-   * the worker-thread topology it is the queued write, so a repaired row
-   * takes the same durable path as a terminal-time row. The insert is
+   * not leave half-drained pending hints behind. saveHotEntities is the
+   * store's own hints transaction in process (a failure throws into the
+   * catch below). On the worker-thread topology it is the queued write: it
+   * returns before the row commits, and a rejection is not seen here;
+   * WorkerThreadProxyStore.trackWrite logs it (`[worker-thread-persistence]
+   * background write failed`) and keeps it for the next
+   * awaitDurablePersistenceAck caller. The insert is
    * `ON CONFLICT(task_id) DO NOTHING`, so a repeat (or a race with a
-   * terminal-time insert) never duplicates or overwrites a row; `repaired`
-   * counts rows submitted.
+   * terminal-time insert) never duplicates or overwrites a row. Hence
+   * `submitted` counts rows submitted for insert, not rows known inserted.
    *
    * Non-fatal: a throw logs `broker.spend.reconcile_failed` and returns
-   * undefined. One `broker.spend.reconciled` line only when something was
-   * repaired or found unrepairable. `maxPages` bounds a periodic run.
+   * undefined (the cursor stays, so the next sweep retries that page). One
+   * `broker.spend.reconciled` line when rows were submitted, or when a pass
+   * ends with an unrepairable total different from the last one logged, so
+   * a stable set of unrepairable ids logs once per process, not every sweep.
+   * `pageSize` is an internal/test-only override.
    */
-  reconcileSpendLedger(options: { maxPages?: number } = {}): { repaired: number; unrepairable: number } | undefined {
+  reconcileSpendLedger(
+    options: { maxPages?: number; pageSize?: number } = {},
+  ): { submitted: number; unrepairable: number } | undefined {
     const store = this.stateStore;
     if (!this.hasSpendLedger() || !store?.listTerminalTasksMissingSpend || !store.saveHotEntities) return undefined;
-    let repaired = 0;
+    const pageSize = Math.max(1, Math.floor(options.pageSize ?? SPEND_RECONCILE_PAGE_SIZE));
+    const periodic = options.maxPages !== undefined;
+    let submitted = 0;
     let unrepairable = 0;
+    let passEnded = false;
+    let afterId = periodic ? this.spendReconcileCursor : undefined;
     try {
-      let afterId: string | undefined;
       for (let page = 0; page < (options.maxPages ?? Number.POSITIVE_INFINITY); page += 1) {
-        const ids = store.listTerminalTasksMissingSpend({ limit: SPEND_RECONCILE_PAGE_SIZE, afterId });
+        const ids = store.listTerminalTasksMissingSpend({ limit: pageSize, afterId });
         const events: SpendEventRecord[] = [];
         for (const id of ids) {
           const task = this.tasks.get(id);
@@ -1200,30 +1273,56 @@ export class InMemoryA2ABroker {
             unrepairable += 1;
             continue;
           }
-          events.push(taskTerminal.buildReconciledSpendEvent(task, { timeZone: this.budgetPeriodTimeZone }).event);
+          const built = taskTerminal.buildReconciledSpendEvent(task, { timeZone: this.budgetPeriodTimeZone });
+          this.logSpendTelemetryDiagnostics(task, built, { reconciled: true });
+          events.push(built.event);
         }
         if (events.length > 0) {
           store.saveHotEntities.call(store, { spendEvents: events });
-          repaired += events.length;
+          submitted += events.length;
         }
-        if (ids.length < SPEND_RECONCILE_PAGE_SIZE) break;
-        afterId = ids[ids.length - 1];
+        afterId = ids[ids.length - 1] ?? afterId;
+        if (ids.length < pageSize) {
+          passEnded = true;
+          break;
+        }
       }
     } catch (error) {
+      if (periodic) this.spendReconcileCursor = afterId;
       console.warn(
         JSON.stringify({
           event: "broker.spend.reconcile_failed",
-          repaired,
+          submitted,
           unrepairable,
           error: error instanceof Error ? error.message : String(error),
         }),
       );
       return undefined;
     }
-    if (repaired > 0 || unrepairable > 0) {
-      console.warn(JSON.stringify({ event: "broker.spend.reconciled", repaired, unrepairable }));
+    // A full run is one whole pass; a periodic run accumulates its pass
+    // across sweeps until a short page ends it.
+    const passUnrepairable = (periodic ? this.spendReconcilePassUnrepairable : 0) + unrepairable;
+    let unrepairableChanged = false;
+    if (passEnded) {
+      this.spendReconcileCursor = undefined;
+      this.spendReconcilePassUnrepairable = 0;
+      unrepairableChanged = passUnrepairable !== this.spendReconcileLoggedUnrepairable;
+      this.spendReconcileLoggedUnrepairable = passUnrepairable;
+    } else {
+      this.spendReconcileCursor = afterId;
+      this.spendReconcilePassUnrepairable = passUnrepairable;
     }
-    return { repaired, unrepairable };
+    if (submitted > 0 || unrepairableChanged) {
+      console.warn(
+        JSON.stringify({
+          event: "broker.spend.reconciled",
+          submitted,
+          // At the end of a pass: the pass total; mid-pass: this run's count.
+          unrepairable: passEnded ? passUnrepairable : unrepairable,
+        }),
+      );
+    }
+    return { submitted, unrepairable };
   }
 
   /** Per-status counts of tasks linked to a goal (read model only). */

@@ -1069,8 +1069,9 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
       // #2499 slice 3a: the create-only spend ledger reconciliation (also run
       // once at broker startup) rides the same interval, one bounded page per
-      // sweep, so a row lost to a failed save is repaired without a restart.
-      // Non-fatal by itself; no-op without a spend ledger.
+      // sweep with a broker-held cursor that moves on each sweep, so a row
+      // lost to a failed save is repaired without a restart. Non-fatal by
+      // itself; no-op without a spend ledger.
       broker.reconcileSpendLedger({ maxPages: 1 });
       if (requeued.length > 0 || deadLettered.length > 0 || stalledWaves.length > 0) {
         publishOperatorEvents();

@@ -5,6 +5,7 @@ import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { z } from "zod";
 
 import { BrokerError } from "../broker-error.js";
+import { TERMINAL_TASK_STATUSES } from "../types.js";
 import type {
   ArtifactRecord,
   AuditEvent,
@@ -1294,7 +1295,9 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   /**
    * Terminal task rows with no spend row (#2499 slice 3a, G2/G3), ascending
    * by id after `afterId`. One anti-join: the `broker_tasks` status column
-   * and the `broker_spend_events` primary key; `payload` is never read.
+   * and the `broker_spend_events` primary key; `payload` is never read. The
+   * status set is TERMINAL_TASK_STATUSES, the one isTerminalTaskStatus uses
+   * (bound as parameters; the SQL text is fixed, so it stays memoized).
    */
   listTerminalTasksMissingSpend(options: { limit: number; afterId?: string }): string[] {
     const limit = normalizeBoundedSqliteLimit(options.limit);
@@ -1302,10 +1305,10 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       .stmt(
         `SELECT t.id AS id FROM broker_tasks t
            LEFT JOIN broker_spend_events s ON s.task_id = t.id
-          WHERE t.status IN ('succeeded', 'failed', 'canceled') AND s.task_id IS NULL AND t.id > ?
+          WHERE t.status IN (${SPEND_TERMINAL_STATUS_PLACEHOLDERS}) AND s.task_id IS NULL AND t.id > ?
           ORDER BY t.id ASC LIMIT ?`,
       )
-      .all(options.afterId ?? "", limit) as Array<{ id: string }>;
+      .all(...TERMINAL_TASK_STATUSES, options.afterId ?? "", limit) as Array<{ id: string }>;
     return rows.map((row) => row.id);
   }
 
@@ -1314,26 +1317,35 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       .stmt(
         `SELECT COUNT(*) AS count FROM broker_tasks t
            LEFT JOIN broker_spend_events s ON s.task_id = t.id
-          WHERE t.status IN ('succeeded', 'failed', 'canceled') AND s.task_id IS NULL`,
+          WHERE t.status IN (${SPEND_TERMINAL_STATUS_PLACEHOLDERS}) AND s.task_id IS NULL`,
       )
-      .get() as { count: number | bigint } | undefined;
+      .get(...TERMINAL_TASK_STATUSES) as { count: number | bigint } | undefined;
     return row ? coerceSqliteCount(row) : 0;
   }
 
   /**
    * Ledger coverage metadata (#2499 slice 3a). `spend_ledger_first_period`
    * is written only when absent; `spend_ledger_time_zone` always follows the
-   * configured zone (the broker warns on a change). Single statements on this
-   * connection, like insertGoal.
+   * configured zone (the broker warns on a change). Read and both writes run
+   * in one transaction on this connection: the base-class runBatch is called
+   * directly so the worker-thread proxy (whose runBatch override is a plain
+   * call, see WorkerThreadProxyStore.runBatch) also gets one short
+   * main-connection transaction here, like the main-connection insertGoal
+   * write. It runs once at startup, so holding the write lock that briefly
+   * cannot stall the queued writes for long (busy_timeout applies).
    */
   syncSpendLedgerMetadata(input: { periodKey: string; timeZone: string }): {
     previousFirstPeriod?: string;
     previousTimeZone?: string;
   } {
-    const previousFirstPeriod = this.readMetadata("spend_ledger_first_period");
-    const previousTimeZone = this.readMetadata("spend_ledger_time_zone");
-    if (previousFirstPeriod === undefined) this.writeMetadata("spend_ledger_first_period", input.periodKey);
-    if (previousTimeZone !== input.timeZone) this.writeMetadata("spend_ledger_time_zone", input.timeZone);
+    let previousFirstPeriod: string | undefined;
+    let previousTimeZone: string | undefined;
+    SqliteBrokerStateStore.prototype.runBatch.call(this, () => {
+      previousFirstPeriod = this.readMetadata("spend_ledger_first_period");
+      previousTimeZone = this.readMetadata("spend_ledger_time_zone");
+      if (previousFirstPeriod === undefined) this.writeMetadata("spend_ledger_first_period", input.periodKey);
+      if (previousTimeZone !== input.timeZone) this.writeMetadata("spend_ledger_time_zone", input.timeZone);
+    });
     return {
       ...(previousFirstPeriod !== undefined ? { previousFirstPeriod } : {}),
       ...(previousTimeZone !== undefined ? { previousTimeZone } : {}),
@@ -2619,6 +2631,9 @@ function hotEntityLane<T>(spec: {
     upsert: (rows) => spec.upsert(rows as T[]),
   };
 }
+
+/** `?, ?, ?` for the TERMINAL_TASK_STATUSES IN-list (#2499 slice 3a). */
+const SPEND_TERMINAL_STATUS_PLACEHOLDERS = TERMINAL_TASK_STATUSES.map(() => "?").join(", ");
 
 /** Spend-ledger column per budget scope type (#2499 slice 2); a closed map. */
 const SPEND_SCOPE_COLUMNS: Record<BudgetScopeType, "agent_id" | "lane" | "goal_id"> = {
