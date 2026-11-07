@@ -15,20 +15,30 @@ deploy actions and need fresh approval from the owner before anyone runs them.
 All examples use placeholder variables. Never paste a real host name, node
 name or credential into a ticket, log or this document.
 
-```sh
+```bash
 export BROKER_URL="https://broker.example.invalid"   # your broker's base URL
 export OPERATOR_ID="operator-1"                      # your operator identity
-# Keep the edge secret off the curl command line (ps, /proc) and out of
-# shell history: read it without echo (or from your secret store's CLI), write
-# it to an owner-only header file with the shell builtin printf, and pass the
-# file with -H @file (curl 7.55+). Never type the value into a command line.
-IFS= read -rs -p 'edge secret: ' A2A_EDGE_SECRET_VALUE; echo
-: "${A2A_EDGE_SECRET_VALUE:?edge secret is empty}"   # stop on an empty value
-HDR="$(umask 077; mktemp)"                              # umask only for this file
-printf 'x-a2a-edge-secret: %s\n' "$A2A_EDGE_SECRET_VALUE" > "$HDR"
+```
+
+Keep the edge secret off the curl command line (`ps`, `/proc`) and out of
+shell history. Run the next block **as a script** (`bash setup-auth.sh`, or
+paste it into `bash -s`), not line by line into an interactive shell.
+Pasting can feed the following line to `read`, and a failed guard does not
+stop an interactive shell. It is bash-only (`read -s -p`). The header file
+is owner-only and removed when the script exits. Put the calls that need
+`AUTH` in the same script.
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+IFS= read -rs -p 'edge secret: ' A2A_EDGE_SECRET_VALUE </dev/tty; echo
+[ -n "$A2A_EDGE_SECRET_VALUE" ] || { echo 'edge secret is empty' >&2; exit 1; }
+HDR="$(umask 077; mktemp)"
+trap 'rm -f "$HDR"' EXIT
+printf 'x-a2a-edge-secret: %s\n' "$A2A_EDGE_SECRET_VALUE" > "$HDR"   # printf is a builtin: not in ps
 unset A2A_EDGE_SECRET_VALUE
 AUTH=(-H @"$HDR" -H "x-a2a-requester-id: ${OPERATOR_ID}" -H "x-a2a-requester-role: operator")
-# When done: rm -f "$HDR"  (a script can use: trap 'rm -f "$HDR"' EXIT)
+# ... curl -sS "${AUTH[@]}" "$BROKER_URL/budgets/status" ...
 ```
 
 Use the operator authentication your deployment already has; the headers above
@@ -47,14 +57,18 @@ store to v14 is a **database migration**:
 
 1. Get the owner's approval first. It covers the migration and, if the backup
    needs the broker stopped, that stop and restart.
-2. Take a backup of the whole broker state database before the upgrade (the
-   store's usual backup procedure, broker stopped or with a consistent
-   snapshot; with WAL mode, a stopped broker or the SQLite online backup API,
-   never a plain copy of the main file alone).
-3. Verify the backup before deploying: open a copy read-only and check
-   `PRAGMA integrity_check` returns `ok` and `broker_metadata` shows the
-   pre-upgrade `schema_version`. Record the backup location, its checksum and
-   the verification result in the approval record (ticket or issue).
+2. Take a backup of the whole broker state database before the upgrade, using
+   the store's usual backup procedure. With SQLite in WAL mode, take it with
+   the SQLite online backup API (`.backup` / `VACUUM INTO`) on the live file,
+   or stop the broker cleanly first. A stopped broker that leaves a `-wal`
+   file still holds committed transactions there: copy the main file together
+   with its `-wal` (and `-shm`), or checkpoint first. Never copy the main file
+   alone.
+3. Verify the backup before deploying: open the copy read-only and check
+   that `PRAGMA integrity_check` returns `ok` and that `broker_metadata` shows
+   the pre-upgrade `schema_version`. Record a backup **reference** (a path
+   relative to your backup root, or the backup system's id; no host or node
+   names), its checksum and the verification result in the approval record.
 4. Deploy. The broker migrates at startup. A v14 store makes an older binary
    refuse to start, so this pre-upgrade backup is the only way back to an
    older release.
@@ -287,10 +301,15 @@ In order of preference:
    (**owner approval**: a database restore). This replaces the **whole broker
    state database**. Everything recorded since the backup was taken is lost
    with it, not only spend: tasks, goals, exchanges, audit events, budgets and
-   the spend ledger. Work that ran after the upgrade is in that store only.
-   Before restoring, stop the broker and keep a copy of the current (v14)
-   database next to the backup (same verification as §1), so the ledger and
-   audit records since the upgrade are not destroyed with no copy left.
+   the spend ledger. Work that ran after the backup is in the current store
+   only. Before restoring:
+   - stop the broker;
+   - keep a copy of the current (v14) database next to the backup, made the
+     same WAL-safe way as in §1. Verify it with `PRAGMA integrity_check`; its
+     `schema_version` is 14. That way the ledger and audit records since the
+     upgrade are not destroyed with no copy left;
+   - move the current `-wal` and `-shm` files away before putting the restored
+     file in place, so SQLite does not replay v14 WAL frames into it.
 
 Never delete budget or spend rows by hand: the ledger is the audit record, and
 budget audit events are exempt from retention for that reason.

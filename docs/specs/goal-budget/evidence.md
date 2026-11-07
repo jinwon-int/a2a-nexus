@@ -9,7 +9,7 @@ This file is the finalizer's evidence packet for each slice PR. All lanes were `
 - No lane ran on the authoring node.
 - Within each PR, every round used the same worker per team and area.
 - Merges went through the merge queue as squash merges.
-- Each review was pinned to the exact head through the relay after the owner approved the merge.
+- Order per PR: A2A review PASS on the head, then the owner's merge approval in the conversation, then a `jinon86` review pinned to that exact head through the relay, then merge.
 
 ## PRs
 
@@ -52,16 +52,20 @@ This file is the finalizer's evidence packet for each slice PR. All lanes were `
 | #2515 | 1 | `a2a-pr2515-review-team2-http-20261107T105837Z` | PASS |
 | #2515 | 2 | `a2a-pr2515-rereview-team1-http-20261107T110624Z` | PASS (docs-only delta) |
 
+#2506 (spec) and #2507 (plan and tasks) are documents the owner accepted directly (decisions of 2026-11-06); no A2A lane ran on them.
+
+For #2515, round 2 re-reviewed only the docs-only delta (`08302f85..398229f1`) in the one lane that had returned REVISE; the other three lanes' round-1 PASS was on `08302f85`, and the delta touched no code.
+
 The full task ids (with the worker id) are recorded in each PR's review comments. Those comments also hold the per-round findings, the fix map and the CI results on the exact head. The ids are left out here because worker ids are internal fleet identifiers.
 
 ## Red-first (plan requirement, slice 3b-2)
 
 - **Red:** `5e9795c7` (tests only) → [run 42352673952](https://github.com/jinwon-int/a2a-nexus/actions/runs/42352673952), 20 failures, all in the new enforcement tests.
-- **Green:** `52240543` (implementation) → [run 42354556873](https://github.com/jinwon-int/a2a-nexus/actions/runs/42354556873).
+- **Green:** `52240543` (implementation) → [run 42354556873](https://github.com/jinwon-int/a2a-nexus/actions/runs/42354556873), all required checks green.
 
 ## Follow-ups
 
-- #2512: in-process SQLite full save inside a batch hits a nested `BEGIN IMMEDIATE` (found while testing slice 3a; fleet brokers use worker-thread persistence and are not affected).
+- #2512: in-process SQLite full save inside a batch hits a nested `BEGIN IMMEDIATE`. Found while testing slice 3a. A read-only check on 2026-11-07 showed both fleet brokers on worker-thread persistence, which is not affected (see the issue; re-check live).
 - #2516: cross-broker spend aggregation (Team 1 + Team 2).
 - #2517: reconcile `docs/specs/a2a-goal-mode/schema.json` with `GoalStatus`.
 - #2518: cost and usage telemetry for Codex, Hermes and patch lanes.
@@ -70,6 +74,6 @@ The full task ids (with the worker id) are recorded in each PR's review comments
 
 ## Not performed
 
-No deploy, restart, migration, canary, DB change or enforcement mode change. Production brokers have not been upgraded to schema v14 (check live before any deploy).
+No deploy, restart, migration, canary, DB change or enforcement mode change. As of 2026-11-07 KST, none of this work had been deployed to a production broker (see #2499). Deployment state changes: check live before relying on it.
 - Deploying v14 is a database migration: it needs a broker DB backup and the owner's approval (runbook §1).
 - Moving a broker to `shadow`, and later to `on`, is a separate owner approval each time, per broker.
