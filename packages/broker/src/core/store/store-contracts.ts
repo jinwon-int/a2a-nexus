@@ -3,11 +3,15 @@ import type {
   AuditEvent,
   A2AExchangeMessageRecord,
   A2AExchangeState,
+  BudgetListFilters,
+  BudgetRecord,
+  BudgetScopeType,
   ChangeProposal,
   GoalListFilters,
   GoalRecord,
   SpendEventRecord,
   SpendLateMeteringRecord,
+  SpendTopRow,
   SpendTotalsQuery,
   SpendTotalsResult,
   TaskRecord,
@@ -166,6 +170,31 @@ export interface BrokerStateStore {
     previousTimeZone?: string;
   };
   readSpendLedgerMetadata?(): { firstPeriod?: string; timeZone?: string };
+  /**
+   * Budgets and their evaluator reads (#2499 slice 3b, SQLite only, optional
+   * like readSpendTotals; a store missing any of them has no budgets and the
+   * budget routes report it). Budget rows are written only through the save
+   * hints (`BrokerStateSaveHints.budgets`), so a row commits with its audit
+   * event; these are the reads: the broker loads every budget once at
+   * startup (`listBudgets`) and keeps them in memory.
+   */
+  readBudget?(id: string): BudgetRecord | undefined;
+  listBudgets?(filters?: BudgetListFilters): BudgetRecord[];
+  /** One scope's period spend: USD over cost_known rows, input + output tokens. */
+  readSpendScopeUsage?(query: { periodKey: string; scopeType: BudgetScopeType; scopeId: string }): {
+    usdSpent: number;
+    tokensSpent: bigint;
+  };
+  /** Whether the agent has a cost_known row in the period (Decision 4). */
+  hasCostReportingSpend?(query: { periodKey: string; agentId: string }): boolean;
+  /** The largest rows of one scope in a period, by cost (cost_known only) or tokens. */
+  listTopSpendRows?(query: {
+    periodKey: string;
+    scopeType: BudgetScopeType;
+    scopeId: string;
+    by: "cost" | "tokens";
+    limit: number;
+  }): SpendTopRow[];
 }
 
 export interface BrokerStateSaveHints {
@@ -197,6 +226,14 @@ export interface BrokerStateSaveHints {
    * attributed to the late poster, so a replay is a no-op.
    */
   spendMeterings?: SpendLateMeteringRecord[];
+  /**
+   * #2499 slice 3b: budget rows created or updated by this mutation, upserted
+   * by id in the same transaction as the rest of these hints (so with their
+   * `budget.created` / `budget.updated` audit rows). Not a hot entity mirror:
+   * the snapshot carries no budgets and retention never prunes them. Stores
+   * without a budget table ignore the field.
+   */
+  budgets?: BudgetRecord[];
 }
 
 export interface BrokerPersistenceInfo {

@@ -14,6 +14,7 @@ import type {
   AuditEvent,
   A2AExchangeMessageRecord,
   A2AExchangeState,
+  BudgetRecord,
   ChangeProposal,
   SpendEventRecord,
   SpendLateMeteringRecord,
@@ -39,6 +40,7 @@ const HINT_KEYS = [
   "hotTerminalOutboxEvents",
   "spendEvents",
   "spendMeterings",
+  "budgets",
 ] as const;
 
 type HintKey = (typeof HINT_KEYS)[number];
@@ -62,6 +64,8 @@ const RETAINED_IDS: Record<HintKey, ((snapshot: BrokerSnapshot) => Iterable<stri
   hotTerminalOutboxEvents: (s) => (s.terminalOutbox ?? []).map((event) => event.id),
   spendEvents: null,
   spendMeterings: null,
+  // #2499 slice 3b: budget rows live in broker_budgets only, never pruned.
+  budgets: null,
 };
 
 export class PendingHotStateBuffer {
@@ -78,6 +82,7 @@ export class PendingHotStateBuffer {
     hotTerminalOutboxEvents: new Map(),
     spendEvents: new Map(),
     spendMeterings: new Map(),
+    budgets: new Map(),
   };
 
   stageExchange(record: A2AExchangeState): void {
@@ -137,6 +142,20 @@ export class PendingHotStateBuffer {
   stageSpendMetering(record: SpendLateMeteringRecord): void {
     if (this.maps.spendMeterings.has(record.taskId)) return;
     this.maps.spendMeterings.set(record.taskId, { ...record });
+  }
+
+  /**
+   * Stage one budget row (#2499 slice 3b). Last write wins (the store
+   * upserts by id), so a create then an update before the next flush stores
+   * the updated row.
+   */
+  stageBudget(record: BudgetRecord): void {
+    this.maps.budgets.set(record.id, { ...record });
+  }
+
+  /** Drop a staged budget row (a failed mutation's rollback, #2499 slice 3b). */
+  unstageBudget(id: string): void {
+    this.maps.budgets.delete(id);
   }
 
   /** Whether any category has staged records awaiting a hot save. */

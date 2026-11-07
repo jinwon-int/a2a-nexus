@@ -325,6 +325,92 @@ export interface SpendTotalsResult {
   /** True when a scope type had more groups than `limit`. */
   truncated: boolean;
 }
+
+/** #2499 slice 3b: what an exhausted budget does (spec Decision 2). */
+export type BudgetEnforceAction = "refuse" | "pause";
+/** #2499 slice 3b: `A2A_BUDGET_ENFORCEMENT_MODE`, read at startup. */
+export type BudgetEnforcementMode = "off" | "shadow" | "on";
+/** The only budget period in slice 3b: the calendar month (`period_key`). */
+export type BudgetPeriod = "month";
+
+/**
+ * One `broker_budgets` row (#2499 slice 3b). One budget per
+ * (scopeType, scopeId, period). At least one of the two limits is set
+ * (Decision 1). The table has no `updated_at` column, so a record carries
+ * `createdAt` only; updates are in the `budget.updated` audit trail.
+ */
+export interface BudgetRecord {
+  id: string;
+  scopeType: BudgetScopeType;
+  scopeId: string;
+  period: BudgetPeriod;
+  /** USD limit; counts only `cost_known` spend (Decisions 1 and 4). */
+  limitUsd: number | null;
+  /** Token limit over input + output tokens; an integer <= Number.MAX_SAFE_INTEGER. */
+  limitTokens: number | null;
+  /** Warn threshold in percent of either limit (1..100). */
+  warnPct: number;
+  enforce: BudgetEnforceAction;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface CreateBudgetRequest {
+  id?: string;
+  scopeType: BudgetScopeType;
+  scopeId: string;
+  period: BudgetPeriod;
+  limitUsd?: number | null;
+  limitTokens?: number | null;
+  warnPct?: number;
+  enforce?: BudgetEnforceAction;
+  /** The authenticated caller. */
+  createdBy: string;
+}
+
+/** A partial update: an omitted field is unchanged; a null limit clears it. */
+export interface UpdateBudgetRequest {
+  limitUsd?: number | null;
+  limitTokens?: number | null;
+  warnPct?: number;
+  enforce?: BudgetEnforceAction;
+  /** The authenticated caller (audit actor). */
+  actorId: string;
+}
+
+export interface BudgetListFilters {
+  scopeType?: BudgetScopeType;
+  scopeId?: string;
+  limit?: number;
+}
+
+/** A budget evaluated against one period of the spend ledger (#2499 slice 3b). */
+export interface BudgetEvaluation {
+  budget: BudgetRecord;
+  periodKey: string;
+  /** Sum of cost over `cost_known` rows of the scope. */
+  usdSpent: number;
+  /** Input + output tokens of the scope (exact BigInt). */
+  tokensSpent: bigint;
+  usdExhausted: boolean;
+  tokensExhausted: boolean;
+  /** Either limit reached `warnPct` percent (also true once exhausted). */
+  warn: boolean;
+}
+
+/** One of the largest spend rows of a scope in a period (outlier view, #2499 slice 3b). */
+export interface SpendTopRow {
+  taskId: string;
+  agentId: string | null;
+  lane: string | null;
+  goalId: string | null;
+  costUsd: number;
+  costKnown: boolean;
+  /** input + output tokens of the row (exact; JSON through jsonSafeSpendInteger). */
+  tokens: bigint;
+  recordedAt: string;
+}
+
 export type AuditAction =
   | "proposal.created"
   | "artifact.attached"
@@ -371,7 +457,9 @@ export type AuditAction =
   | "task.negative_verdict_preserved"
   | "task.review_gate_skipped"
   | "task.finalizer_admission_skipped"
-  | "goal.created";
+  | "goal.created"
+  | "budget.created"
+  | "budget.updated";
 export type A2AWorkerEnvironment = "research" | "staging" | "live";
 export type WorkerStatus = "online" | "stale";
 export type WorkerPlaneStatus = "online" | "unknown";
@@ -1127,7 +1215,7 @@ export interface AuditEvent {
   id: string;
   actorId: string;
   action: AuditAction;
-  targetType: "proposal" | "artifact" | "validation" | "worker" | "task" | "exchange" | "exchange-message" | "broker" | "wave-plan" | "conversation" | "conversation-message" | "goal";
+  targetType: "proposal" | "artifact" | "validation" | "worker" | "task" | "exchange" | "exchange-message" | "broker" | "wave-plan" | "conversation" | "conversation-message" | "goal" | "budget";
   targetId: string;
   proposalId?: string;
   note?: string;

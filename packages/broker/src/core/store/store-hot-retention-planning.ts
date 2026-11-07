@@ -4,6 +4,7 @@ import type { BrokerHotEntityHintCoverage } from "../observability/hot-diagnosti
 import {
   estimateRetentionRecordBytes,
   isHeartbeatAuditEvent,
+  isRetentionExemptAuditEvent,
   parseRetentionTimestamp,
 } from "../broker-retention-selectors.js";
 import { isTerminalTaskStatus } from "../broker-status-predicates.js";
@@ -249,6 +250,10 @@ function isAuditEventProtected(
   if (isHeartbeatAuditEvent(event)) {
     return false;
   }
+  // #2499 slice 3b: budget history is never pruned.
+  if (isRetentionExemptAuditEvent(event)) {
+    return true;
+  }
   if (event.proposalId && protectedIds.proposalIds.has(event.proposalId)) {
     return true;
   }
@@ -278,6 +283,9 @@ function isAuditEventProtected(
       return false;
     case "conversation":
     case "conversation-message":
+      return false;
+    case "budget":
+      // Only an unknown budget action reaches here (none exist).
       return false;
   }
 }

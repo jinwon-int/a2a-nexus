@@ -101,6 +101,16 @@ From the slice 2 review and re-review; each is resolved or decided before any mo
 
 #### Slice 3b — budgets and enforcement
 
+Split into two PRs (finalizer decision, 2026-11-07, recorded on #2499): **3b-1** budgets, mode setting, evaluator, status and the 3a review minors (spec decisions 15–17); **3b-2** the refusal hooks (claim refusal, queued-listing filter, `pause` at create, goal `budget_limited`, shadow decisions), red first. Items below are marked with the PR that closes them.
+
+- [x] (3b-1) Operator budget routes `POST /budgets`, `PATCH /budgets/:id`, `GET /budgets`; one budget per scope and period; `budget.created` / `budget.updated` audit events.
+- [x] (3b-1) `A2A_BUDGET_ENFORCEMENT_MODE` `off|shadow|on`, default `off`, applied at restart; invalid value or non-`off` without a spend ledger refuses startup; `on` runs as `shadow` while `periodComplete` is false (decision 9).
+- [x] (3b-1) Evaluator: USD counts `cost_known` rows, tokens count input + output; claim decision function (decision 15) unit-tested but not yet called; read failures fail open with an in-memory `checkFailed` count/last-at and a rate-limited `broker.budget.check_failed` line.
+- [x] (3b-1) `GET /budgets/status`: `enforcement`, per-budget usage, `limits` filled, `topRows`, `checkFailed` (also when the ledger read fails).
+- [x] (3b-1) 3a round-2 minors: first parseable cancel-time candidate; periodic page skipped after 3 consecutive failures (`reconcile_page_skipped`) and rate-limited `reconcile_failed`; diagnostics logged after the page write; reconciled cancel logs late `malformed`; `reconciled.passEnded`; `broker.spend.near_cap`.
+- [ ] (3b-2) Decide whether repeated `checkFailed` downgrades `on` or fails closed.
+- [ ] (3b-2) A late metering lost with a failed save: second reconcile pass or a count in status.
+
 - [ ] Mode `on` behaves as `shadow` while `ledger.periodComplete` is false (decision 9); a mode other than `off` without a spend ledger refuses startup, and a failed budget read fails open with `broker.budget.check_failed` counted in status (decision 13).
 - [ ] Carried from the slice 3a reviews (Team 1 lane PASS, Team 2 lane REVISE → fixed):
   - `broker.budget.check_failed`: rate-limited log line; count and last-at kept in memory and shown in status even when the status read itself fails; decide whether N consecutive failures downgrade `on` to `shadow` or fail closed.

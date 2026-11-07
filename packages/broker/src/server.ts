@@ -140,7 +140,7 @@ import { normalizeTaskReadinessMode } from "./task-readiness.js";
 import { loadBrokerPolicyFile } from "a2a-policy-referee";
 import { loadInjectedKnowledgeFile } from "./core/execution/broker-knowledge-injection.js";
 import { resolveFinalizerVerdictEnforcement } from "./core/completion/finalizer-verdict-admission.js";
-import { resolveBudgetPeriodTimeZone } from "./core/store-schemas.js";
+import { resolveBudgetEnforcementMode, resolveBudgetPeriodTimeZone } from "./core/store-schemas.js";
 import { loadFinalizerKeyringFile } from "a2a-attestation";
 import { resolveReviewLineageRolloutMode } from "./core/store/review-lineage-store.js";
 import { resolveWavePlanDagV2Mode } from "./core/dispatch/wave-plan-dag-v2-mode.js";
@@ -611,6 +611,20 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const budgetPeriodTimeZone = resolveBudgetPeriodTimeZone(
     options.budgetPeriodTimeZone ?? process.env.A2A_BUDGET_PERIOD_TIME_ZONE,
   );
+  // #2499 slice 3b: budget enforcement mode, read at startup (restart to
+  // change). An invalid value fails startup here; a mode other than off on a
+  // store without the spend ledger fails in the broker constructor.
+  const budgetEnforcementMode = resolveBudgetEnforcementMode(
+    options.budgetEnforcementMode ?? process.env.A2A_BUDGET_ENFORCEMENT_MODE,
+  );
+  // #2499 slice 3b: an injected broker carries its own enforcement mode; a
+  // different configured mode would otherwise be silently ignored.
+  if (options.broker && options.broker.getBudgetEnforcementMode() !== budgetEnforcementMode) {
+    throw new Error(
+      `A2A_BUDGET_ENFORCEMENT_MODE='${budgetEnforcementMode}' differs from the injected broker's budget enforcement mode `
+        + `'${options.broker.getBudgetEnforcementMode()}'; set budgetEnforcementMode when constructing the broker`,
+    );
+  }
   const hotRuntimeLimits = resolveHotRuntimeLimits(options);
   const maxHotRuntimeNonTerminalTasks = hotRuntimeLimits.maxNonTerminalTasks;
   const maxHotRuntimeTerminalTasks = hotRuntimeLimits.maxTerminalTasks;
@@ -904,6 +918,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       fastLaneSkipReviewRound,
       fastLaneSingleWorkerFinalize,
       budgetPeriodTimeZone,
+      budgetEnforcementMode,
       snapshotExtensions: pushNotificationSnapshotExtension,
     });
   if (options.broker && pushNotificationSnapshotExtension) {

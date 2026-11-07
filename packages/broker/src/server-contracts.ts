@@ -329,6 +329,13 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
    */
   budgetPeriodTimeZone?: string;
   /**
+   * #2499 slice 3b: budget enforcement mode (`off | shadow | on`). Falls
+   * back to A2A_BUDGET_ENFORCEMENT_MODE, then `off`. Applies at startup
+   * (restart to change); an invalid value, or a mode other than `off`
+   * without the SQLite spend ledger, fails startup.
+   */
+  budgetEnforcementMode?: string;
+  /**
    * JSON trust-anchor file ({ "<brokerId>": "<SPKI public key PEM>" }) for
    * the cross-broker terminal-brief receiver. When set, every inbound
    * projection must carry a request-bound `senderProof` (a JWS over

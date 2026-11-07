@@ -155,7 +155,12 @@ import {
 import type { FinalizerVerdictEnforcement } from "./completion/finalizer-verdict-admission.js";
 import type { FinalizerKeyring } from "a2a-attestation";
 import * as taskAdmission from "./dispatch/broker-task-admission.js";
-import type { TaskAdmissionContext } from "./dispatch/broker-task-admission.js";
+import type {
+  BudgetEnforcementState,
+  ClaimBudgetEvaluation,
+  ClaimBudgetScopeDecision,
+  TaskAdmissionContext,
+} from "./dispatch/broker-task-admission.js";
 import * as staleTaskRequeue from "./claim/broker-stale-task-requeue.js";
 import type { StaleTaskRequeueContext } from "./claim/broker-stale-task-requeue.js";
 import * as proposalWrite from "./broker-proposal-write.js";
@@ -268,12 +273,20 @@ import {
 } from "./broker-transition-guards.js";
 import { readExchange, readExchanges } from "./transport/broker-exchange-read.js";
 import {
+  BUDGET_DEFAULT_WARN_PCT,
+  BUDGET_ENFORCE_ACTIONS,
+  BUDGET_MAX_LIMIT_USD,
+  BUDGET_PERIODS,
+  BUDGET_SCOPE_ID_PATTERN,
+  BUDGET_SCOPE_TYPES,
   budgetPeriodKey,
   GOAL_ID_PATTERN,
   GOAL_OBJECTIVE_MAX_LENGTH,
   GOAL_TITLE_MAX_LENGTH,
   goalRecordSchema,
+  resolveBudgetEnforcementMode,
   resolveBudgetPeriodTimeZone,
+  spendLedgerPeriodComplete,
 } from "./store-schemas.js";
 import {
   resolveTerminalBriefParentOriginRoute,
@@ -317,8 +330,15 @@ import type {
   A2AExchangeRequest,
   A2AExchangeState,
   BrokerDashboard,
+  BudgetEnforceAction,
+  BudgetEnforcementMode,
+  BudgetEvaluation,
+  BudgetListFilters,
+  BudgetRecord,
+  BudgetScopeType,
   ChangeProposal,
   CleanupDryRunPlan,
+  CreateBudgetRequest,
   CreateGoalRequest,
   CreateProposalRequest,
   CreateTaskRequest,
@@ -330,6 +350,7 @@ import type {
   RegisterWorkerRequest,
   SpendEventRecord,
   SpendLedgerCoverage,
+  SpendTopRow,
   SpendTotalsQuery,
   SpendTotalsResult,
   SubmitValidationRequest,
@@ -349,6 +370,7 @@ import type {
   TaskWakePlanResult,
   TaskWakeState,
   TaskLeaseStampV1,
+  UpdateBudgetRequest,
   ValidationResult,
   WorkerCapacitySummary,
   WorkerHeartbeatRequest,
@@ -414,6 +436,57 @@ const HOT_PERSIST_FULL_RETENTION_INTERVAL_MS = 5 * 60_000;
 const DEFAULT_GOAL_LIST_LIMIT = 1_000;
 /** Ids per spend reconciliation page and rows per repair write (#2499 slice 3a). */
 const SPEND_RECONCILE_PAGE_SIZE = 200;
+/** #2499 slice 3b: at most one line per rate-limited log key per interval. */
+const RATE_LIMITED_LOG_INTERVAL_MS = 60_000;
+
+/** #2499 slice 3b: budgets loaded at startup (all of them; more refuses startup). */
+const BUDGET_LOAD_LIMIT = 10_000;
+/** #2499 slice 3b: default `listBudgets` bound. */
+const DEFAULT_BUDGET_LIST_LIMIT = 1_000;
+
+function budgetScopeKey(scopeType: BudgetScopeType, scopeId: string, period: string): string {
+  return `${scopeType}\u0000${scopeId}\u0000${period}`;
+}
+
+/** The store surface budgets need (#2499 slice 3b): the SQLite store. */
+type BudgetCapableStore = Required<Pick<
+  BrokerStateStore,
+  | "readBudget"
+  | "listBudgets"
+  | "readSpendScopeUsage"
+  | "hasCostReportingSpend"
+  | "listTopSpendRows"
+>>;
+
+function validateBudgetLimitUsd(value: unknown): number | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0 || value > BUDGET_MAX_LIMIT_USD) {
+    throw new BrokerError("bad_request", `limitUsd must be a finite number > 0 and <= ${BUDGET_MAX_LIMIT_USD}`);
+  }
+  return value;
+}
+
+function validateBudgetLimitTokens(value: unknown): number | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    throw new BrokerError("bad_request", "limitTokens must be an integer > 0 and <= Number.MAX_SAFE_INTEGER");
+  }
+  return value;
+}
+
+function validateBudgetWarnPct(value: unknown): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 100) {
+    throw new BrokerError("bad_request", "warnPct must be an integer from 1 to 100");
+  }
+  return value;
+}
+
+function validateBudgetEnforce(value: unknown): BudgetEnforceAction {
+  if (typeof value !== "string" || !(BUDGET_ENFORCE_ACTIONS as readonly string[]).includes(value)) {
+    throw new BrokerError("bad_request", `enforce must be one of ${BUDGET_ENFORCE_ACTIONS.join(", ")}`);
+  }
+  return value as BudgetEnforceAction;
+}
 
 const DEFAULT_CHECKPOINT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
@@ -537,6 +610,20 @@ export class InMemoryA2ABroker {
   private spendReconcileCursor: string | undefined;
   private spendReconcilePassUnrepairable = 0;
   private spendReconcileLoggedUnrepairable = 0;
+  /**
+   * #2499 slice 3b: the start cursor ("" = first page) of a page whose
+   * periodic write failed; the next periodic run retries it row by row.
+   */
+  private spendReconcileRowRetry: string | undefined;
+  /** #2499 slice 3b: last write time and suppressed count per rate-limited log line. */
+  private readonly rateLimitedLogs = new Map<string, { lastAtMs: number; suppressed: number }>();
+  /** #2499 slice 3b: configured budget enforcement mode (startup only). */
+  private readonly budgetEnforcementMode: BudgetEnforcementMode;
+  /** #2499 slice 3b: every budget, by id and by scope key (loaded at startup; see loadBudgets). */
+  private readonly budgets = new Map<string, BudgetRecord>();
+  private readonly budgetIdsByScope = new Map<string, string>();
+  /** #2499 slice 3b: failed budget reads (fail-open), kept in memory for budget status. */
+  private budgetCheckFailures: { count: number; lastAt: string | null } = { count: 0, lastAt: null };
   private readonly fastLaneSingleWorkerFinalize: boolean;
   private readonly workerHeartbeatPersistIntervalMs: number;
   private lastFullRetentionPersistAtMs = Date.now();
@@ -616,6 +703,14 @@ export class InMemoryA2ABroker {
     this.finalizerKeyring = options.finalizerKeyring;
     this.fastLaneSkipReviewRound = options.fastLaneSkipReviewRound ?? false;
     this.budgetPeriodTimeZone = resolveBudgetPeriodTimeZone(options.budgetPeriodTimeZone);
+    // #2499 slice 3b (decision 13): enforcement needs the spend ledger.
+    this.budgetEnforcementMode = resolveBudgetEnforcementMode(options.budgetEnforcementMode);
+    if (this.budgetEnforcementMode !== "off" && !this.hasSpendLedger()) {
+      throw new Error(
+        `A2A_BUDGET_ENFORCEMENT_MODE='${this.budgetEnforcementMode}' requires the spend ledger (SQLite state store); `
+          + "use off on this store",
+      );
+    }
     this.fastLaneSingleWorkerFinalize = options.fastLaneSingleWorkerFinalize ?? false;
     this.workerHeartbeatPersistIntervalMs = Math.max(0, options.workerHeartbeatPersistIntervalMs ?? DEFAULT_WORKER_HEARTBEAT_PERSIST_INTERVAL_MS);
     this.retentionPolicy = normalizeBrokerRetentionPolicy(options.retention);
@@ -687,6 +782,7 @@ export class InMemoryA2ABroker {
     }
     this.applyRetentionPolicy();
     this.initializeSpendLedger();
+    this.loadBudgets();
   }
 
   /**
@@ -1087,9 +1183,15 @@ export class InMemoryA2ABroker {
    */
   private logSpendTelemetryDiagnostics(
     task: TaskRecord,
-    built: { malformed?: string; fallback?: string },
+    built: { malformed?: string; fallback?: string; nearCap?: string[]; late?: { malformed?: string; fallback?: string } },
     marker: { late?: true; reconciled?: true } = {},
   ): void {
+    // #2499 slice 3b: a reconciled cancel's late diagnostics, tagged like the live late path.
+    if (built.late) this.logSpendTelemetryDiagnostics(task, built.late, { ...marker, late: true });
+    // #2499 slice 3b (outliers): field names only, never the values.
+    for (const field of built.nearCap ?? []) {
+      console.warn(JSON.stringify({ event: "broker.spend.near_cap", taskId: task.id, field, ...marker }));
+    }
     if (built.malformed) {
       console.warn(
         JSON.stringify({
@@ -1245,42 +1347,87 @@ export class InMemoryA2ABroker {
    * terminal-time insert) never duplicates or overwrites a row. Hence
    * `submitted` counts rows submitted for insert, not rows known inserted.
    *
-   * Non-fatal: a throw logs `broker.spend.reconcile_failed` and returns
-   * undefined (the cursor stays, so the next sweep retries that page). One
-   * `broker.spend.reconciled` line when rows were submitted, or when a pass
-   * ends with an unrepairable total different from the last one logged, so
-   * a stable set of unrepairable ids logs once per process, not every sweep.
-   * `pageSize` is an internal/test-only override.
+   * Non-fatal: a throw logs `broker.spend.reconcile_failed` (at most one
+   * line per minute, #2499 slice 3b) and returns undefined; the cursor stays
+   * at the failing page. #2499 slice 3b: when the page's write failed (a
+   * listing failure does not count), the next periodic run retries that page
+   * row by row: each row is its own write, a row whose write fails is skipped
+   * (`broker.spend.reconcile_row_skipped` {taskId}, rate-limited) and the
+   * cursor then moves past the page, so one bad row cannot pin the periodic
+   * run; a skipped row is tried again on the next pass. One
+   * `broker.spend.reconciled` line (`passEnded` marks a pass total;
+   * `rowsSkipped` when rows were skipped) when rows were submitted or
+   * skipped, or when a pass ends with an unrepairable total different from
+   * the last one logged, so a stable set of unrepairable ids logs once per
+   * process, not every sweep. Per-row telemetry diagnostics are logged after
+   * the row's write was submitted (slice 3b), so a retried page does not log
+   * twice. `pageSize` is an internal/test-only override.
    */
   reconcileSpendLedger(
     options: { maxPages?: number; pageSize?: number } = {},
   ): { submitted: number; unrepairable: number } | undefined {
     const store = this.stateStore;
     if (!this.hasSpendLedger() || !store?.listTerminalTasksMissingSpend || !store.saveHotEntities) return undefined;
+    const save = (events: SpendEventRecord[]) => store.saveHotEntities!.call(store, { spendEvents: events });
     const pageSize = Math.max(1, Math.floor(options.pageSize ?? SPEND_RECONCILE_PAGE_SIZE));
     const periodic = options.maxPages !== undefined;
     let submitted = 0;
     let unrepairable = 0;
+    let rowsSkipped = 0;
+    // #2499 slice 3b: unrepairable ids of pages that completed in this run,
+    // kept in the pass accumulator when a later page throws.
+    let completedUnrepairable = 0;
     let passEnded = false;
     let afterId = periodic ? this.spendReconcileCursor : undefined;
+    // Set while a page's (bulk) write runs: only such a failure arms the row-by-row retry.
+    let pageWriting = false;
     try {
       for (let page = 0; page < (options.maxPages ?? Number.POSITIVE_INFINITY); page += 1) {
+        const pageKey = afterId ?? "";
         const ids = store.listTerminalTasksMissingSpend({ limit: pageSize, afterId });
-        const events: SpendEventRecord[] = [];
+        const built: Array<{ task: TaskRecord; build: ReturnType<typeof taskTerminal.buildReconciledSpendEvent> }> = [];
+        let pageUnrepairable = 0;
         for (const id of ids) {
           const task = this.tasks.get(id);
           if (!task || !isTerminalTaskStatus(task.status)) {
+            pageUnrepairable += 1;
             unrepairable += 1;
             continue;
           }
-          const built = taskTerminal.buildReconciledSpendEvent(task, { timeZone: this.budgetPeriodTimeZone });
-          this.logSpendTelemetryDiagnostics(task, built, { reconciled: true });
-          events.push(built.event);
+          built.push({ task, build: taskTerminal.buildReconciledSpendEvent(task, { timeZone: this.budgetPeriodTimeZone }) });
         }
-        if (events.length > 0) {
-          store.saveHotEntities.call(store, { spendEvents: events });
-          submitted += events.length;
+        if (periodic && this.spendReconcileRowRetry === pageKey) {
+          // The previous periodic write of this page failed: one write per row.
+          this.spendReconcileRowRetry = undefined;
+          for (const { task, build } of built) {
+            try {
+              save([build.event]);
+            } catch (error) {
+              rowsSkipped += 1;
+              this.warnRateLimited("broker.spend.reconcile_row_skipped", {
+                event: "broker.spend.reconcile_row_skipped",
+                taskId: task.id,
+                error: error instanceof Error ? error.message : String(error),
+              });
+              continue;
+            }
+            submitted += 1;
+            this.logSpendTelemetryDiagnostics(task, build, { reconciled: true });
+          }
+        } else {
+          if (built.length > 0) {
+            pageWriting = true;
+            save(built.map(({ build }) => build.event));
+            pageWriting = false;
+            submitted += built.length;
+          }
+          // #2499 slice 3b: logged once the page write was submitted, so a page
+          // that throws and is retried on a later sweep does not log twice.
+          for (const { task, build } of built) {
+            this.logSpendTelemetryDiagnostics(task, build, { reconciled: true });
+          }
         }
+        completedUnrepairable += pageUnrepairable;
         afterId = ids[ids.length - 1] ?? afterId;
         if (ids.length < pageSize) {
           passEnded = true;
@@ -1288,15 +1435,17 @@ export class InMemoryA2ABroker {
         }
       }
     } catch (error) {
-      if (periodic) this.spendReconcileCursor = afterId;
-      console.warn(
-        JSON.stringify({
-          event: "broker.spend.reconcile_failed",
-          submitted,
-          unrepairable,
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
+      if (periodic) {
+        this.spendReconcilePassUnrepairable += completedUnrepairable;
+        this.spendReconcileCursor = afterId;
+        if (pageWriting) this.spendReconcileRowRetry = afterId ?? "";
+      }
+      this.warnRateLimited("broker.spend.reconcile_failed", {
+        event: "broker.spend.reconcile_failed",
+        submitted,
+        unrepairable: completedUnrepairable,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return undefined;
     }
     // A full run is one whole pass; a periodic run accumulates its pass
@@ -1312,17 +1461,434 @@ export class InMemoryA2ABroker {
       this.spendReconcileCursor = afterId;
       this.spendReconcilePassUnrepairable = passUnrepairable;
     }
-    if (submitted > 0 || unrepairableChanged) {
+    if (submitted > 0 || rowsSkipped > 0 || unrepairableChanged) {
       console.warn(
         JSON.stringify({
           event: "broker.spend.reconciled",
           submitted,
-          // At the end of a pass: the pass total; mid-pass: this run's count.
+          // At the end of a pass (`passEnded`): the pass total; mid-pass:
+          // this run's count (#2499 slice 3b: the flag makes it unambiguous).
           unrepairable: passEnded ? passUnrepairable : unrepairable,
+          passEnded,
+          ...(rowsSkipped > 0 ? { rowsSkipped } : {}),
         }),
       );
     }
     return { submitted, unrepairable };
+  }
+
+  /**
+   * #2499 slice 3b: one JSON log line per `key` per RATE_LIMITED_LOG_INTERVAL_MS;
+   * the lines dropped in between are counted and reported as `suppressed` on
+   * the next line written (always present, 0 when none).
+   */
+  private warnRateLimited(key: string, payload: Record<string, unknown>): void {
+    const now = Date.now();
+    const state = this.rateLimitedLogs.get(key);
+    if (state && now - state.lastAtMs < RATE_LIMITED_LOG_INTERVAL_MS) {
+      state.suppressed += 1;
+      return;
+    }
+    console.warn(JSON.stringify({ ...payload, suppressed: state?.suppressed ?? 0 }));
+    this.rateLimitedLogs.set(key, { lastAtMs: now, suppressed: 0 });
+  }
+
+  // --- Budgets (#2499 slice 3b) ------------------------------------------------
+  // SQLite only, like the spend ledger. Create/update/list plus the pure
+  // evaluator wiring; nothing here refuses a claim or a create yet (the
+  // claim-time refusal, queued-listing filter and `pause` refusal come later
+  // and call evaluateClaimBudget).
+  //
+  // The broker keeps every budget in memory (`budgets` by id, `budgetIdsByScope`
+  // by scope and period), loaded once at startup. That map is the duplicate
+  // check and the read source (routes, status, evaluator): the broker is
+  // single-threaded, so it cannot lag a queued write. Rows reach SQLite only
+  // through the save hints, in the same transaction as their audit event.
+
+  /** The store's budget table and evaluator reads when it has them (SQLite), else undefined. */
+  private budgetStore(): BudgetCapableStore | undefined {
+    const store = this.stateStore;
+    if (
+      store?.readBudget && store.listBudgets
+      && store.readSpendScopeUsage && store.hasCostReportingSpend && store.listTopSpendRows && this.hasSpendLedger()
+    ) {
+      return store as BudgetCapableStore;
+    }
+    return undefined;
+  }
+
+  /** Whether budgets are available (the SQLite store). */
+  hasBudgets(): boolean {
+    return this.budgetStore() !== undefined;
+  }
+
+  private requireBudgetStore(): BudgetCapableStore {
+    const store = this.budgetStore();
+    if (!store) {
+      throw new BrokerError("unsupported_operation", "budgets require the SQLite state store (spend ledger)");
+    }
+    return store;
+  }
+
+  /**
+   * Once at construction: every budget row into memory. The table is
+   * bounded by operator writes; past BUDGET_LOAD_LIMIT rows startup is
+   * refused (the duplicate check and the evaluator need all of them). A read
+   * failure propagates: a broker that cannot see its budgets does not start.
+   */
+  private loadBudgets(): void {
+    const store = this.budgetStore();
+    if (!store) return;
+    const rows = store.listBudgets({ limit: BUDGET_LOAD_LIMIT + 1 });
+    if (rows.length > BUDGET_LOAD_LIMIT) {
+      throw new Error(`broker_budgets holds more than ${BUDGET_LOAD_LIMIT} budgets; the broker loads all of them at startup`);
+    }
+    for (const budget of rows) this.indexBudget(budget);
+    if (rows.length > 0) {
+      console.warn(JSON.stringify({ event: "broker.budget.loaded", count: rows.length }));
+    }
+  }
+
+  private indexBudget(budget: BudgetRecord): void {
+    this.budgets.set(budget.id, budget);
+    this.budgetIdsByScope.set(budgetScopeKey(budget.scopeType, budget.scopeId, budget.period), budget.id);
+  }
+
+  private unindexBudget(id: string): void {
+    const budget = this.budgets.get(id);
+    if (!budget) return;
+    this.budgets.delete(id);
+    const key = budgetScopeKey(budget.scopeType, budget.scopeId, budget.period);
+    if (this.budgetIdsByScope.get(key) === id) this.budgetIdsByScope.delete(key);
+  }
+
+  /**
+   * Create a monthly budget (operator write). Validation is `bad_request`
+   * (400, never trimmed); a goal scope must name an existing goal (404); a
+   * duplicate id or a second budget for the same (scope, period) is
+   * `invalid_transition` (409), checked against the in-memory map; a store
+   * without budgets is `unsupported_operation` (409). The row (staged in the
+   * save hints), its `budget.created` audit event and the persist run in one
+   * commitMutation, so they commit in one store transaction on both
+   * topologies; a throw undoes the map entry, the staged row and the
+   * in-memory audit event (SQLite rolls its rows back in process).
+   */
+  createBudget(request: CreateBudgetRequest): BudgetRecord {
+    if (!request || typeof request !== "object") throw new BrokerError("bad_request", "budget create requires an object");
+    if (request.id !== undefined && (typeof request.id !== "string" || !GOAL_ID_PATTERN.test(request.id))) {
+      throw new BrokerError("bad_request", `budget id must match ${GOAL_ID_PATTERN.source}`);
+    }
+    if (typeof request.scopeType !== "string" || !(BUDGET_SCOPE_TYPES as readonly string[]).includes(request.scopeType)) {
+      throw new BrokerError("bad_request", `scopeType must be one of ${BUDGET_SCOPE_TYPES.join(", ")}`);
+    }
+    // Goal scopes use the goal id pattern (and must exist); agent and lane
+    // scopes the pattern the ledger and the status/list filters accept.
+    const scopePattern = request.scopeType === "goal" ? GOAL_ID_PATTERN : BUDGET_SCOPE_ID_PATTERN;
+    if (typeof request.scopeId !== "string" || !scopePattern.test(request.scopeId)) {
+      throw new BrokerError("bad_request", `scopeId must match ${scopePattern.source}`);
+    }
+    if (typeof request.period !== "string" || !(BUDGET_PERIODS as readonly string[]).includes(request.period)) {
+      throw new BrokerError("bad_request", `period must be one of ${BUDGET_PERIODS.join(", ")}`);
+    }
+    if (typeof request.createdBy !== "string" || request.createdBy === "") {
+      throw new BrokerError("bad_request", "budget createdBy is required");
+    }
+    const limitUsd = validateBudgetLimitUsd(request.limitUsd);
+    const limitTokens = validateBudgetLimitTokens(request.limitTokens);
+    if (limitUsd === null && limitTokens === null) {
+      throw new BrokerError("bad_request", "a budget needs limitUsd, limitTokens, or both");
+    }
+    const warnPct = request.warnPct === undefined ? BUDGET_DEFAULT_WARN_PCT : validateBudgetWarnPct(request.warnPct);
+    const enforce = request.enforce === undefined ? "refuse" : validateBudgetEnforce(request.enforce);
+    this.requireBudgetStore();
+    if (request.scopeType === "goal" && !this.getGoal(request.scopeId)) {
+      throw new BrokerError("not_found", "goal not found", { goalId: request.scopeId });
+    }
+    const id = request.id ?? randomUUID();
+    if (this.budgets.has(id)) {
+      throw new BrokerError("invalid_transition", `budget '${id}' already exists`, { budgetId: id });
+    }
+    const existingId = this.budgetIdsByScope.get(budgetScopeKey(request.scopeType, request.scopeId, request.period));
+    if (existingId !== undefined) {
+      throw new BrokerError(
+        "invalid_transition",
+        `a ${request.period} budget for ${request.scopeType} '${request.scopeId}' already exists`,
+        { budgetId: existingId, scopeType: request.scopeType, scopeId: request.scopeId, period: request.period },
+      );
+    }
+    const budget: BudgetRecord = {
+      id,
+      scopeType: request.scopeType,
+      scopeId: request.scopeId,
+      period: request.period,
+      limitUsd,
+      limitTokens,
+      warnPct,
+      enforce,
+      createdBy: request.createdBy,
+      createdAt: isoNow(),
+    };
+    this.commitBudgetWrite("budget.created", budget, budget.createdBy, `${budget.scopeType}:${budget.scopeId}`);
+    return budget;
+  }
+
+  /**
+   * Update a budget's limits, warn threshold or enforce action (operator
+   * write). An omitted field is unchanged; a null limit clears it, and the
+   * result must keep at least one limit (400). An update that changes no
+   * field (`{}`) is 400. Unknown id 404. Appends a `budget.updated` audit
+   * event (note: the changed field names), atomically with the row.
+   */
+  updateBudget(id: string, request: UpdateBudgetRequest): BudgetRecord {
+    if (typeof id !== "string" || !GOAL_ID_PATTERN.test(id)) {
+      throw new BrokerError("bad_request", `budget id must match ${GOAL_ID_PATTERN.source}`);
+    }
+    if (!request || typeof request !== "object" || Array.isArray(request)) {
+      throw new BrokerError("bad_request", "budget update requires an object");
+    }
+    if (typeof request.actorId !== "string" || request.actorId === "") {
+      throw new BrokerError("bad_request", "budget update actorId is required");
+    }
+    this.requireBudgetStore();
+    const existing = this.budgets.get(id);
+    if (!existing) throw new BrokerError("not_found", "budget not found", { budgetId: id });
+    const changed: string[] = [];
+    const next: BudgetRecord = { ...existing };
+    if (request.limitUsd !== undefined) {
+      next.limitUsd = validateBudgetLimitUsd(request.limitUsd);
+      changed.push("limitUsd");
+    }
+    if (request.limitTokens !== undefined) {
+      next.limitTokens = validateBudgetLimitTokens(request.limitTokens);
+      changed.push("limitTokens");
+    }
+    if (request.warnPct !== undefined) {
+      next.warnPct = validateBudgetWarnPct(request.warnPct);
+      changed.push("warnPct");
+    }
+    if (request.enforce !== undefined) {
+      next.enforce = validateBudgetEnforce(request.enforce);
+      changed.push("enforce");
+    }
+    if (changed.length === 0) throw new BrokerError("bad_request", "budget update changes nothing");
+    if (next.limitUsd === null && next.limitTokens === null) {
+      throw new BrokerError("bad_request", "a budget must keep at least one of limitUsd and limitTokens");
+    }
+    this.commitBudgetWrite("budget.updated", next, request.actorId, changed.join(","));
+    return next;
+  }
+
+  /**
+   * The map entry, the staged row, its audit event and the persist in one
+   * commitMutation. On a throw everything in memory is undone: the previous
+   * record (or none) is restored, the staged row is dropped, and the audit
+   * events this attempt added are removed (found by difference: with an
+   * audit repository the event is in the map before the repository write
+   * can throw).
+   */
+  private commitBudgetWrite(
+    action: "budget.created" | "budget.updated",
+    budget: BudgetRecord,
+    actorId: string,
+    note: string,
+  ): void {
+    const previous = this.budgets.get(budget.id);
+    const isThisAudit = (event: AuditEvent) =>
+      event.action === action && event.targetType === "budget" && event.targetId === budget.id;
+    const earlier = new Set([...this.auditEvents.values()].filter(isThisAudit).map((event) => event.id));
+    try {
+      this.commitMutation(() => {
+        this.indexBudget(budget);
+        this.pendingHot.stageBudget(budget);
+        this.appendAuditEvent({ actorId, action, targetType: "budget", targetId: budget.id, note });
+        this.persistState();
+      });
+    } catch (error) {
+      this.unindexBudget(budget.id);
+      if (previous) this.indexBudget(previous);
+      this.pendingHot.unstageBudget(budget.id);
+      for (const [eventId, event] of this.auditEvents) {
+        if (isThisAudit(event) && !earlier.has(eventId)) this.auditEvents.delete(eventId);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Re-read one budget row into memory (#2499 slice 3b). On the
+   * worker-thread topology a budget write commits in the queued save; when
+   * the route's durable-ack wait reports that save failed, the row (and its
+   * audit row) did not commit, so the route calls this to drop (or restore)
+   * the in-memory entry instead of serving a budget SQLite does not hold.
+   */
+  reloadBudgetFromStore(id: string): void {
+    const store = this.budgetStore();
+    if (!store) return;
+    const stored = store.readBudget(id);
+    this.unindexBudget(id);
+    if (stored) this.indexBudget(stored);
+  }
+
+  getBudget(id: string): BudgetRecord | undefined {
+    return this.hasBudgets() ? this.budgets.get(id) : undefined;
+  }
+
+  /** The month budget of one scope, from memory. */
+  findBudgetForScope(scopeType: BudgetScopeType, scopeId: string, period: BudgetRecord["period"] = "month"): BudgetRecord | undefined {
+    const id = this.budgetIdsByScope.get(budgetScopeKey(scopeType, scopeId, period));
+    return id === undefined ? undefined : this.budgets.get(id);
+  }
+
+  /**
+   * From memory, ordered by scope type, scope id, period, id (code-unit
+   * order, like SQLite's binary collation); `limit` defaults to
+   * DEFAULT_BUDGET_LIST_LIMIT. Undefined when the store keeps no budgets
+   * (routes report `available: false`).
+   */
+  listBudgets(filters: BudgetListFilters = {}): BudgetRecord[] | undefined {
+    if (!this.hasBudgets()) return undefined;
+    const limit = filters.limit !== undefined && filters.limit > 0 ? Math.floor(filters.limit) : DEFAULT_BUDGET_LIST_LIMIT;
+    const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+    return [...this.budgets.values()]
+      .filter((budget) => (filters.scopeType === undefined || budget.scopeType === filters.scopeType)
+        && (filters.scopeId === undefined || budget.scopeId === filters.scopeId))
+      .sort((a, b) => compare(a.scopeType, b.scopeType) || compare(a.scopeId, b.scopeId) || compare(a.period, b.period) || compare(a.id, b.id))
+      .slice(0, limit);
+  }
+
+  /** The configured mode (`A2A_BUDGET_ENFORCEMENT_MODE`, read at startup). */
+  getBudgetEnforcementMode(): BudgetEnforcementMode {
+    return this.budgetEnforcementMode;
+  }
+
+  /**
+   * Configured and effective mode for a period (decision 9: `on` runs as
+   * `shadow` while the period is not complete; `spendLedgerPeriodComplete`
+   * is the same computation as `ledger.periodComplete` in budget status).
+   * Only the stored first period is read (one metadata lookup). A read that
+   * throws counts as a budget check failure (`checkFailed`, rate-limited
+   * `broker.budget.check_failed`) and as an incomplete period, which can only
+   * weaken `on` to `shadow`. Never throws.
+   */
+  getBudgetEnforcement(periodKey: string = this.budgetPeriodKey()): BudgetEnforcementState {
+    let firstPeriod: string | null = null;
+    try {
+      firstPeriod = this.stateStore?.readSpendLedgerMetadata?.().firstPeriod ?? null;
+    } catch (error) {
+      this.recordBudgetCheckFailure(error, { source: "enforcement" });
+    }
+    return taskAdmission.resolveEffectiveBudgetEnforcement(
+      this.budgetEnforcementMode,
+      spendLedgerPeriodComplete(periodKey, firstPeriod),
+    );
+  }
+
+  /** One budget against one period of the ledger (one indexed aggregate). Throws when the read fails. */
+  evaluateBudget(budget: BudgetRecord, periodKey: string = this.budgetPeriodKey()): BudgetEvaluation {
+    const store = this.requireBudgetStore();
+    const usage = store.readSpendScopeUsage({ periodKey, scopeType: budget.scopeType, scopeId: budget.scopeId });
+    return taskAdmission.evaluateBudgetUsage(budget, usage, periodKey);
+  }
+
+  /** The largest rows of one scope in a period (outliers). Throws when the read fails. */
+  listTopSpendRows(query: { periodKey: string; scopeType: BudgetScopeType; scopeId: string; limit: number }): {
+    byCost: SpendTopRow[];
+    byTokens: SpendTopRow[];
+  } {
+    // The scope type picks a SQL column: validated here too, not only by the route.
+    if (typeof query.scopeType !== "string" || !(BUDGET_SCOPE_TYPES as readonly string[]).includes(query.scopeType)) {
+      throw new BrokerError("bad_request", `scopeType must be one of ${BUDGET_SCOPE_TYPES.join(", ")}`);
+    }
+    if (typeof query.scopeId !== "string") throw new BrokerError("bad_request", "scopeId must be a string");
+    const store = this.requireBudgetStore();
+    return {
+      byCost: store.listTopSpendRows({ ...query, by: "cost" }),
+      byTokens: store.listTopSpendRows({ ...query, by: "tokens" }),
+    };
+  }
+
+  /**
+   * Claim-time budget decision (#2499 slice 3b; not called from claim yet).
+   * `workerId` is the claiming worker. It is both the agent scope key and
+   * the cost-reporting probe: the ledger's `agent_id` is the worker that did
+   * the work, which for a claim is the claimant. Looks up the month budget of
+   * the agent, lane and goal scopes (in memory), evaluates each against the
+   * current period (one indexed aggregate each), and decides per scope with
+   * decideClaimBudgetScope: tokens refuse any worker, USD refuses only a
+   * worker with a `cost_known` row this period (Decision 4; at most one
+   * probe per call), `pause` budgets never refuse at claim. `refuse` is
+   * `wouldRefuse` in effective mode `on`; `shadow` only reports. Callers
+   * should skip the call in mode `off`.
+   *
+   * Fail-open (decision 13): any read failure returns `checkFailed: true`
+   * with no refusal, counts the failure in memory (shown in budget status)
+   * and logs `broker.budget.check_failed` at most once per minute.
+   */
+  evaluateClaimBudget(input: {
+    workerId: string;
+    lane?: string | null;
+    goalId?: string | null;
+  }): ClaimBudgetEvaluation {
+    const periodKey = this.budgetPeriodKey();
+    const enforcement = this.getBudgetEnforcement(periodKey);
+    // No budget table (non-SQLite store, always mode off): nothing to check.
+    const store = this.budgetStore();
+    if (!store) return { periodKey, enforcement, checkFailed: false, scopes: [], wouldRefuse: false, refuse: false };
+    try {
+      const scopes: Array<[BudgetScopeType, string | null | undefined]> = [
+        ["agent", input.workerId],
+        ["lane", input.lane],
+        ["goal", input.goalId],
+      ];
+      let reportsCost: boolean | undefined;
+      const workerReportsCost = (): boolean => {
+        reportsCost ??= store.hasCostReportingSpend({ periodKey, agentId: input.workerId });
+        return reportsCost;
+      };
+      const decisions: ClaimBudgetScopeDecision[] = [];
+      for (const [scopeType, scopeId] of scopes) {
+        if (typeof scopeId !== "string" || scopeId === "") continue;
+        const budget = this.findBudgetForScope(scopeType, scopeId);
+        if (!budget) continue;
+        decisions.push(taskAdmission.decideClaimBudgetScope(this.evaluateBudget(budget, periodKey), workerReportsCost));
+      }
+      const wouldRefuse = decisions.some((decision) => decision.refuse);
+      return {
+        periodKey,
+        enforcement,
+        checkFailed: false,
+        scopes: decisions,
+        wouldRefuse,
+        refuse: wouldRefuse && enforcement.effectiveMode === "on",
+      };
+    } catch (error) {
+      this.recordBudgetCheckFailure(error, { source: "claim", workerId: input.workerId });
+      return { periodKey, enforcement, checkFailed: true, scopes: [], wouldRefuse: false, refuse: false };
+    }
+  }
+
+  private recordBudgetCheckFailure(error: unknown, context: { source: "claim" | "enforcement"; workerId?: string }): void {
+    this.budgetCheckFailures = { count: this.budgetCheckFailures.count + 1, lastAt: isoNow() };
+    this.warnRateLimited("broker.budget.check_failed", {
+      event: "broker.budget.check_failed",
+      source: context.source,
+      ...(context.workerId !== undefined ? { workerId: context.workerId } : {}),
+      count: this.budgetCheckFailures.count,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  /** Failed budget reads since startup (in memory; served even when a status read fails). */
+  getBudgetCheckFailures(): { count: number; lastAt: string | null } {
+    return { ...this.budgetCheckFailures };
+  }
+
+  /** Rate-limited diagnostic for a failed budget status read (the route still answers 200). */
+  noteBudgetStatusReadFailure(error: unknown): void {
+    this.warnRateLimited("broker.budget.status_read_failed", {
+      event: "broker.budget.status_read_failed",
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 
   /** Per-status counts of tasks linked to a goal (read model only). */
