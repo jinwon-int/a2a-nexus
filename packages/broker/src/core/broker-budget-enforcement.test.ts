@@ -25,7 +25,9 @@
  * store, so the poll route takes the SQLite hot read path.
  */
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -33,9 +35,11 @@ import test, { mock } from "node:test";
 
 import { createBrokerAgentCard } from "../a2a/agent-card.js";
 import { executeA2AJsonRpc } from "../a2a/json-rpc.js";
+import { handleWorkerAssignmentEventStream } from "../http/task-event-streams.js";
 import { readSseEventsUntil, startTestServer } from "../server-test-helpers.js";
 import { BrokerError, InMemoryA2ABroker } from "./broker.js";
 import { PendingHotStateBuffer } from "./store/pending-hot-state-buffer.js";
+import { createWorkerThreadPersistence } from "./store/sqlite-worker-thread-persistence.js";
 import {
   SqliteArtifactRuntimeRepository,
   SqliteAuditRuntimeRepository,
@@ -61,35 +65,42 @@ type Mode = "off" | "shadow" | "on";
 interface Harness {
   broker: InMemoryA2ABroker;
   store: SqliteBrokerStateStore;
+  dbFile: string;
   sql(statement: string, ...params: Array<string | number | null>): void;
   query<T>(statement: string, ...params: Array<string | number | null>): T[];
+  /** Restart on the same database with another enforcement mode. */
+  reopen(mode: Mode): void;
   close(): void;
 }
 
 function harness(wiring: Wiring, mode: Mode, storeOptions: { deferReviewLineageImport?: boolean } = {}): Harness {
   const dir = mkdtempSync(join(tmpdir(), "a2a-budget-enforce-"));
   const dbFile = join(dir, "state.sqlite");
-  const store = new SqliteBrokerStateStore(dbFile, { loadSource: "hot-tables", ...storeOptions });
-  const repositories = wiring === "repositories"
-    ? {
-        taskRepository: new SqliteTaskRuntimeRepository(store),
-        auditRepository: new SqliteAuditRuntimeRepository(store),
-        tombstoneRepository: new SqliteTombstoneRuntimeRepository(store),
-        workerRepository: new SqliteWorkerRuntimeRepository(store),
-        exchangeRepository: new SqliteExchangeRuntimeRepository(store),
-        exchangeMessageRepository: new SqliteExchangeMessageRuntimeRepository(store),
-        proposalRepository: new SqliteProposalRuntimeRepository(store),
-        artifactRepository: new SqliteArtifactRuntimeRepository(store),
-        validationRepository: new SqliteValidationRuntimeRepository(store),
-      }
-    : {};
-  const broker = new InMemoryA2ABroker(store, store.load(), {
-    budgetPeriodTimeZone: "UTC",
-    budgetEnforcementMode: mode,
-    ...repositories,
-  });
+  const open = (openMode: Mode) => {
+    const store = new SqliteBrokerStateStore(dbFile, { loadSource: "hot-tables", ...storeOptions });
+    const repositories = wiring === "repositories"
+      ? {
+          taskRepository: new SqliteTaskRuntimeRepository(store),
+          auditRepository: new SqliteAuditRuntimeRepository(store),
+          tombstoneRepository: new SqliteTombstoneRuntimeRepository(store),
+          workerRepository: new SqliteWorkerRuntimeRepository(store),
+          exchangeRepository: new SqliteExchangeRuntimeRepository(store),
+          exchangeMessageRepository: new SqliteExchangeMessageRuntimeRepository(store),
+          proposalRepository: new SqliteProposalRuntimeRepository(store),
+          artifactRepository: new SqliteArtifactRuntimeRepository(store),
+          validationRepository: new SqliteValidationRuntimeRepository(store),
+        }
+      : {};
+    const broker = quiet(() => new InMemoryA2ABroker(store, store.load(), {
+      budgetPeriodTimeZone: "UTC",
+      budgetEnforcementMode: openMode,
+      ...repositories,
+    }));
+    return { store, broker };
+  };
+  let current = open(mode);
   for (const nodeId of ["worker-a", "worker-b", "worker-c", "default-agent"]) {
-    broker.registerWorker({
+    current.broker.registerWorker({
       nodeId,
       role: "analyst",
       capabilities: {
@@ -111,15 +122,24 @@ function harness(wiring: Wiring, mode: Mode, storeOptions: { deferReviewLineageI
     }
   };
   return {
-    broker,
-    store,
+    get broker() {
+      return current.broker;
+    },
+    get store() {
+      return current.store;
+    },
+    dbFile,
     sql: (statement, ...params) => withDb((db) => {
       db.prepare(statement).run(...params);
     }),
     query: <T>(statement: string, ...params: Array<string | number | null>) =>
       withDb((db) => db.prepare(statement).all(...params).map((row) => ({ ...row })) as T[]),
+    reopen(openMode) {
+      current.store.close();
+      current = open(openMode);
+    },
     close() {
-      store.close();
+      current.store.close();
       rmSync(dir, { recursive: true, force: true });
     },
   };
@@ -441,6 +461,7 @@ for (const wiring of WIRINGS) {
       const before = h.broker.getBudgetCheckFailures().count;
       assert.equal(quiet(() => h.broker.claimTask("t-1", "worker-a")).status, "claimed", "fail-open: the claim proceeds");
       assert.equal(h.broker.getBudgetCheckFailures().count, before + 1, "the claim-time read failure is counted (checkFailed)");
+      assert.equal(h.broker.getBudgetCheckFailures().consecutive, 1, "and starts a run of consecutive failures");
     } finally {
       h.close();
     }
@@ -486,6 +507,7 @@ async function snapshotIds(baseUrl: string, workerId: string): Promise<string[]>
 
 interface ListingStatus {
   omittedTotal?: number;
+  lastOmittedCount?: number;
   lastOmittedAt?: string | null;
   wouldOmitTotal?: number;
 }
@@ -517,7 +539,7 @@ for (const wiring of WIRINGS) {
         // Other query shapes are not worker polls: unfiltered.
         assert.deepEqual(await listIds(baseUrl, "status=queued"), ["t-a", "t-b"]);
         assert.deepEqual(await listIds(baseUrl, "assignedWorkerId=worker-a"), ["t-a"]);
-        assert.deepEqual(initial, { omittedTotal: 0, lastOmittedAt: null, wouldOmitTotal: 0 }, "listing counters start at zero");
+        assert.deepEqual(initial, { omittedTotal: 0, lastOmittedAt: null, lastOmittedCount: 0, wouldOmitTotal: 0 }, "listing counters start at zero");
         const listing = await listingStatus(baseUrl);
         assert.equal(listing?.omittedTotal, 2, "each worker listing adds the tasks it omitted");
         assert.equal(typeof listing?.lastOmittedAt, "string");
@@ -661,7 +683,8 @@ for (const wiring of WIRINGS) {
         const status = await (await fetch(`${baseUrl}/budgets/status`)).json() as Record<string, Record<string, unknown>>;
         assert.equal(status.claims?.refusedTotal, 2);
         assert.deepEqual(Object.keys(status.creates ?? {}).sort(), ["lastAt", "refusedTotal", "wouldRefuseTotal"]);
-        assert.deepEqual(Object.keys(status.goals ?? {}).sort(), ["lastAt", "limitedTotal", "resumedTotal", "wouldLimitTotal", "wouldResumeTotal"]);
+        assert.deepEqual(Object.keys(status.goals ?? {}).sort(), ["lastAt", "limitedTotal", "resumedTotal", "wouldLimitTotal"]);
+        assert.deepEqual(Object.keys(status.listing ?? {}).sort(), ["lastOmittedAt", "lastOmittedCount", "omittedTotal", "wouldOmitTotal"]);
         assert.equal(status.checkFailed?.consecutive, 0);
       });
     } finally {
@@ -870,7 +893,9 @@ for (const wiring of WIRINGS) {
       seedSpend(h, spendRow(h, "r-g", { goalId: "goal-1", inputTokens: 150 }));
       const run = captureWarnings(() => h.broker.applyGoalBudgetLimits());
       assert.deepEqual(run.result, { limited: ["goal-1"], resumed: [] });
-      assert.deepEqual(named(run.events, "broker.budget.goal_limited"), [{ event: "broker.budget.goal_limited", goalId: "goal-1", budgetId: "b-goal" }]);
+      assert.deepEqual(named(run.events, "broker.budget.goal_limited"), [
+        { event: "broker.budget.goal_limited", goalId: "goal-1", budgetId: "b-goal", note: "budget_exhausted" },
+      ]);
       const goal = h.broker.getGoal("goal-1")!;
       assert.equal(goal.status, "budget_limited");
       assert.equal(goal.outcome, undefined, "outcome.failed is not set (a budget limit is not a failure)");
@@ -987,8 +1012,8 @@ for (const wiring of WIRINGS) {
       off.store.readSpendScopeUsage = () => {
         throw new Error("must not be read");
       };
-      assert.equal(off.broker.applyGoalBudgetLimits(), undefined);
-      assert.equal(off.broker.getBudgetCheckFailures().count, 0);
+      assert.deepEqual(off.broker.applyGoalBudgetLimits(), { limited: [], resumed: [] });
+      assert.equal(off.broker.getBudgetCheckFailures().count, 0, "no spend read in mode off");
     } finally {
       off.close();
     }
@@ -1029,8 +1054,13 @@ for (const wiring of WIRINGS) {
         { task_id: "t-lost", input_tokens: 11, output_tokens: 4, cost_known: 1 },
         { task_id: "t-ok", input_tokens: 11, output_tokens: 4, cost_known: 1 },
       ]);
-      assert.deepEqual(quiet(() => h.broker.restageLostLateMeterings()), { restaged: 0, checked: 1 }, "t-ok was settled");
-      assert.deepEqual(quiet(() => h.broker.restageLostLateMeterings()), { restaged: 0, checked: 0 }, "both settled");
+      assert.deepEqual(quiet(() => h.broker.restageLostLateMeterings()), { restaged: 0, checked: 0 }, "each task is checked once (settled)");
+      // A settled id whose task left the task map is evicted when the next pass starts.
+      const settled = h.broker["lateMeteringSettled"] as Set<string>;
+      assert.deepEqual([...settled].sort(), ["t-lost", "t-ok"]);
+      (h.broker["tasks"] as Map<string, unknown>).delete("t-ok");
+      quiet(() => h.broker.restageLostLateMeterings());
+      assert.deepEqual([...settled], ["t-lost"]);
     } finally {
       h.close();
     }
@@ -1039,38 +1069,90 @@ for (const wiring of WIRINGS) {
 
 // --- other claim entry points ---------------------------------------------------------------
 
-test("JSON-RPC convention send: a budget refusal of the inline claim leaves the created task queued and says why", () => {
+function sendConvention(h: Harness, messageId: string) {
+  return quiet(() => executeA2AJsonRpc(
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "SendMessage",
+      params: { message: { role: "ROLE_USER", parts: [{ text: "complete me" }], messageId } },
+    },
+    {
+      broker: h.broker,
+      agentCard: createBrokerAgentCard({ serviceName: "test-broker", publicBaseUrl: "https://broker.test/" }),
+      publicBaseUrl: "https://broker.test",
+      requesterIdentity: null,
+      enforceRequesterIdentity: false,
+      defaultAgentNodeId: "default-agent",
+      responseShape: "spec",
+    },
+  ));
+}
+
+function rpcError(response: unknown): { code: number; message: string; data?: Array<{ metadata?: Record<string, string> }> } {
+  assert.ok(response && typeof response === "object" && "error" in response, `expected an error, got ${JSON.stringify(response)}`);
+  return (response as { error: { code: number; message: string; data?: Array<{ metadata?: Record<string, string> }> } }).error;
+}
+
+test("JSON-RPC convention send: a claim budget refusal is decided before anything is created; retries create nothing", () => {
   const h = harness("hints", "on");
   try {
     completePeriod(h);
     budget(h, { id: "b-agent", scopeType: "agent", scopeId: "default-agent", limitTokens: 10 });
     seedSpend(h, spendRow(h, "r-1", { agentId: "default-agent", inputTokens: 50 }));
-    const response = quiet(() => executeA2AJsonRpc(
-      {
-        jsonrpc: "2.0",
-        id: 1,
-        method: "SendMessage",
-        params: { message: { role: "ROLE_USER", parts: [{ text: "complete me" }], messageId: "tck-complete-task-s1" } },
-      },
-      {
-        broker: h.broker,
-        agentCard: createBrokerAgentCard({ serviceName: "test-broker", publicBaseUrl: "https://broker.test/" }),
-        publicBaseUrl: "https://broker.test",
-        requesterIdentity: null,
-        enforceRequesterIdentity: false,
-        defaultAgentNodeId: "default-agent",
-        responseShape: "spec",
-      },
-    ));
-    assert.ok("error" in response, `expected an error, got ${JSON.stringify(response)}`);
-    const error = (response as { error: { code: number; message: string } }).error;
-    assert.equal(error.code, -32012, "policy_denied");
-    const match = /^budget_exhausted: claim of task (\S+) \(context (\S+)\) refused by a monthly budget; the task stays queued$/.exec(error.message);
-    assert.ok(match, error.message);
-    const task = h.broker.getTask(match[1]!);
-    assert.equal(task?.status, "queued");
-    assert.equal(task?.exchangeId, match[2]);
-    assert.equal(task?.claimedBy, undefined);
+    const before = { tasks: h.broker.listTasks().length, exchanges: h.broker.exportSnapshot().exchanges.length };
+    for (const messageId of ["tck-complete-task-s1", "tck-complete-task-s1", "tck-complete-task-s2", "tck-input-required-s1"]) {
+      const error = rpcError(sendConvention(h, messageId));
+      assert.equal(error.code, -32012, "policy_denied");
+      assert.match(error.message, /budget/);
+      assert.equal(error.data?.[0]?.metadata?.budgetReason, "budget_exhausted");
+      assert.equal(error.data?.[0]?.metadata?.brokerCode, "policy_denied");
+    }
+    assert.deepEqual(
+      { tasks: h.broker.listTasks().length, exchanges: h.broker.exportSnapshot().exchanges.length },
+      before,
+      "no exchange and no task: nothing to retry into an orphan",
+    );
+    assert.equal(h.broker.getBudgetEnforcementCounters().claims.refusedTotal, 4, "each refused send counts as a claim refusal");
+  } finally {
+    h.close();
+  }
+});
+
+test("JSON-RPC convention send: a pause budget for the task it would create refuses before anything is created", () => {
+  const h = harness("hints", "on");
+  try {
+    completePeriod(h);
+    budget(h, { id: "b-pause", scopeType: "lane", scopeId: "chat", limitTokens: 10, enforce: "pause" });
+    seedSpend(h, spendRow(h, "r-1", { lane: "chat", inputTokens: 50 }));
+    const before = h.broker.exportSnapshot().exchanges.length;
+    const error = rpcError(sendConvention(h, "hello-plain-send"));
+    assert.equal(error.code, -32012);
+    assert.equal(error.data?.[0]?.metadata?.budgetReason, "budget_paused");
+    assert.equal(h.broker.exportSnapshot().exchanges.length, before, "no orphan exchange");
+    assert.equal(h.broker.listTasks().length, 0);
+  } finally {
+    h.close();
+  }
+});
+
+test("JSON-RPC convention send: an inline claim still refused after the check (race) cancels the created task and names it in the error data", () => {
+  const h = harness("hints", "on");
+  try {
+    completePeriod(h);
+    budget(h, { id: "b-agent", scopeType: "agent", scopeId: "default-agent", limitTokens: 10 });
+    seedSpend(h, spendRow(h, "r-1", { agentId: "default-agent", inputTokens: 50 }));
+    // The budget runs out between the check and the inline claim.
+    h.broker.assertClaimBudgetAllowed = () => undefined;
+    const error = rpcError(sendConvention(h, "tck-complete-task-race"));
+    assert.equal(error.code, -32012);
+    const metadata = error.data?.[0]?.metadata ?? {};
+    assert.equal(metadata.budgetReason, "budget_exhausted");
+    assert.match(error.message, new RegExp(`claim of task ${metadata.taskId} \\(context ${metadata.contextId}\\) refused by a monthly budget; the task was canceled`));
+    const task = h.broker.getTask(metadata.taskId!);
+    assert.equal(task?.status, "canceled", "it cannot run later");
+    assert.equal(task?.exchangeId, metadata.contextId);
+    assert.equal(h.query<{ n: number }>("SELECT COUNT(*) AS n FROM broker_spend_events WHERE task_id = ?", metadata.taskId!)[0]?.n, 1, "the normal cancel path wrote its spend row");
   } finally {
     h.close();
   }
@@ -1121,33 +1203,62 @@ test("lease-gated HTTP claim: a budget refusal releases the granted lease, so a 
 
 // --- 3b-1 round-2 minors ------------------------------------------------------------------
 
-test("7a: a resync for an older write leaves a newer one; a write that did not land loses its audit event; the staged row is restored on rollback", () => {
-  const h = harness("hints", "off");
+test("7a/m1/m2 (worker-thread): gen1 fails, gen2 lands: gen1's audit event goes, gen2's stays, memory follows the stored row", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-budget-gen-"));
+  const dbFile = join(dir, "state.sqlite");
+  const exec = (sql: string) => {
+    const db = new DatabaseSync(dbFile);
+    try {
+      db.exec(sql);
+    } finally {
+      db.close();
+    }
+  };
+  const handle = createWorkerThreadPersistence({ dbFile, loadSource: "hot-tables", queueCapacity: 256 });
+  const originalError = console.error;
   try {
-    budget(h, { id: "b-1", scopeType: "lane", scopeId: "analyze", limitUsd: 1 });
-    const first = h.broker.getBudgetWriteGeneration("b-1")!;
-    h.broker.updateBudget("b-1", { limitUsd: 5, actorId: "operator-1" });
-    const second = h.broker.getBudgetWriteGeneration("b-1")!;
-    assert.ok(second > first);
-    h.broker.reloadBudgetFromStore("b-1", first);
-    assert.equal(h.broker.getBudget("b-1")?.limitUsd, 5, "a newer write is pending: the older write's resync is a no-op");
-    // A write that did not land (the row still holds the previous value).
-    h.broker.updateBudget("b-1", { limitUsd: 7, actorId: "operator-1" });
-    const third = h.broker.getBudgetWriteGeneration("b-1")!;
-    h.sql("UPDATE broker_budgets SET limit_usd = 5 WHERE id = 'b-1'");
-    const updates = () => h.broker.listAuditEvents({ action: "budget.updated" }).length;
-    assert.equal(updates(), 2);
-    h.broker.reloadBudgetFromStore("b-1", third);
-    assert.equal(h.broker.getBudget("b-1")?.limitUsd, 5, "memory follows the row");
-    assert.equal(updates(), 1, "the failed write's audit event is removed");
-    // A write that landed keeps its audit event.
-    h.broker.updateBudget("b-1", { limitUsd: 9, actorId: "operator-1" });
-    h.broker.reloadBudgetFromStore("b-1", h.broker.getBudgetWriteGeneration("b-1"));
-    assert.equal(h.broker.getBudget("b-1")?.limitUsd, 9);
-    assert.equal(updates(), 2);
+    const proxy = handle.stateStore;
+    const broker = new InMemoryA2ABroker(proxy, proxy.load(), { budgetPeriodTimeZone: "UTC" });
+    broker.createBudget({ id: "b-1", scopeType: "lane", scopeId: "analyze", period: "month", limitUsd: 1, createdBy: "o" });
+    await proxy.awaitDurablePersistenceAck();
+    assert.equal(broker.getBudgetWriteGeneration("b-1"), undefined, "a settled write is not kept");
+    exec(`CREATE TRIGGER gen1_fail BEFORE UPDATE ON broker_budgets
+          WHEN NEW.limit_usd = 7 BEGIN SELECT RAISE(ABORT, 'budget write failed'); END`);
+    broker.updateBudget("b-1", { limitUsd: 7, actorId: "o" });
+    const gen1 = broker.getBudgetWriteGeneration("b-1")!;
+    broker.updateBudget("b-1", { limitUsd: 9, actorId: "o" });
+    const gen2 = broker.getBudgetWriteGeneration("b-1")!;
+    assert.ok(gen2 > gen1);
+    // A resync for gen1 while gen2 is still queued keeps gen2's in-memory record.
+    broker.reloadBudgetFromStore("b-1", gen1);
+    assert.equal(broker.getBudget("b-1")?.limitUsd, 9, "a newer queued write holds memory");
+    assert.equal(broker.listAuditEvents({ action: "budget.updated" }).length, 1, "gen1's audit event is removed even with gen2 pending");
+    console.error = () => {};
+    await assert.rejects(() => proxy.awaitDurablePersistenceAck(), /budget write failed/);
+    console.error = originalError;
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(broker.getBudgetWriteGeneration("b-1"), undefined, "gen2 settled when its write landed");
+    broker.reloadBudgetFromStore("b-1", gen2);
+    assert.equal(broker.getBudget("b-1")?.limitUsd, 9, "memory follows the stored row (gen2 landed)");
+    assert.deepEqual(
+      broker.listAuditEvents({ action: "budget.updated" }).map((event) => event.note),
+      ["limitUsd"],
+      "gen2's audit event stays",
+    );
+    const db = new DatabaseSync(dbFile);
+    try {
+      assert.deepEqual(db.prepare("SELECT limit_usd FROM broker_budgets WHERE id = 'b-1'").all().map((row) => ({ ...row })), [{ limit_usd: 9 }]);
+    } finally {
+      db.close();
+    }
   } finally {
-    h.close();
+    console.error = originalError;
+    await handle.close();
+    rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("7a: a rollback restores the earlier staged budget row (pending buffer)", () => {
   const buffer = new PendingHotStateBuffer();
   const row = (limitUsd: number): BudgetRecord => ({
     id: "b-1", scopeType: "lane", scopeId: "analyze", period: "month", limitUsd, limitTokens: null,
@@ -1177,5 +1288,350 @@ test("7b: budget reads return copies", () => {
     assert.equal(h.broker.getBudget("b-1")?.limitUsd, 3);
   } finally {
     h.close();
+  }
+});
+
+// --- Fix round (PR review): M1, m3, m5, m6, m7, m11, m12 ------------------------------------
+
+/** A goal budget exhausted for goal-1; tasks linked to it are refused for any worker. */
+function exhaustedGoal(h: Harness): void {
+  completePeriod(h);
+  h.broker.createGoal({ id: "goal-1", title: "Goal one", requester: OPERATOR });
+  budget(h, { id: "b-goal", scopeType: "goal", scopeId: "goal-1", limitTokens: 100 });
+  seedSpend(h, spendRow(h, "r-g", { goalId: "goal-1", inputTokens: 150 }));
+}
+
+for (const wiring of WIRINGS) {
+  test(`[${wiring}] M1: refused tasks ahead of the page cut do not starve claimable ones (limit+3 refused, then 2 claimable)`, async () => {
+    const h = harness(wiring, "on");
+    try {
+      exhaustedGoal(h);
+      // Older claimable tasks first, then newer refused ones: the refused sort first (updated_at DESC, id ASC).
+      for (const id of ["z-ok-1", "z-ok-2"]) h.broker.createTask(taskRequest(id, "worker-a"));
+      for (let index = 0; index < 5; index += 1) h.broker.createTask(taskRequest(`a-refused-${index}`, "worker-a", { goalId: "goal-1" }));
+      await withServer(h, "on", async (baseUrl) => {
+        for (const detail of ["", "&detail=full"]) {
+          const res = await fetch(`${baseUrl}/tasks?${POLL("worker-a")}&limit=2${detail}`);
+          const body = await res.json() as { count: number; limit: number; items: Array<{ id: string }>; budgetOmitted: number; budgetScanCapped: boolean };
+          assert.deepEqual(body.items.map((item) => item.id).sort(), ["z-ok-1", "z-ok-2"], `detail=${detail || "items"}`);
+          assert.equal(body.count, 2);
+          assert.equal(body.limit, 2, "limit stays the requested limit");
+          assert.equal(body.budgetOmitted, 5);
+          assert.equal(body.budgetScanCapped, false);
+        }
+        assert.deepEqual(await snapshotIds(baseUrl, "worker-a"), ["z-ok-1", "z-ok-2"], "SSE agrees");
+        assert.equal((await listingStatus(baseUrl))?.lastOmittedCount, 5);
+      });
+    } finally {
+      h.close();
+    }
+  });
+
+  test(`[${wiring}] M1: the refill stops after min(10 x limit, 1000) candidates and says so`, async () => {
+    const h = harness(wiring, "on");
+    try {
+      exhaustedGoal(h);
+      h.broker.createTask(taskRequest("z-ok", "worker-a"));
+      for (let index = 0; index < 12; index += 1) h.broker.createTask(taskRequest(`a-refused-${String(index).padStart(2, "0")}`, "worker-a", { goalId: "goal-1" }));
+      await withServer(h, "on", async (baseUrl) => {
+        const body = await (await fetch(`${baseUrl}/tasks?${POLL("worker-a")}&limit=1`)).json() as {
+          items: Array<{ id: string }>;
+          budgetOmitted: number;
+          budgetScanCapped: boolean;
+        };
+        assert.deepEqual(body.items, [], "the claimable task is past the 10-candidate bound");
+        assert.equal(body.budgetOmitted, 10);
+        assert.equal(body.budgetScanCapped, true);
+        const wider = await (await fetch(`${baseUrl}/tasks?${POLL("worker-a")}&limit=2`)).json() as { items: Array<{ id: string }> };
+        assert.deepEqual(wider.items.map((item) => item.id), ["z-ok"], "a bound of 20 reaches it");
+      });
+    } finally {
+      h.close();
+    }
+  });
+
+  test(`[${wiring}] M1: a held all-omitted long poll returns promptly once PATCH raises the limit`, async () => {
+    const h = harness(wiring, "on");
+    try {
+      completePeriod(h);
+      budget(h, { id: "b-lane", scopeType: "lane", scopeId: "analyze", limitTokens: 100 });
+      seedSpend(h, spendRow(h, "r-1", { inputTokens: 500 }));
+      h.broker.createTask(taskRequest("t-1", "worker-a"));
+      await withServer(h, "on", async (baseUrl) => {
+        const startedAt = Date.now();
+        const poll = fetch(`${baseUrl}/tasks?${POLL("worker-a")}&waitMs=10000`, { headers: { "x-a2a-requester-id": "worker-a" } });
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        const patched = await fetch(`${baseUrl}/budgets/b-lane`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ limitTokens: 10_000 }),
+        });
+        assert.equal(patched.status, 200);
+        const body = await (await poll).json() as { items: Array<{ id: string }> };
+        assert.deepEqual(body.items.map((item) => item.id), ["t-1"]);
+        assert.ok(Date.now() - startedAt < 5_000, "woken by the budget write's state change, not the 10 s deadline");
+      });
+    } finally {
+      h.close();
+    }
+  });
+
+  test(`[${wiring}] m12: mode off — the worker poll and the SSE snapshot read no budget`, async () => {
+    const h = harness(wiring, "off");
+    try {
+      budget(h, { id: "b-lane", scopeType: "lane", scopeId: "analyze", limitTokens: 1 });
+      seedSpend(h, spendRow(h, "r-1", { inputTokens: 500 }));
+      h.broker.createTask(taskRequest("t-1", "worker-a"));
+      let reads = 0;
+      const spy = <F extends (...args: never[]) => unknown>(fn: F): F => ((...args: never[]) => {
+        reads += 1;
+        return fn(...args);
+      }) as F;
+      h.store.readSpendScopeUsage = spy(h.store.readSpendScopeUsage.bind(h.store));
+      h.store.hasCostReportingSpend = spy(h.store.hasCostReportingSpend.bind(h.store));
+      h.store.readSpendLedgerMetadata = spy(h.store.readSpendLedgerMetadata.bind(h.store));
+      await withServer(h, "off", async (baseUrl) => {
+        const body = await (await fetch(`${baseUrl}/tasks?${POLL("worker-a")}`)).json() as Record<string, unknown>;
+        assert.deepEqual((body.items as Array<{ id: string }>).map((item) => item.id), ["t-1"]);
+        assert.equal("budgetOmitted" in body, false, "the response shape is unchanged in mode off");
+        assert.deepEqual(await snapshotIds(baseUrl, "worker-a"), ["t-1"]);
+      });
+      assert.equal(reads, 0);
+    } finally {
+      h.close();
+    }
+  });
+
+  test(`[${wiring}] m5: a failed scope read is counted once per listing and kept (fail-open)`, () => {
+    const h = harness(wiring, "on");
+    try {
+      completePeriod(h);
+      budget(h, { id: "b-lane", scopeType: "lane", scopeId: "analyze", limitTokens: 100 });
+      for (let index = 0; index < 4; index += 1) h.broker.createTask(taskRequest(`t-${index}`, "worker-a"));
+      let reads = 0;
+      h.store.readSpendScopeUsage = () => {
+        reads += 1;
+        throw new Error("disk I/O error");
+      };
+      const listed = h.broker.listTasks({ assignedWorkerId: "worker-a", status: "queued" });
+      assert.equal(quiet(() => h.broker.filterQueuedListingForWorker("worker-a", listed)).length, 4, "fail-open");
+      assert.equal(reads, 1, "the failed read is not repeated within the listing");
+      assert.deepEqual((({ count, consecutive }) => ({ count, consecutive }))(h.broker.getBudgetCheckFailures()), { count: 1, consecutive: 1 });
+    } finally {
+      h.close();
+    }
+  });
+
+  test(`[${wiring}] m6: at create, the target is the agent scope only when it is a node`, () => {
+    const h = harness(wiring, "on");
+    try {
+      completePeriod(h);
+      budget(h, { id: "b-agent", scopeType: "agent", scopeId: "worker-c", limitTokens: 10, enforce: "pause" });
+      seedSpend(h, spendRow(h, "r-1", { agentId: "worker-c", inputTokens: 50 }));
+      const request = (id: string, kind: "node" | "service"): CreateTaskRequest => ({
+        id,
+        intent: "analyze",
+        requester: { id: "hub-a", kind: "node", role: "hub" },
+        target: { id: "worker-c", kind, role: "analyst" },
+        message: `task ${id}`,
+        payload: {},
+      });
+      assert.equal(refusal(() => h.broker.createTask(request("t-node", "node"))).details?.reason, "budget_paused");
+      assert.equal(h.broker.createTask(request("t-service", "service")).status, "queued", "no agent scope for a non-node target");
+    } finally {
+      h.close();
+    }
+  });
+
+  test(`[${wiring}] m7: when enforcement is no longer on, budget-limited goals are resumed without spend reads (on -> off, on -> shadow)`, () => {
+    for (const next of ["off", "shadow"] as const) {
+      const h = harness(wiring, "on");
+      try {
+        exhaustedGoal(h);
+        assert.deepEqual(quiet(() => h.broker.applyGoalBudgetLimits())?.limited, ["goal-1"]);
+        h.reopen(next);
+        let reads = 0;
+        h.store.readSpendScopeUsage = () => {
+          reads += 1;
+          return { usdSpent: 0, tokensSpent: 1_000n };
+        };
+        const run = quiet(() => h.broker.applyGoalBudgetLimits());
+        assert.deepEqual(run?.resumed, ["goal-1"], next);
+        const goal = h.broker.getGoal("goal-1")!;
+        assert.equal(goal.status, "pursuing");
+        assert.equal(goal.history[goal.history.length - 1]?.note, "budget_enforcement_not_on");
+        assert.equal(h.broker.getBudgetEnforcementCounters().goals.resumedTotal, 1);
+        if (next === "off") assert.equal(reads, 0, "mode off reads no spend");
+        else assert.equal(h.broker.getBudgetEnforcementCounters().goals.wouldLimitTotal, 1, "shadow still reports what on would do");
+      } finally {
+        h.close();
+      }
+    }
+  });
+
+  test(`[${wiring}] m11: live and replayed worker-assignment events pass the same budget predicate as the snapshot`, () => {
+    const h = harness(wiring, "on");
+    try {
+      exhaustedGoal(h);
+      const open = (lastEventId?: string) => {
+        const req = new EventEmitter() as unknown as IncomingMessage;
+        (req as unknown as { headers: Record<string, string> }).headers = lastEventId ? { "last-event-id": lastEventId } : {};
+        const chunks: string[] = [];
+        const res = {
+          writableEnded: false,
+          writeHead() {},
+          flushHeaders() {},
+          write(chunk: string) {
+            chunks.push(String(chunk));
+            return true;
+          },
+          end() {
+            (this as { writableEnded: boolean }).writableEnded = true;
+          },
+        } as unknown as ServerResponse<IncomingMessage>;
+        handleWorkerAssignmentEventStream(req, res, { broker: h.broker, workerId: "worker-a", heartbeatMs: 0 });
+        const assignments = () => chunks.join("").split("\n\n")
+          .filter((block) => block.includes("event: worker-assignment\n"))
+          .map((block) => (JSON.parse(block.split("\n").find((line) => line.startsWith("data: "))!.slice(6)) as { taskId: string }).taskId);
+        return { req, assignments };
+      };
+      const live = open();
+      quiet(() => {
+        h.broker.createTask(taskRequest("t-refused", "worker-a", { goalId: "goal-1" }));
+        h.broker.createTask(taskRequest("t-ok", "worker-a"));
+      });
+      assert.deepEqual(live.assignments(), ["t-ok"], "live events omit the refused task");
+      live.req.emit("close");
+      const replay = open("0");
+      assert.deepEqual(replay.assignments(), ["t-ok"], "Last-Event-ID replay too");
+      replay.req.emit("close");
+      assert.ok(h.broker.getBudgetEnforcementCounters().listing.omittedTotal >= 2);
+    } finally {
+      h.close();
+    }
+  });
+
+  test(`[${wiring}] m12: pause at create through the exchange-message path`, () => {
+    const h = harness(wiring, "on");
+    try {
+      completePeriod(h);
+      budget(h, { id: "b-pause", scopeType: "lane", scopeId: "analyze", limitTokens: 10, enforce: "pause" });
+      seedSpend(h, spendRow(h, "r-1", { inputTokens: 50 }));
+      const exchange = h.broker.startExchange({
+        requester: { id: "hub-a", kind: "node", role: "hub" },
+        target: { id: "worker-a", kind: "node", role: "analyst" },
+        message: "start",
+        intent: "analyze",
+      });
+      const error = refusal(() => h.broker.addExchangeMessage(exchange.id, {
+        actor: { id: "worker-a", kind: "node", role: "analyst" },
+        message: "accepted",
+        decision: "accepted",
+      }));
+      assert.equal(error.details?.reason, "budget_paused");
+      assert.deepEqual(h.broker.listTasks({ exchangeId: exchange.id }), [], "no task is created for the exchange");
+    } finally {
+      h.close();
+    }
+  });
+}
+
+test("m3 (worker-thread): the goal overlay is dropped once the goal write is durable; a failed goal write resyncs from the store; listGoals applies the overlay before its status filter", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-goal-overlay-"));
+  const dbFile = join(dir, "state.sqlite");
+  const exec = (sql: string) => {
+    const db = new DatabaseSync(dbFile);
+    try {
+      db.exec(sql);
+    } finally {
+      db.close();
+    }
+  };
+  const handle = createWorkerThreadPersistence({ dbFile, loadSource: "hot-tables", queueCapacity: 256 });
+  const originalError = console.error;
+  try {
+    const proxy = handle.stateStore;
+    const broker = new InMemoryA2ABroker(proxy, proxy.load(), { budgetPeriodTimeZone: "UTC", budgetEnforcementMode: "on" });
+    const overlay = broker["goalUpdates"] as Map<string, unknown>;
+    for (const id of ["goal-1", "goal-2"]) broker.createGoal({ id, title: id, requester: OPERATOR });
+    for (const id of ["goal-1", "goal-2"]) {
+      broker.createBudget({ id: `b-${id}`, scopeType: "goal", scopeId: id, period: "month", limitTokens: 10, createdBy: "o" });
+    }
+    proxy.saveHotEntities({
+      spendEvents: ["goal-1", "goal-2"].map((goalId) => ({
+        taskId: `r-${goalId}`, recordedAt: new Date().toISOString(), periodKey: broker.budgetPeriodKey(), agentId: "worker-a",
+        lane: "analyze", goalId, costUsd: 0, inputTokens: 50, outputTokens: 0, costKnown: false,
+      })),
+    });
+    await proxy.awaitDurablePersistenceAck();
+    exec("UPDATE broker_metadata SET value = '2000-01' WHERE key = 'spend_ledger_first_period'");
+    // goal-2's queued update fails.
+    exec(`CREATE TRIGGER goal_fail BEFORE UPDATE ON broker_goals
+          WHEN NEW.id = 'goal-2' BEGIN SELECT RAISE(ABORT, 'goal write failed'); END`);
+    assert.deepEqual(quiet(() => broker.applyGoalBudgetLimits())?.limited.sort(), ["goal-1", "goal-2"]);
+    // Before the queued writes settle the overlay serves both, ahead of the status filter.
+    assert.deepEqual(broker.listGoals({ status: "budget_limited" }).map((goal) => goal.id).sort(), ["goal-1", "goal-2"]);
+    assert.deepEqual(broker.listGoals({ status: "pursuing" }), []);
+    console.error = () => {};
+    await assert.rejects(() => proxy.awaitDurablePersistenceAck(), /goal write failed/);
+    await new Promise((resolve) => setImmediate(resolve));
+    console.error = originalError;
+    assert.equal(overlay.size, 0, "settled writes leave the overlay (durable or resynced)");
+    assert.equal(broker.getGoal("goal-1")?.status, "budget_limited", "the stored row");
+    assert.equal(broker.getGoal("goal-2")?.status, "pursuing", "resynced from the store");
+    assert.deepEqual(
+      broker.listAuditEvents({ action: "goal.status_changed" }).map((event) => event.targetId),
+      ["goal-1"],
+      "the failed write's audit event is gone",
+    );
+  } finally {
+    console.error = originalError;
+    await handle.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("m12: lease-gated claim refused by a budget leaves no lease owner in the lease authority", async () => {
+  const h = harness("repositories", "on");
+  const dir = mkdtempSync(join(tmpdir(), "a2a-budget-lease-"));
+  try {
+    completePeriod(h);
+    budget(h, { id: "b-lane", scopeType: "lane", scopeId: "analyze", limitTokens: 100 });
+    seedSpend(h, spendRow(h, "r-1", { inputTokens: 500 }));
+    h.broker.createTask(taskRequest("t-1", "worker-a"));
+    const sharedStateFile = join(dir, "shared-state.sqlite");
+    const server = await startTestServer({
+      broker: h.broker,
+      stateStore: h.store,
+      enforceRequesterIdentity: false,
+      budgetEnforcementMode: "on",
+      budgetPeriodTimeZone: "UTC",
+      rateLimitMaxRequests: 1_000,
+      sharedStateLeaseV1: true,
+      sharedStateFile,
+      staleReaperOlderThanSec: 60,
+    });
+    try {
+      const refused = await fetch(`${server.baseUrl}/tasks/t-1/claim`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workerId: "worker-a" }),
+      });
+      assert.equal(refused.status, 403);
+      const db = new DatabaseSync(sharedStateFile, { readOnly: true });
+      try {
+        const leases = db.prepare("SELECT owner_key_digest, attempt_key_digest FROM shared_state_lease").all().map((row) => ({ ...row }));
+        assert.ok(leases.length >= 1, "the authority granted a lease for the claim");
+        assert.deepEqual(leases.map((lease) => lease.owner_key_digest), leases.map(() => null), "and the refusal released it (no owner)");
+      } finally {
+        db.close();
+      }
+      assertStillQueued(h, "t-1");
+    } finally {
+      await server.close();
+    }
+  } finally {
+    h.close();
+    rmSync(dir, { recursive: true, force: true });
   }
 });

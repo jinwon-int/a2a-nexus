@@ -398,11 +398,14 @@ function handleBudgetList(ctx: GoalRouteContext): void {
   );
 }
 
-/** #2499 slice 3b-2: a store read inside the budget status handler threw (the `ledger_read_failed` answer). */
-class LedgerReadFailure extends Error {
-  constructor(readonly cause: unknown) {
-    super(cause instanceof Error ? cause.message : String(cause));
-  }
+/**
+ * #2499 slice 3b-2: a failed ledger read, classified by error type: a SQLite
+ * error (`code` ERR_SQLITE_*, which includes an integer overflow, decision
+ * 13). Any other throw is not a ledger read failure.
+ */
+function isLedgerReadError(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return error instanceof Error && typeof code === "string" && code.startsWith("ERR_SQLITE");
 }
 
 const ZERO_TOTALS: SpendTotals = {
@@ -459,11 +462,12 @@ const ZERO_TOTALS: SpendTotals = {
  * - slice 3b-2, additive, from memory: `consecutive` in `checkFailed`
  *   (failures since the last successful budget read); `claims`
  *   `{ refusedTotal, wouldRefuseTotal, lastAt }`, `listing`
- *   `{ omittedTotal, lastOmittedAt, wouldOmitTotal }`, `creates`
+ *   `{ omittedTotal, lastOmittedAt, lastOmittedCount, wouldOmitTotal }`, `creates`
  *   `{ refusedTotal, wouldRefuseTotal, lastAt }` and `goals`
- *   `{ limitedTotal, resumedTotal, wouldLimitTotal, wouldResumeTotal, lastAt }`
- *   since startup. Only a failed store read is `ledger_read_failed`
- *   (`budgetsTruncated: null`); any other error is mapped as usual;
+ *   `{ limitedTotal, resumedTotal, wouldLimitTotal, lastAt }`
+ *   since startup (`listing` also `lastOmittedCount`). Only a SQLite read
+ *   error (ERR_SQLITE_*) is `ledger_read_failed` (`budgetsTruncated: null`,
+ *   so the field is boolean | null); any other error is mapped as usual;
  * - the spend ledger is SQLite-only: other stores answer `available: false`.
  */
 function handleBudgetStatus(ctx: GoalRouteContext): void {
@@ -520,25 +524,17 @@ function handleBudgetStatus(ctx: GoalRouteContext): void {
     empty(noLedger);
     return;
   }
-  // #2499 slice 3b-2: only a failed store read is `ledger_read_failed`; a
-  // BrokerError keeps its mapping and any other throw (a programming error)
-  // is a 500.
-  const read = <T>(fn: () => T): T => {
-    try {
-      return fn();
-    } catch (error) {
-      if (error instanceof BrokerError) throw error;
-      throw new LedgerReadFailure(error);
-    }
-  };
+  // #2499 slice 3b-2: only a SQLite read error (isLedgerReadError), from
+  // any read in this block, is `ledger_read_failed`; a BrokerError keeps its
+  // mapping and any other throw (a programming error) is a 500.
   let body: Record<string, unknown>;
   try {
-    const result = read(() => ctx.broker.readSpendTotals({
+    const result = ctx.broker.readSpendTotals({
       periodKey: period,
       ...(scopeType ? { scopeType } : {}),
       ...(scopeId !== undefined ? { scopeId } : {}),
       limit: BUDGET_STATUS_SCOPE_LIMIT,
-    }));
+    });
     if (!result) {
       empty(noLedger);
       return;
@@ -547,7 +543,7 @@ function handleBudgetStatus(ctx: GoalRouteContext): void {
     // for a period strictly after the one the ledger started recording in
     // (that first period, and any before it, may be partial; `YYYY-MM`
     // compares as a string).
-    const coverage = read(() => ctx.broker.readSpendLedgerCoverage());
+    const coverage = ctx.broker.readSpendLedgerCoverage();
     const ledger = {
       firstPeriod: coverage?.firstPeriod ?? null,
       timeZone: coverage?.timeZone ?? null,
@@ -567,7 +563,7 @@ function handleBudgetStatus(ctx: GoalRouteContext): void {
     const budgetsTruncated = listed.length > BUDGET_STATUS_BUDGET_LIMIT;
     const budgets = listed.slice(0, BUDGET_STATUS_BUDGET_LIMIT);
     const topSpend = named && ctx.broker.hasBudgets()
-      ? read(() => ctx.broker.listTopSpendRows({ periodKey: period, scopeType: scopeType!, scopeId: scopeId!, limit: top }))
+      ? ctx.broker.listTopSpendRows({ periodKey: period, scopeType: scopeType!, scopeId: scopeId!, limit: top })
       : undefined;
     const topRows = topSpend ? { limit: top, byCost: topSpend.byCost.map(topRowJson), byTokens: topSpend.byTokens.map(topRowJson) } : null;
     body = {
@@ -578,15 +574,15 @@ function handleBudgetStatus(ctx: GoalRouteContext): void {
       scopes: scopes.map((scope) => scopeJson(scope, ctx.broker)),
       truncated: result.truncated,
       ledger,
-      budgets: budgets.map((budget) => budgetEvaluationJson(read(() => ctx.broker.evaluateBudget(budget, period)))),
+      budgets: budgets.map((budget) => budgetEvaluationJson(ctx.broker.evaluateBudget(budget, period))),
       budgetsTruncated,
       topRows,
       ...live,
     };
   } catch (error) {
-    if (!(error instanceof LedgerReadFailure)) throw error;
+    if (!isLedgerReadError(error)) throw error;
     // The ledger exists (available stays true); the read failed.
-    ctx.broker.noteBudgetStatusReadFailure(error.cause);
+    ctx.broker.noteBudgetStatusReadFailure(error);
     // `budgetsTruncated` is unknown when the read failed (null, like the totals).
     empty({ available: true, readError: "ledger_read_failed", ledger: null, budgetsTruncated: null });
     return;

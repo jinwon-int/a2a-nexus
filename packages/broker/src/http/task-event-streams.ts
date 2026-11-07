@@ -14,6 +14,9 @@ import {
 } from "./sse-stream-lifecycle.js";
 import { writeSseEvent, writeSseResponseHeaders } from "./sse.js";
 
+/** #2499 slice 3b-2: how long one budget filter (its memoized reads) serves a worker's live assignment events. */
+const WORKER_ASSIGNMENT_BUDGET_MEMO_MS = 5_000;
+
 export function handleWorkerAssignmentEventStream(
   req: IncomingMessage,
   res: ServerResponse<IncomingMessage>,
@@ -50,6 +53,26 @@ export function handleWorkerAssignmentEventStream(
   let flushed = false;
   let lastSentId = afterId;
   const pending: TaskStatusEvent[] = [];
+  // #2499 slice 3b-2: live and replayed assignments pass the same budget
+  // predicate as the snapshot and the worker poll, through one filter (its
+  // memoized budget reads) reused for WORKER_ASSIGNMENT_BUDGET_MEMO_MS. A
+  // throw keeps the event (fail-open; the stream must not break).
+  let budget: { filter: ReturnType<InMemoryA2ABroker["createQueuedListingBudgetFilter"]>; atMs: number } | undefined;
+  const budgetAllows = (taskId: string): boolean => {
+    try {
+      const nowMs = Date.now();
+      if (!budget || nowMs - budget.atMs > WORKER_ASSIGNMENT_BUDGET_MEMO_MS) {
+        budget = { filter: broker.createQueuedListingBudgetFilter(workerId), atMs: nowMs };
+      }
+      const decision = budget.filter?.decide(taskId) ?? "keep";
+      if (decision !== "keep") {
+        budget.filter?.record({ omitted: decision === "omit" ? 1 : 0, wouldOmit: decision === "would_omit" ? 1 : 0, live: true });
+      }
+      return decision !== "omit";
+    } catch {
+      return true;
+    }
+  };
   const sendAssignment = (event: TaskStatusEvent): void => {
     if (!isWorkerAssignmentEvent(event, workerId)) {
       return;
@@ -58,6 +81,9 @@ export function handleWorkerAssignmentEventStream(
       return;
     }
     lastSentId = event.id;
+    if (!budgetAllows(event.taskId)) {
+      return;
+    }
     writeSseEvent(res, "worker-assignment", buildWorkerAssignmentEvent(event), String(event.id));
   };
 

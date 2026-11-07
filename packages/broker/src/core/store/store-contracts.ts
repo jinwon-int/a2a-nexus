@@ -124,6 +124,14 @@ export interface BrokerStateStore {
    * success, preserving the existing "persistState returned" ACK boundary.
    */
   awaitDurablePersistenceAck?(): Promise<void>;
+  /**
+   * #2499 slice 3b-2: the most recently queued write (worker-thread
+   * topology), without taking it out of the set awaitDurablePersistenceAck
+   * reports on; undefined when no write is queued or writes are synchronous
+   * (in-process SQLite). Lets the broker settle in-memory state that waits on
+   * one write (budget write generations, the goal overlay).
+   */
+  latestQueuedWrite?(): Promise<unknown> | undefined;
   getPersistenceInfo?(): BrokerPersistenceInfo;
   /** Atomically record first use of a live-approval scope key. Returns false on replay. */
   consumeLiveApprovalKey?(key: string, consumedAt: string): boolean;

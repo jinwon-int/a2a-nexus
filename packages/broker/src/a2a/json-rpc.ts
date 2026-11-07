@@ -626,7 +626,7 @@ export function executeA2AJsonRpc(
       return failure(id, brokerErrorCode(error.code), error.message, { brokerCode: error.code });
     }
     if (error instanceof BrokerError) {
-      return failure(id, brokerErrorCode(error.code, error.message), error.message, brokerErrorData(error.code, error.message));
+      return failure(id, brokerErrorCode(error.code, error.message), error.message, brokerErrorData(error.code, error.message, error.details));
     }
     if (error instanceof Error) {
       // An unexpected (non-BrokerError) exception is a server-side fault, not a
@@ -958,6 +958,36 @@ export function executeSendMessage(
     throw new BrokerError("not_found", "assigned worker not found");
   }
 
+  // Embedded single-agent conformance conventions (default-agent mode only):
+  // the official A2A TCK drives SUT behavior via messageId prefixes. A
+  // direct-message convention is answered without creating a task; an
+  // artifact convention is completed inline so the SendMessage response
+  // carries the terminal task with its artifacts. Production routing never
+  // interprets messageId prefixes.
+  const convention =
+    options.defaultAgentNodeId && targetWorker.nodeId === options.defaultAgentNodeId
+      ? matchDefaultAgentConvention(a2aMessageId)
+      : null;
+
+  // #2499 slice 3b-2: the budget decisions this send would meet are taken
+  // before it creates anything, so a refusal (-32012) leaves no exchange and
+  // no task behind and a retry cannot pile up orphans: the create-time
+  // `pause` refusal for the task it would create, and, for a convention the
+  // default agent claims inline, the claim refusal. In `shadow` nothing is
+  // refused or counted here (the real create and claim count).
+  if (convention?.kind !== "direct-message") {
+    options.broker.assertCreateBudgetAllowed({
+      intent,
+      requester: actor,
+      target: { id: targetWorker.nodeId, kind: "node", role: targetWorker.role },
+      assignedWorkerId: assignedWorker.nodeId,
+      message: text,
+    });
+  }
+  if (convention && convention.kind !== "direct-message") {
+    options.broker.assertClaimBudgetAllowed({ workerId: assignedWorker.nodeId, lane: intent });
+  }
+
   const exchange = options.broker.startExchange({
     requester: actor,
     target: {
@@ -969,17 +999,6 @@ export function executeSendMessage(
     intent,
     via,
   });
-
-  // Embedded single-agent conformance conventions (default-agent mode only):
-  // the official A2A TCK drives SUT behavior via messageId prefixes. A
-  // direct-message convention is answered without creating a task; an
-  // artifact convention is completed inline so the SendMessage response
-  // carries the terminal task with its artifacts. Production routing never
-  // interprets messageId prefixes.
-  const convention =
-    options.defaultAgentNodeId && targetWorker.nodeId === options.defaultAgentNodeId
-      ? matchDefaultAgentConvention(a2aMessageId)
-      : null;
 
   if (convention?.kind === "direct-message") {
     const reply = options.broker.addExchangeMessage(exchange.id, {
@@ -1052,22 +1071,25 @@ export function executeSendMessage(
 }
 
 /**
- * #2499 slice 3b-2: the inline claim of the default-agent conventions. A
- * budget refusal (`policy_denied`, reason `budget_exhausted`) happens before
- * any claim mutation, so the created task stays queued; the send then fails
- * with a policy error whose message names the reason, the task and the
- * context, instead of a bare refusal the caller cannot tie to the created
- * task. Every other claim error propagates unchanged, as before.
+ * #2499 slice 3b-2: the inline claim of the default-agent conventions. The
+ * send checked the claim budget before it created anything; this is the
+ * defence for a refusal that still happens here (the budget ran out in
+ * between). The just-created task is canceled through the normal cancel
+ * path with reason `budget_exhausted` (so it gets its spend row and cannot
+ * run later), and the send fails with -32012 naming the task and context in
+ * the message and in the error data. Every other claim error propagates
+ * unchanged, as before.
  */
 function claimConventionTask(broker: InMemoryA2ABroker, taskId: string, workerId: string, contextId: string): void {
   try {
     broker.claimTask(taskId, workerId);
   } catch (error) {
     if (error instanceof BrokerError && error.code === "policy_denied" && error.details?.reason === "budget_exhausted") {
+      broker.cancelTask(taskId, { actor: { id: "broker", kind: "service", role: "hub" }, reason: "budget_exhausted" });
       throw new BrokerError(
         "policy_denied",
-        `budget_exhausted: claim of task ${taskId} (context ${contextId}) refused by a monthly budget; the task stays queued`,
-        { ...error.details, taskId, contextId },
+        `budget_exhausted: claim of task ${taskId} (context ${contextId}) refused by a monthly budget; the task was canceled`,
+        { ...error.details, taskId, contextId, taskStatus: "canceled" },
       );
     }
     throw error;
@@ -1372,7 +1394,7 @@ function buildSubscribeUrl(publicBaseUrl: string | undefined, taskId: string): s
  */
 export function jsonRpcErrorFromUnknown(error: unknown): { code: number; message: string; data?: unknown } {
   if (error instanceof BrokerError) {
-    return { code: brokerErrorCode(error.code, error.message), message: error.message, data: brokerErrorData(error.code, error.message) };
+    return { code: brokerErrorCode(error.code, error.message), message: error.message, data: brokerErrorData(error.code, error.message, error.details) };
   }
   return { code: -32603, message: error instanceof Error ? error.message : String(error) };
 }
@@ -1455,7 +1477,7 @@ function brokerErrorCode(code: BrokerError["code"], message?: string): number {
  * conditions a broker domain is used (the broker code is always preserved in
  * metadata for existing consumers).
  */
-function brokerErrorData(code: BrokerError["code"], message?: string): unknown[] {
+function brokerErrorData(code: BrokerError["code"], message?: string, details?: Record<string, unknown>): unknown[] {
   const mapping = brokerErrorMapping(code, message);
   const reason = mapping.a2a?.reason ?? code.toUpperCase();
   const domain = mapping.a2a ? A2A_ERROR_DOMAIN : "a2a-broker.local";
@@ -1464,7 +1486,24 @@ function brokerErrorData(code: BrokerError["code"], message?: string): unknown[]
       "@type": A2A_ERROR_INFO_TYPE,
       domain,
       reason,
-      metadata: { brokerCode: code },
+      metadata: { brokerCode: code, ...budgetRefusalMetadata(code, details) },
     },
   ];
+}
+
+/**
+ * #2499 slice 3b-2: a budget refusal (`policy_denied` with reason
+ * `budget_exhausted` or `budget_paused`) carries its reason and, when the
+ * send had created one, the task and context ids in the ErrorInfo metadata
+ * (string values, like every ErrorInfo metadata entry). Other errors are
+ * unchanged.
+ */
+function budgetRefusalMetadata(code: BrokerError["code"], details: Record<string, unknown> | undefined): Record<string, string> {
+  const budgetReason = details?.reason;
+  if (code !== "policy_denied" || (budgetReason !== "budget_exhausted" && budgetReason !== "budget_paused")) return {};
+  return {
+    budgetReason,
+    ...(typeof details?.taskId === "string" ? { taskId: details.taskId } : {}),
+    ...(typeof details?.contextId === "string" ? { contextId: details.contextId } : {}),
+  };
 }

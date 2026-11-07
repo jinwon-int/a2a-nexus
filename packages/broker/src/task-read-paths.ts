@@ -7,7 +7,7 @@ import { BrokerError } from "./core/broker-error.js";
 import { SqliteBrokerStateStore } from "./core/store/store.js";
 import { HOT_READ_HARD_MAX_LIMIT } from "./core/store/store-hot-select-projections.js";
 import { failureReadbackFromError } from "./core/task-error-details.js";
-import type { InMemoryA2ABroker, TaskDiagnosticsOptions } from "./core/broker.js";
+import type { InMemoryA2ABroker, QueuedListingBudgetDecision, QueuedListingBudgetFilter, TaskDiagnosticsOptions } from "./core/broker.js";
 import type { BrokerStateStore, SqliteTaskListItemProjection } from "./core/store/store.js";
 import type {
   AuditEvent,
@@ -147,6 +147,61 @@ function collectLiveActiveReadPathItems<T extends { id: string; status: TaskStat
     }
     const widened = fetchLimit === undefined ? undefined : fetchLimit * ACTIVE_READ_PATH_OVERFETCH_FACTOR;
     fetchLimit = widened !== undefined && widened > ACTIVE_READ_PATH_MAX_OVERFETCH ? undefined : widened;
+  }
+}
+
+/** #2499 slice 3b-2: the smallest fetch of the budget-filtered worker poll. */
+const BUDGET_LISTING_MIN_FETCH = 50;
+/** #2499 slice 3b-2: candidate tasks one worker poll scans at most: min(10 x limit, 1000), never below the limit. */
+const BUDGET_LISTING_SCAN_FACTOR = 10;
+const BUDGET_LISTING_SCAN_MAX = 1_000;
+
+/**
+ * #2499 slice 3b-2 (spec "Claim retry loop"): the worker poll with the budget
+ * filter applied BEFORE the page cut, so tasks a claim would refuse at the
+ * head of the worker's ordering cannot hide claimable ones behind them.
+ * `read(limit)` is the normal read path at a fetch size; each larger fetch
+ * is a superset in the same order (the active read path's widening
+ * contract), so the fetch widens until `requestedLimit` tasks are kept, the
+ * queue is exhausted, or `min(10 x limit, 1000)` candidates were scanned
+ * (`scanCapped`). A task is decided once per poll. `omitted` counts the
+ * refused tasks ahead of the last kept one (or all scanned when the page is
+ * short); the filter's counters are recorded once per call.
+ */
+export function listBudgetFilteredWorkerQueue<T extends { id: string }>(
+  read: (limit: number) => T[],
+  requestedLimit: number,
+  filter: QueuedListingBudgetFilter,
+): { items: T[]; omitted: number; scanCapped: boolean } {
+  const limit = Math.max(1, Math.floor(requestedLimit));
+  const bound = Math.max(limit, Math.min(BUDGET_LISTING_SCAN_FACTOR * limit, BUDGET_LISTING_SCAN_MAX));
+  let fetch = Math.min(Math.max(limit, BUDGET_LISTING_MIN_FETCH), bound);
+  const decisions = new Map<string, QueuedListingBudgetDecision>();
+  for (;;) {
+    const candidates = read(fetch);
+    const exhausted = candidates.length < fetch;
+    const items: T[] = [];
+    let omitted = 0;
+    let wouldOmit = 0;
+    for (const candidate of candidates) {
+      if (items.length >= limit) break;
+      let decision = decisions.get(candidate.id);
+      if (decision === undefined) {
+        decision = filter.decide(candidate.id);
+        decisions.set(candidate.id, decision);
+      }
+      if (decision === "omit") {
+        omitted += 1;
+        continue;
+      }
+      if (decision === "would_omit") wouldOmit += 1;
+      items.push(candidate);
+    }
+    if (items.length >= limit || exhausted || fetch >= bound) {
+      filter.record({ omitted, wouldOmit });
+      return { items, omitted, scanCapped: items.length < limit && !exhausted };
+    }
+    fetch = Math.min(fetch * ACTIVE_READ_PATH_OVERFETCH_FACTOR, bound);
   }
 }
 

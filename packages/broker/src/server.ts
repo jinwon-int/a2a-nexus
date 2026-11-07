@@ -1094,9 +1094,11 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       // lost to a failed save is repaired without a restart. Non-fatal by
       // itself; no-op without a spend ledger.
       broker.reconcileSpendLedger({ maxPages: 1 });
-      // #2499 slice 3b-2: lost late meterings get a second pass, and goal-scope
-      // budgets move goals to budget_limited and back. Both are bounded per
-      // sweep, never throw, and do nothing in mode off (or without a ledger).
+      // #2499 slice 3b-2: lost late meterings get a second pass (ledger
+      // correctness: runs in every enforcement mode, no-op without a spend
+      // ledger), and goal-scope budgets move goals to budget_limited and back
+      // (in a mode other than `on` budget-limited goals are only resumed,
+      // without spend reads). Both are bounded per sweep and never throw.
       broker.restageLostLateMeterings();
       broker.applyGoalBudgetLimits();
       if (requeued.length > 0 || deadLettered.length > 0 || stalledWaves.length > 0) {

@@ -357,6 +357,8 @@ export class SqliteWorkerThread {
 export class WorkerThreadProxyStore extends SqliteBrokerStateStore {
   private readonly queue: WriteQueue;
   private readonly pendingWrites: Promise<unknown>[] = [];
+  /** #2499 slice 3b-2: the most recently tracked write (latestQueuedWrite). */
+  private lastWrite: Promise<unknown> | undefined;
   public readonly workerThread: SqliteWorkerThread;
 
   constructor(
@@ -458,8 +460,14 @@ export class WorkerThreadProxyStore extends SqliteBrokerStateStore {
     }
   }
 
+  /** #2499 slice 3b-2: see BrokerStateStore.latestQueuedWrite. */
+  latestQueuedWrite(): Promise<unknown> | undefined {
+    return this.lastWrite;
+  }
+
   private trackWrite(promise: Promise<unknown>): void {
     this.pendingWrites.push(promise);
+    this.lastWrite = promise;
     // Always leave a trace of a background write failure. Fire-and-forget saves
     // (stale-reaper requeues, snapshot extensions, relay outbox) may never be
     // consumed by awaitDurablePersistenceAck, so without this the rejection was

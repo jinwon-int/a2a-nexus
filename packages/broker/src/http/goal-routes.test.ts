@@ -60,6 +60,11 @@ function makeRouter(broker = new InMemoryA2ABroker()) {
   return { broker, route };
 }
 
+/** #2499 slice 3b-2 (m8): a store read failure as node:sqlite reports it. */
+function sqliteError(message: string): Error {
+  return Object.assign(new Error(message), { code: "ERR_SQLITE_ERROR", errcode: 10 });
+}
+
 function rejectsWith(code: BrokerError["code"], pattern?: RegExp) {
   return (error: unknown) => error instanceof BrokerError && error.code === code && (!pattern || pattern.test(error.message));
 }
@@ -944,7 +949,7 @@ test("handler: budget status — enforcement, budgets, limits, topRows, checkFai
     // A failed claim-time read is counted; a failed status read still answers with it.
     const original = r.store.readSpendScopeUsage;
     r.store.readSpendScopeUsage = () => {
-      throw new Error("disk I/O error");
+      throw sqliteError("disk I/O error");
     };
     const originalWarn = console.warn;
     console.warn = () => {};
@@ -1171,20 +1176,53 @@ test("7c: budget status — only a failed store read is ledger_read_failed (budg
   try {
     await r.route("POST", "/budgets", { body: { id: "b-analyze", scopeType: "lane", scopeId: "analyze", period: "month", limitUsd: 5 } });
     const totals = r.store.readSpendTotals;
+    // m8: classified by error type. A genuine node:sqlite error is a failed ledger read.
+    const genuine = (() => {
+      const db = new DatabaseSync(":memory:");
+      try {
+        db.prepare("SELECT * FROM missing_table").all();
+      } catch (error) {
+        return error;
+      } finally {
+        db.close();
+      }
+      throw new Error("expected a SQLite error");
+    })();
+    assert.equal((genuine as { code?: string }).code, "ERR_SQLITE_ERROR");
     r.store.readSpendTotals = () => {
-      throw new Error("disk I/O error");
+      throw genuine;
     };
     const failed = await r.route("GET", "/budgets/status");
     assert.equal(failed.status, 200);
     assert.equal(failed.json.readError, "ledger_read_failed");
     assert.equal(failed.json.budgetsTruncated, null, "unknown, not a hard-coded false");
-    assert.deepEqual(Object.keys(failed.json.listing).sort(), ["lastOmittedAt", "omittedTotal", "wouldOmitTotal"], "counters still served from memory");
+    assert.deepEqual(Object.keys(failed.json.listing).sort(), ["lastOmittedAt", "lastOmittedCount", "omittedTotal", "wouldOmitTotal"], "counters still served from memory");
+    // A TypeError from inside the same read is a programming error: it propagates.
+    r.store.readSpendTotals = () => {
+      throw new TypeError("not a ledger read");
+    };
+    await assert.rejects(() => r.route("GET", "/budgets/status"), (error: unknown) => error instanceof TypeError && !(error instanceof BrokerError));
     r.store.readSpendTotals = totals;
-    // A throw outside the store reads (here: the in-memory budget list) propagates (HTTP 500).
+    // Also outside the store reads (here: the in-memory budget list).
+    const listBudgets = r.broker.listBudgets.bind(r.broker);
     r.broker.listBudgets = () => {
       throw new TypeError("not a ledger read");
     };
     await assert.rejects(() => r.route("GET", "/budgets/status"), (error: unknown) => error instanceof TypeError && !(error instanceof BrokerError));
+    r.broker.listBudgets = listBudgets;
+    // Over HTTP the TypeError is a 500.
+    const server = await startTestServer({ broker: r.broker, stateStore: r.store, enforceRequesterIdentity: false, budgetEnforcementMode: "on" });
+    try {
+      r.store.readSpendTotals = () => {
+        throw new TypeError("not a ledger read");
+      };
+      const res = await fetch(`${server.baseUrl}/budgets/status`);
+      assert.equal(res.status, 500);
+      assert.equal(((await res.json()) as { error: { code: string } }).error.code, "internal_error");
+    } finally {
+      r.store.readSpendTotals = totals;
+      await server.close();
+    }
   } finally {
     console.warn = originalWarn;
     r.close();

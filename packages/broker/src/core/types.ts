@@ -406,10 +406,15 @@ export interface BudgetEvaluation {
  */
 export interface BudgetEnforcementCounters {
   claims: { refusedTotal: number; wouldRefuseTotal: number; lastAt: string | null };
-  /** Tasks omitted from (or, in shadow, kept in) worker queued listings; each listing adds its count. */
-  listing: { omittedTotal: number; lastOmittedAt: string | null; wouldOmitTotal: number };
+  /**
+   * Tasks omitted from (or, in shadow, kept in) worker queued listings. Each
+   * listing evaluation adds its count, so the totals grow with poll frequency
+   * (a held long poll re-evaluates on every wake); `lastOmittedCount` is the
+   * latest listing's count.
+   */
+  listing: { omittedTotal: number; lastOmittedAt: string | null; lastOmittedCount: number; wouldOmitTotal: number };
   creates: { refusedTotal: number; wouldRefuseTotal: number; lastAt: string | null };
-  goals: { limitedTotal: number; resumedTotal: number; wouldLimitTotal: number; wouldResumeTotal: number; lastAt: string | null };
+  goals: { limitedTotal: number; resumedTotal: number; wouldLimitTotal: number; lastAt: string | null };
 }
 
 /** One of the largest spend rows of a scope in a period (outlier view, #2499 slice 3b). */
