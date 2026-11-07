@@ -328,6 +328,8 @@ import type {
   ProposalDetails,
   ProposalListFilters,
   RegisterWorkerRequest,
+  SpendEventRecord,
+  SpendLedgerCoverage,
   SpendTotalsQuery,
   SpendTotalsResult,
   SubmitValidationRequest,
@@ -410,6 +412,8 @@ export type {
 const HOT_PERSIST_FULL_RETENTION_INTERVAL_MS = 5 * 60_000;
 /** Default bound for goal listings on stores without a goal table (matches the SQLite hot-read default). */
 const DEFAULT_GOAL_LIST_LIMIT = 1_000;
+/** Ids per spend reconciliation page and rows per repair write (#2499 slice 3a). */
+const SPEND_RECONCILE_PAGE_SIZE = 200;
 
 const DEFAULT_CHECKPOINT_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
@@ -673,6 +677,7 @@ export class InMemoryA2ABroker {
       this.loadSnapshot(snapshot);
     }
     this.applyRetentionPolicy();
+    this.initializeSpendLedger();
   }
 
   /**
@@ -1069,7 +1074,156 @@ export class InMemoryA2ABroker {
         }),
       );
     }
+    this.logSpendTelemetryFallback(task, built.fallback);
     this.pendingHot.stageSpendEvent(built.event);
+  }
+
+  /**
+   * #2499 slice 3a: a higher-precedence carrier was malformed and a later
+   * one metered the row. One content-free line (reason code only).
+   */
+  private logSpendTelemetryFallback(task: TaskRecord, reason: string | undefined): void {
+    if (!reason) return;
+    console.warn(
+      JSON.stringify({ event: "broker.spend.telemetry_fallback", taskId: task.id, status: task.status, reason }),
+    );
+  }
+
+  /**
+   * #2499 slice 3a (G1): stage the one-time late metering of a canceled
+   * task's unmetered spend row from the late complete/fail evidence just
+   * recorded on it. Bound as `stageLateSpend` into the terminal context;
+   * recordLateEvidenceAfterCancel calls it once per task, inside its
+   * commitMutation before persistState, so the update rides the same save
+   * hints (and the same store transaction, on both topologies) as the task
+   * row. The store applies it only to a row that is still unmetered and
+   * attributed to the late poster; a missing row (G2) is a no-op here and
+   * the reconciliation builds it from the task record instead.
+   */
+  private stageLateSpendMetering(task: TaskRecord): void {
+    if (!this.hasSpendLedger()) return;
+    const built = taskTerminal.buildLateSpendMetering(task);
+    if (!built.metering) return;
+    this.logSpendTelemetryFallback(task, built.fallback);
+    console.warn(
+      JSON.stringify({
+        event: "broker.spend.late_metered",
+        taskId: task.id,
+        kind: task.lateEvidenceAfterCancel?.kind,
+        costKnown: built.metering.costKnown,
+      }),
+    );
+    this.pendingHot.stageSpendMetering(built.metering);
+  }
+
+  /**
+   * Ledger coverage for `GET /budgets/status` (#2499 slice 3a): the stored
+   * first period and zone, and the live count of terminal task rows with no
+   * spend row. Undefined when the store keeps no spend ledger.
+   */
+  readSpendLedgerCoverage(): SpendLedgerCoverage | undefined {
+    if (!this.hasSpendLedger()) return undefined;
+    const metadata = this.stateStore?.readSpendLedgerMetadata?.() ?? {};
+    return {
+      firstPeriod: metadata.firstPeriod ?? null,
+      timeZone: metadata.timeZone ?? null,
+      missingSpendRows: this.stateStore?.countTerminalTasksMissingSpend?.() ?? 0,
+    };
+  }
+
+  /**
+   * #2499 slice 3a: once at startup, after the state load. Records the
+   * ledger coverage metadata (first period written once; the zone follows
+   * the configuration, with one warning when it changed: rows already
+   * written keep their `period_key`), then runs the reconciliation.
+   */
+  private initializeSpendLedger(): void {
+    const store = this.stateStore;
+    if (!this.hasSpendLedger() || !store?.syncSpendLedgerMetadata) return;
+    const previous = store.syncSpendLedgerMetadata({
+      periodKey: this.budgetPeriodKey(),
+      timeZone: this.budgetPeriodTimeZone,
+    });
+    if (previous.previousTimeZone !== undefined && previous.previousTimeZone !== this.budgetPeriodTimeZone) {
+      console.warn(
+        JSON.stringify({
+          event: "broker.spend.time_zone_changed",
+          previous: previous.previousTimeZone,
+          current: this.budgetPeriodTimeZone,
+        }),
+      );
+    }
+    this.reconcileSpendLedger();
+  }
+
+  /**
+   * Create-only spend ledger reconciliation (#2499 slice 3a, G2 + G3). Pages
+   * through terminal `broker_tasks` rows that have no spend row (one indexed
+   * anti-join per page; ids and status only, never the payload) and inserts
+   * each one's row built from the in-memory task record with the same
+   * builder as a terminal transition, so its `period_key` derives from
+   * `completedAt` as usual. This one mechanism repairs a row lost with a
+   * failed save (G2) and backfills terminal tasks from before slice 2 that
+   * are still in the hot table (G3). An id with no terminal in-memory record
+   * (not hydrated, or a status mismatch) is counted `unrepairable` and left
+   * alone; non-terminal tasks are never listed.
+   *
+   * Write path: a dedicated `saveHotEntities({ spendEvents })` call per page,
+   * not persistState. The repair changes no in-memory record, so it needs no
+   * staging, snapshot export or retention pass (persistState would also
+   * announce a state change to listeners for nothing), and a throw here must
+   * not leave half-drained pending hints behind; saveHotEntities is the
+   * store's own hints transaction, and on
+   * the worker-thread topology it is the queued write, so a repaired row
+   * takes the same durable path as a terminal-time row. The insert is
+   * `ON CONFLICT(task_id) DO NOTHING`, so a repeat (or a race with a
+   * terminal-time insert) never duplicates or overwrites a row; `repaired`
+   * counts rows submitted.
+   *
+   * Non-fatal: a throw logs `broker.spend.reconcile_failed` and returns
+   * undefined. One `broker.spend.reconciled` line only when something was
+   * repaired or found unrepairable. `maxPages` bounds a periodic run.
+   */
+  reconcileSpendLedger(options: { maxPages?: number } = {}): { repaired: number; unrepairable: number } | undefined {
+    const store = this.stateStore;
+    if (!this.hasSpendLedger() || !store?.listTerminalTasksMissingSpend || !store.saveHotEntities) return undefined;
+    let repaired = 0;
+    let unrepairable = 0;
+    try {
+      let afterId: string | undefined;
+      for (let page = 0; page < (options.maxPages ?? Number.POSITIVE_INFINITY); page += 1) {
+        const ids = store.listTerminalTasksMissingSpend({ limit: SPEND_RECONCILE_PAGE_SIZE, afterId });
+        const events: SpendEventRecord[] = [];
+        for (const id of ids) {
+          const task = this.tasks.get(id);
+          if (!task || !isTerminalTaskStatus(task.status)) {
+            unrepairable += 1;
+            continue;
+          }
+          events.push(taskTerminal.buildReconciledSpendEvent(task, { timeZone: this.budgetPeriodTimeZone }).event);
+        }
+        if (events.length > 0) {
+          store.saveHotEntities.call(store, { spendEvents: events });
+          repaired += events.length;
+        }
+        if (ids.length < SPEND_RECONCILE_PAGE_SIZE) break;
+        afterId = ids[ids.length - 1];
+      }
+    } catch (error) {
+      console.warn(
+        JSON.stringify({
+          event: "broker.spend.reconcile_failed",
+          repaired,
+          unrepairable,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      return undefined;
+    }
+    if (repaired > 0 || unrepairable > 0) {
+      console.warn(JSON.stringify({ event: "broker.spend.reconciled", repaired, unrepairable }));
+    }
+    return { repaired, unrepairable };
   }
 
   /** Per-status counts of tasks linked to a goal (read model only). */
@@ -3196,6 +3350,7 @@ export class InMemoryA2ABroker {
       applyProposalLocally: (proposalId, request) => this.applyProposalLocally(proposalId, request),
       commitMutation: (fn) => this.commitMutation(fn),
       stageTerminalSpend: (task) => this.stageTaskSpendEvent(task),
+      stageLateSpend: (task) => this.stageLateSpendMetering(task),
     });
   }
 

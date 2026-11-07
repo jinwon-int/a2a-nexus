@@ -16,6 +16,7 @@ import type {
   A2AExchangeState,
   ChangeProposal,
   SpendEventRecord,
+  SpendLateMeteringRecord,
   TaskRecord,
   TaskTombstone,
   ValidationResult,
@@ -37,6 +38,7 @@ const HINT_KEYS = [
   "hotWorkers",
   "hotTerminalOutboxEvents",
   "spendEvents",
+  "spendMeterings",
 ] as const;
 
 type HintKey = (typeof HINT_KEYS)[number];
@@ -44,8 +46,9 @@ type HintKey = (typeof HINT_KEYS)[number];
 // For each category, the ids still retained after retention is applied to a full
 // snapshot. The staging map key equals these ids, so a key ∈ set test filters the
 // staged clones the same way the broker did inline. `null` marks a category that
-// retention never prunes (the spend ledger, #2499 slice 2: it is not mirrored in
-// the snapshot, so every staged row is kept).
+// retention never prunes (the spend ledger, #2499 slice 2, and its late
+// meterings, slice 3a: neither is mirrored in the snapshot, so every staged
+// entry is kept).
 const RETAINED_IDS: Record<HintKey, ((snapshot: BrokerSnapshot) => Iterable<string>) | null> = {
   hotExchanges: (s) => s.exchanges.map((exchange) => exchange.id),
   hotExchangeMessages: (s) => s.exchangeMessages.map((message) => message.id),
@@ -58,6 +61,7 @@ const RETAINED_IDS: Record<HintKey, ((snapshot: BrokerSnapshot) => Iterable<stri
   hotWorkers: (s) => s.workers.map((worker) => worker.nodeId),
   hotTerminalOutboxEvents: (s) => (s.terminalOutbox ?? []).map((event) => event.id),
   spendEvents: null,
+  spendMeterings: null,
 };
 
 export class PendingHotStateBuffer {
@@ -73,6 +77,7 @@ export class PendingHotStateBuffer {
     hotWorkers: new Map(),
     hotTerminalOutboxEvents: new Map(),
     spendEvents: new Map(),
+    spendMeterings: new Map(),
   };
 
   stageExchange(record: A2AExchangeState): void {
@@ -123,6 +128,15 @@ export class PendingHotStateBuffer {
   stageSpendEvent(record: SpendEventRecord): void {
     if (this.maps.spendEvents.has(record.taskId)) return;
     this.maps.spendEvents.set(record.taskId, { ...record });
+  }
+
+  /**
+   * Stage one late metering (#2499 slice 3a, G1). First write wins, like
+   * stageSpendEvent; the store update is itself guarded to apply once.
+   */
+  stageSpendMetering(record: SpendLateMeteringRecord): void {
+    if (this.maps.spendMeterings.has(record.taskId)) return;
+    this.maps.spendMeterings.set(record.taskId, { ...record });
   }
 
   /** Whether any category has staged records awaiting a hot save. */

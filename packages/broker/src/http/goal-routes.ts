@@ -22,6 +22,7 @@ import {
   BUDGET_SCOPE_TYPES,
   GOAL_ID_PATTERN,
   GOAL_STATUS_VALUES,
+  spendTotalsToJson,
 } from "../core/store-schemas.js";
 import { assertRequesterHasRole, type RequesterIdentity } from "../core/transport/request-security.js";
 import type {
@@ -170,29 +171,9 @@ const BUDGET_SCOPE_ID_PATTERN = /^[^\u0000-\u001f\u007f]{1,256}$/;
 /** Bound on scope groups returned per scope type. */
 const BUDGET_STATUS_SCOPE_LIMIT = 1_000;
 
-/**
- * A BigInt token total as JSON: a number while it is a safe integer
- * (<= Number.MAX_SAFE_INTEGER, the normal case), else its exact decimal
- * string. Clients must accept both; a string means "above 2^53 - 1".
- */
-function jsonSafeInteger(value: bigint): number | string {
-  return value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : value.toString();
-}
-
-function spendTotalsJson(totals: SpendTotals) {
-  return {
-    usd_known_total: totals.usdKnownTotal,
-    input_tokens_total: jsonSafeInteger(totals.inputTokensTotal),
-    output_tokens_total: jsonSafeInteger(totals.outputTokensTotal),
-    task_count: totals.taskCount,
-    cost_unknown_task_count: totals.costUnknownTaskCount,
-    unmetered_task_count: totals.unmeteredTaskCount,
-  };
-}
-
 function scopeJson(scope: SpendScopeTotals) {
   // Budgets (and so limits) arrive in slice 3.
-  return { scope_type: scope.scopeType, scope_id: scope.scopeId, ...spendTotalsJson(scope), limits: null };
+  return { scope_type: scope.scopeType, scope_id: scope.scopeId, ...spendTotalsToJson(scope), limits: null };
 }
 
 const ZERO_TOTALS: SpendTotals = {
@@ -222,6 +203,10 @@ const ZERO_TOTALS: SpendTotals = {
  *   rows with neither cost nor tokens. Token totals are numbers while
  *   <= Number.MAX_SAFE_INTEGER, else exact decimal strings;
  * - `limits` is null until budgets exist (slice 3);
+ * - `ledger` (#2499 slice 3a, additive): `firstPeriod` and `timeZone` from
+ *   the ledger coverage metadata, `missingSpendRows` (terminal task rows with
+ *   no spend row, live) and `periodComplete` (the period is strictly after
+ *   `firstPeriod`);
  * - the spend ledger is SQLite-only: other stores answer `available: false`.
  */
 function handleBudgetStatus(ctx: GoalRouteContext): void {
@@ -277,6 +262,17 @@ function handleBudgetStatus(ctx: GoalRouteContext): void {
     );
     return;
   }
+  // #2499 slice 3a: what the ledger covers. `periodComplete` is true only
+  // for a period strictly after the one the ledger started recording in
+  // (that first period, and any before it, may be partial; `YYYY-MM`
+  // compares as a string).
+  const coverage = ctx.broker.readSpendLedgerCoverage();
+  const ledger = {
+    firstPeriod: coverage?.firstPeriod ?? null,
+    timeZone: coverage?.timeZone ?? null,
+    missingSpendRows: coverage?.missingSpendRows ?? 0,
+    periodComplete: coverage?.firstPeriod ? period > coverage.firstPeriod : false,
+  };
   const named = scopeType !== undefined && scopeId !== undefined;
   const scopes: SpendScopeTotals[] = scopeType !== undefined && scopeId !== undefined && result.scopes.length === 0
     ? [{ scopeType, scopeId, ...ZERO_TOTALS }]
@@ -287,10 +283,11 @@ function handleBudgetStatus(ctx: GoalRouteContext): void {
     {
       ...base,
       available: true,
-      period_total: spendTotalsJson(result.total),
-      scope_total: named && scopes[0] ? spendTotalsJson(scopes[0]) : null,
+      period_total: spendTotalsToJson(result.total),
+      scope_total: named && scopes[0] ? spendTotalsToJson(scopes[0]) : null,
       scopes: scopes.map(scopeJson),
       truncated: result.truncated,
+      ledger,
     },
     { "cache-control": "no-store" },
   );

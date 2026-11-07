@@ -93,9 +93,9 @@ The shipped `GET /goals/:id` returns `{ goal, linkedTasks: { total, byStatus } }
 
 `GET /goals` lists goals newest first (`?status=`, `?limit=`). The `children` / `summary` shape and the history route above remain a sketch.
 
-## Spend ledger and budget status (#2499 slice 2)
+## Spend ledger and budget status (#2499 slices 2 and 3a)
 
-Slice 2 records spend; it does not enforce anything. No claim or create is refused, no listing is filtered and no alert is raised because of spend.
+Slices 2 and 3a record spend; they do not enforce anything. No claim or create is refused, no listing is filtered and no alert is raised because of spend.
 
 ### Ledger rows
 
@@ -112,7 +112,7 @@ Every terminal transition writes one `broker_spend_events` row keyed by `task_id
 | `input_tokens` | `inputTokens + cacheCreationInputTokens` (cache-read tokens are not counted) |
 | `output_tokens` | `outputTokens` |
 
-Usage is read from `executionTelemetry` (schema `a2a.analysis-execution-telemetry.v1`) on `result.output`, on `error.details.bridgeFailure`, on the same nested under `error.details.nestedError.details` (a wrapped handler exit), or on a preserved negative review verdict. Carrier order: a failed task tries bridgeFailure, nested bridgeFailure, `result.output`, then the negative-verdict output; every other status tries `result.output`, the negative-verdict output, bridgeFailure, then nested bridgeFailure. The first carrier whose telemetry is valid wins; a malformed carrier falls through to the next. This data is unsigned and worker-reported. Every number must be a finite, non-negative number, with `costUsd` at most 1e6 and each token count at most 1e12. A wrong schema version, a non-object or any invalid field makes that carrier's telemetry malformed. When no present carrier is valid, the row is recorded unmetered and one `broker.spend.telemetry_malformed` warning (task id, status, the top carrier's reason code, no values) is logged. Telemetry never makes a terminal transition fail.
+Usage is read from `executionTelemetry` (schema `a2a.analysis-execution-telemetry.v1`) on `result.output`, on `error.details.bridgeFailure`, on the same nested under `error.details.nestedError.details` (a wrapped handler exit), or on a preserved negative review verdict. Carrier order: a failed task tries bridgeFailure, nested bridgeFailure, `result.output`, then the negative-verdict output; every other status tries `result.output`, the negative-verdict output, bridgeFailure, then nested bridgeFailure. The first carrier whose telemetry is valid wins; a malformed carrier falls through to the next. This data is unsigned and worker-reported. Every number must be a finite, non-negative number, with `costUsd` at most 1e6 and each token count at most 1e12. A wrong schema version, a non-object or any invalid field makes that carrier's telemetry malformed. When no present carrier is valid, the row is recorded unmetered and one `broker.spend.telemetry_malformed` warning (task id, status, the top carrier's reason code, no values) is logged. When a higher-precedence carrier is malformed and a later one is valid, the row is metered from the later one and one `broker.spend.telemetry_fallback` warning (task id, status, the malformed carrier's reason code, no values) is logged (slice 3a). Telemetry never makes a terminal transition fail.
 
 The ledger columns are `NOT NULL DEFAULT 0` (schema 14), so "not reported" is stored as 0, not NULL. A row with `cost_known = 0` and zero tokens is **unmetered** (Codex, Hermes, patch lanes, Piri without a usage marker, cancellations). Rows that report tokens but no cost (Danso) are cost-unknown but not unmetered.
 
@@ -123,7 +123,35 @@ Each of the four writers of a terminal status stages the row itself, inside its 
 - In-process SQLite (repositories on write): the task row is upserted at `setTaskRecord` and the spend row is inserted at `persistState`, both inside one `BEGIN IMMEDIATE … COMMIT`. A failing spend insert rolls the terminal task row back.
 - Worker-thread persistence: the task row and the spend row travel in the same queued `saveHotEntities` write and commit in one worker-side transaction.
 
-A restart cannot persist a terminal task without its spend row, or the reverse. A failing spend insert therefore fails the terminal transition (fail-closed; see the slice 3 preconditions in `docs/specs/goal-budget/tasks.md`). Terminal tasks from before slice 2 are not backfilled.
+A failing spend insert fails the terminal transition (fail-closed; see the slice 3 preconditions in `docs/specs/goal-budget/tasks.md`). One gap remains: if a save fails after the in-memory transition, the staged row is lost, and a later save can persist the terminal task row without it. Terminal tasks from before slice 2 also have no row. Both are closed by the reconciliation below.
+
+### Late telemetry after a cancel (slice 3a)
+
+A task canceled while running is recorded unmetered. If its worker then posts a late complete or fail (`lateEvidenceAfterCancel`, recorded once per task), the broker reads usage from that late result or error with the same carriers, precedence and validation as a terminal row: a late complete tries the result carriers first, a late fail the failure carriers first. When usage parses, the broker stages a one-time update of the task's spend row in the same `commitMutation` as the late evidence, so it commits in the same store transaction as the task row (one commit in process; one queued write on the worker-thread topology), and logs one `broker.spend.late_metered` line (task id, `kind`, `costKnown`). Nothing is logged when no late carrier parses.
+
+The store applies the update with one statement:
+
+```sql
+UPDATE broker_spend_events SET cost_usd = ?, input_tokens = ?, output_tokens = ?, cost_known = ?
+ WHERE task_id = ? AND cost_known = 0 AND input_tokens = 0 AND output_tokens = 0 AND agent_id IS ?
+```
+
+So the update applies only to a row that is still unmetered. It applies only once (a later late post is ignored before it reaches the store, and a metered row no longer matches). The late poster must also be the row's `agent_id`, which is the claimant at cancel time. An already metered row is never overwritten. `period_key` and `recorded_at` stay those of the cancel, so the spend stays in the cancel's period. If the row is missing, the update does nothing; the reconciliation creates the row from the task record instead, applying the same late usage under the same conditions. `broker.spend.late_metered` means the update was staged; the store's guard decides whether a row changed.
+
+### Reconciliation (slice 3a)
+
+One create-only mechanism repairs lost rows (a dropped staged row) and backfills terminal tasks from before slice 2 that are still in the hot task table. It looks for `broker_tasks` rows with status `succeeded`, `failed` or `canceled` that have no `broker_spend_events` row. The lookup is a `LEFT JOIN` on `task_id`, paged by id 200 at a time, and reads only the id and status columns, never `payload`. Each row is built from the in-memory task record with the terminal-time builder, so `period_key` comes from `completedAt` as usual. A canceled task's claimant is not kept on the record, so a rebuilt cancel row is attributed to the assignee. The rows are inserted with `ON CONFLICT(task_id) DO NOTHING` through the store's hints transaction (`saveHotEntities`; the queued write on the worker-thread topology). Ids with no terminal record in memory (for example, rows past the runtime hydration cap) are counted as `unrepairable` and left alone. They are pruned from the hot table at the next full save. Non-terminal tasks never get rows.
+
+The reconciliation runs once at broker startup, after the state load, and then once per in-process stale-reaper sweep (`STALE_REAPER_INTERVAL_SEC`, one page per sweep). It never fails startup or the sweep: a throw logs `broker.spend.reconcile_failed`. It logs one `broker.spend.reconciled` line (`repaired`, `unrepairable`) only when something was repaired or found unrepairable. A restart that finds every row present logs nothing. `repaired` counts rows submitted; a row inserted concurrently is not duplicated.
+
+Retention prunes terminal `broker_tasks` rows but never `broker_spend_events`, so a pruned task keeps its spend row. The reconciliation never sees pruned tasks, so it cannot recreate or duplicate their rows.
+
+### Ledger coverage metadata (slice 3a)
+
+At startup on a store with a spend ledger, the broker writes two keys to `broker_metadata` (no schema change):
+
+- `spend_ledger_first_period`: the current period. It is written once, when absent, and never moved by a later start.
+- `spend_ledger_time_zone`: the configured zone. If the stored zone differs from the configured one, the broker logs one `broker.spend.time_zone_changed` warning (`previous`, `current`), stores the new zone, and starts normally.
 
 ### Stores without SQLite
 
@@ -131,7 +159,7 @@ Spend is SQLite-only. Stores without `readSpendTotals` (the JSON-file store and 
 
 ### Period time zone
 
-`A2A_BUDGET_PERIOD_TIME_ZONE` (server option `budgetPeriodTimeZone`) sets the zone for `period_key` and for the default period of the status route. Unset or blank means `Asia/Seoul` (spec Decision 3). The value is canonicalized (`asia/seoul` → `Asia/Seoul`), and a zone `Intl` does not accept fails broker startup. Changing the zone affects new rows only; existing `period_key` values are not rewritten.
+`A2A_BUDGET_PERIOD_TIME_ZONE` (server option `budgetPeriodTimeZone`) sets the zone for `period_key` and for the default period of the status route. Unset or blank means `Asia/Seoul` (spec Decision 3). The value is canonicalized (`asia/seoul` → `Asia/Seoul`), and a zone `Intl` does not accept fails broker startup. Changing the zone affects new rows only; existing `period_key` values are not rewritten. Change it only at a month boundary: within a month, rows on either side of the change fall into differently aligned buckets. The broker records the zone in store metadata and warns at startup when it changed (`broker.spend.time_zone_changed`, slice 3a); it does not refuse to start.
 
 ### `GET /budgets/status`
 
@@ -141,7 +169,8 @@ Spend is SQLite-only. Stores without `readSpendTotals` (the JSON-file store and 
 - Without `scope_type`, every scope of every type is returned. With `scope_type` only, every scope of that type. With `scope_id` as well, just that scope (zero totals if it spent nothing). A `scope_id` without `scope_type`, an unknown `scope_type`, or a `scope_id` that breaks the goal id pattern (goal scope) or is longer than 256 characters or contains control characters (agent and lane scopes) is 400. Values are never trimmed.
 - Each scope reports `usd_known_total` (only `cost_known` rows, Decision 4), `input_tokens_total`, `output_tokens_total`, `task_count`, `cost_unknown_task_count`, `unmetered_task_count`, and `limits: null`; limits arrive with budgets in slice 3.
 - `period_total` always covers the whole period, including rows with no agent or goal, whatever the scope filter. `scope_total` is the named scope's totals when `scope_type` and `scope_id` are both given (zero totals if it spent nothing), else null.
-- Token totals are summed exactly (SQLite integer `SUM` read as BigInt; USD uses `TOTAL()`). A token total is a JSON number while it is at most `Number.MAX_SAFE_INTEGER` (2^53 − 1), else its exact decimal string, so clients must accept both. SQLite's integer sum is exact up to 2^63 − 1, at least about 9.2 million rows at the 1e12 per-row cap in one period.
+- Token totals are summed exactly (SQLite integer `SUM` read as BigInt; USD uses `TOTAL()`). API contract: `input_tokens_total` and `output_tokens_total` are `number | string`. Each is a JSON number while it is at most `Number.MAX_SAFE_INTEGER` (2^53 − 1), else its exact decimal string (for example `"9008000000000005"`), so clients must accept both and parse a string as an arbitrary-precision integer. Every server-side serialization of spend totals goes through one projector (`spendTotalsToJson` in `core/store-schemas.ts`); a raw `SpendTotals` holds `bigint` and cannot be passed to `JSON.stringify`. SQLite's integer sum is exact up to 2^63 − 1, at least about 9.2 million rows at the 1e12 per-row cap in one period.
+- `ledger` (slice 3a, additive; present when `available: true`): `firstPeriod` and `timeZone` from the coverage metadata, `missingSpendRows` (terminal task rows with no spend row, counted live with the reconciliation's anti-join), and `periodComplete` (true only when the requested period is strictly after `firstPeriod`; the first period and earlier ones may be partial). On the worker-thread topology `missingSpendRows` reads the main-thread connection and can lag queued writes, like the other hot-table read models.
 - Groups are capped at 1000 per scope type (`truncated: true` when hit). Every query is one indexed aggregate over `broker_spend_events` (`(period_key, agent_id|lane|goal_id)` indexes); no query scans `broker_tasks.payload`.
 
 ```json
@@ -155,7 +184,8 @@ Spend is SQLite-only. Stores without `readSpendTotals` (the JSON-file store and 
   "period_total": { "usd_known_total": 0.75, "input_tokens_total": 240, "output_tokens_total": 80, "task_count": 2, "cost_unknown_task_count": 0, "unmetered_task_count": 0 },
   "scope_total": { "usd_known_total": 0.5, "input_tokens_total": 120, "output_tokens_total": 40, "task_count": 1, "cost_unknown_task_count": 0, "unmetered_task_count": 0 },
   "scopes": [{ "scope_type": "goal", "scope_id": "goal-1", "usd_known_total": 0.5, "input_tokens_total": 120, "output_tokens_total": 40, "task_count": 1, "cost_unknown_task_count": 0, "unmetered_task_count": 0, "limits": null }],
-  "truncated": false
+  "truncated": false,
+  "ledger": { "firstPeriod": "2026-11", "timeZone": "Asia/Seoul", "missingSpendRows": 0, "periodComplete": false }
 }
 ```
 

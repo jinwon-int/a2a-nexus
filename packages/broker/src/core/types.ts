@@ -247,6 +247,36 @@ export interface SpendEventRecord {
   costKnown: boolean;
 }
 
+/**
+ * #2499 slice 3a (G1): the one-time update of a canceled task's unmetered
+ * spend row from late evidence the worker posted after the cancel. The store
+ * applies it only while the row is still unmetered (`cost_known = 0`, zero
+ * tokens) and attributed to `agentId` (the late poster); `period_key` and
+ * `recorded_at` stay those of the cancel.
+ */
+export interface SpendLateMeteringRecord {
+  taskId: string;
+  /** The worker that posted the late evidence; must equal the row's `agent_id`. */
+  agentId: string;
+  costUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+  costKnown: boolean;
+}
+
+/**
+ * #2499 slice 3a: what the ledger covers, from `broker_metadata` plus the
+ * live reconciliation count. Shown under `ledger` in `GET /budgets/status`.
+ */
+export interface SpendLedgerCoverage {
+  /** `spend_ledger_first_period`: the period the ledger started recording in (written once). */
+  firstPeriod: string | null;
+  /** `spend_ledger_time_zone`: the zone the stored `period_key` values were computed in. */
+  timeZone: string | null;
+  /** Terminal `broker_tasks` rows with no spend row (live count). */
+  missingSpendRows: number;
+}
+
 /** Spend totals for one scope (or a whole period) from the spend ledger. */
 export interface SpendTotals {
   /** Sum of `costUsd` over rows with `costKnown` (Decision 4). */

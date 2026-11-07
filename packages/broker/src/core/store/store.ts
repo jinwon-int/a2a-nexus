@@ -15,6 +15,7 @@ import type {
   GoalListFilters,
   GoalRecord,
   SpendEventRecord,
+  SpendLateMeteringRecord,
   SpendScopeTotals,
   SpendTotals,
   SpendTotalsQuery,
@@ -1261,6 +1262,94 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   /**
+   * Late metering of canceled tasks' spend rows (#2499 slice 3a, G1). Called
+   * only from the save transactions, after insertSpendEventsUnsafe, so the
+   * update commits with the task row that recorded the late evidence. One
+   * statement per row over the `task_id` primary key; it touches a row only
+   * while it is still unmetered (`cost_known = 0`, zero tokens) and
+   * attributed to the late poster, so a replayed or second metering is a
+   * no-op, an already metered row is never overwritten, and a missing row
+   * (G2) is left to the reconciliation. `period_key` and `recorded_at` are
+   * not touched: the spend stays in the cancel's period.
+   */
+  private applySpendMeteringsUnsafe(meterings: SpendLateMeteringRecord[] | undefined): void {
+    if (!meterings || meterings.length === 0) return;
+    const update = this.stmt(
+      `UPDATE broker_spend_events
+          SET cost_usd = ?, input_tokens = ?, output_tokens = ?, cost_known = ?
+        WHERE task_id = ? AND cost_known = 0 AND input_tokens = 0 AND output_tokens = 0 AND agent_id IS ?`,
+    );
+    for (const metering of meterings) {
+      update.run(
+        metering.costKnown ? metering.costUsd : 0,
+        metering.inputTokens,
+        metering.outputTokens,
+        metering.costKnown ? 1 : 0,
+        metering.taskId,
+        metering.agentId,
+      );
+    }
+  }
+
+  /**
+   * Terminal task rows with no spend row (#2499 slice 3a, G2/G3), ascending
+   * by id after `afterId`. One anti-join: the `broker_tasks` status column
+   * and the `broker_spend_events` primary key; `payload` is never read.
+   */
+  listTerminalTasksMissingSpend(options: { limit: number; afterId?: string }): string[] {
+    const limit = normalizeBoundedSqliteLimit(options.limit);
+    const rows = this
+      .stmt(
+        `SELECT t.id AS id FROM broker_tasks t
+           LEFT JOIN broker_spend_events s ON s.task_id = t.id
+          WHERE t.status IN ('succeeded', 'failed', 'canceled') AND s.task_id IS NULL AND t.id > ?
+          ORDER BY t.id ASC LIMIT ?`,
+      )
+      .all(options.afterId ?? "", limit) as Array<{ id: string }>;
+    return rows.map((row) => row.id);
+  }
+
+  countTerminalTasksMissingSpend(): number {
+    const row = this
+      .stmt(
+        `SELECT COUNT(*) AS count FROM broker_tasks t
+           LEFT JOIN broker_spend_events s ON s.task_id = t.id
+          WHERE t.status IN ('succeeded', 'failed', 'canceled') AND s.task_id IS NULL`,
+      )
+      .get() as { count: number | bigint } | undefined;
+    return row ? coerceSqliteCount(row) : 0;
+  }
+
+  /**
+   * Ledger coverage metadata (#2499 slice 3a). `spend_ledger_first_period`
+   * is written only when absent; `spend_ledger_time_zone` always follows the
+   * configured zone (the broker warns on a change). Single statements on this
+   * connection, like insertGoal.
+   */
+  syncSpendLedgerMetadata(input: { periodKey: string; timeZone: string }): {
+    previousFirstPeriod?: string;
+    previousTimeZone?: string;
+  } {
+    const previousFirstPeriod = this.readMetadata("spend_ledger_first_period");
+    const previousTimeZone = this.readMetadata("spend_ledger_time_zone");
+    if (previousFirstPeriod === undefined) this.writeMetadata("spend_ledger_first_period", input.periodKey);
+    if (previousTimeZone !== input.timeZone) this.writeMetadata("spend_ledger_time_zone", input.timeZone);
+    return {
+      ...(previousFirstPeriod !== undefined ? { previousFirstPeriod } : {}),
+      ...(previousTimeZone !== undefined ? { previousTimeZone } : {}),
+    };
+  }
+
+  readSpendLedgerMetadata(): { firstPeriod?: string; timeZone?: string } {
+    const firstPeriod = this.readMetadata("spend_ledger_first_period");
+    const timeZone = this.readMetadata("spend_ledger_time_zone");
+    return {
+      ...(firstPeriod !== undefined ? { firstPeriod } : {}),
+      ...(timeZone !== undefined ? { timeZone } : {}),
+    };
+  }
+
+  /**
    * Spend totals for one period (#2499 slice 2). Each query is one indexed
    * aggregate over `broker_spend_events` (`(period_key, agent_id|lane|goal_id)`
    * indexes); nothing scans `broker_tasks.payload`. Rows whose scope column is
@@ -1734,6 +1823,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
       const skipFullSnapshot = hasHotHints && !hasSnapshotOnlySidecarState;
       const fit = this.writeSnapshotRow(snapshot, updatedAt, hints, { skipFullSnapshot });
       this.insertSpendEventsUnsafe(hints?.spendEvents);
+      this.applySpendMeteringsUnsafe(hints?.spendMeterings);
       this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION_VALUE));
       this.writePersistDiagnostics(updatedAt, hints, { skipFullSnapshot }, fit);
     });
@@ -1744,6 +1834,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     this.runImmediateTransaction(() => {
       this.writeHotEntityHintRows(hints);
       this.insertSpendEventsUnsafe(hints.spendEvents);
+      this.applySpendMeteringsUnsafe(hints.spendMeterings);
       this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION_VALUE));
       this.writePersistDiagnostics(updatedAt, hints, { skipFullSnapshot: true });
     });
@@ -2548,8 +2639,8 @@ function sqliteBigInt(value: unknown): bigint {
 }
 
 /**
- * Whether the hints carry hot-entity rows. `spendEvents` is deliberately not
- * counted (#2499 slice 2): no write is gated on this — both save paths insert
+ * Whether the hints carry hot-entity rows. `spendEvents` (and, slice 3a,
+ * `spendMeterings`) are deliberately not counted (#2499 slice 2): no write is gated on this — both save paths insert
  * spend rows unconditionally (`insertSpendEventsUnsafe`), and the broker
  * already routes a spend-only persist to `saveHotEntities` (its pending
  * buffer counts spend). `save()` only receives spend-only hints when the

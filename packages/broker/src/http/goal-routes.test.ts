@@ -449,6 +449,7 @@ test("handler: budget status validates its query and reports available:false wit
   assert.equal(ok.json.period_total, null);
   assert.equal(ok.json.scope_total, null);
   assert.equal("total" in ok.json, false);
+  assert.equal("ledger" in ok.json, false, "no ledger, no ledger coverage");
 
   await assert.rejects(() => route("GET", "/budgets/status?scope_type=team"), rejectsWith("bad_request", /scope_type must be one of agent, lane, goal/));
   await assert.rejects(() => route("GET", "/budgets/status?scope_id=worker-a"), rejectsWith("bad_request", /scope_id requires scope_type/));
@@ -506,6 +507,18 @@ test("handler: token totals above Number.MAX_SAFE_INTEGER are exact decimal stri
     const small = await route("GET", "/budgets/status?period=2026-11&scope_type=agent&scope_id=worker-small");
     assert.equal(small.json.scope_total.input_tokens_total, 5);
     assert.equal(small.json.period_total.input_tokens_total, "9008000000000005");
+    // #2499 slice 3a: rows written straight to the ledger have no task rows,
+    // so nothing is missing; the coverage metadata came from construction.
+    assert.deepEqual(all.json.ledger, {
+      firstPeriod: broker.budgetPeriodKey(),
+      timeZone: "UTC",
+      missingSpendRows: 0,
+      periodComplete: "2026-11" > broker.budgetPeriodKey(),
+    });
+    // periodComplete: only a period strictly after the first one.
+    assert.equal((await route("GET", `/budgets/status?period=${broker.budgetPeriodKey()}`)).json.ledger.periodComplete, false);
+    assert.equal((await route("GET", "/budgets/status?period=2999-01")).json.ledger.periodComplete, true);
+    assert.equal((await route("GET", "/budgets/status?period=1999-01")).json.ledger.periodComplete, false);
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });
@@ -573,6 +586,9 @@ async function exerciseBudgetServer(baseUrl: string): Promise<void> {
     ["agent:worker-a:2:null", "lane:analyze:1:null", "lane:chat:1:null", "goal:goal-spend:1:null"],
   );
   assert.equal(all.truncated, false);
+  // #2499 slice 3a: ledger coverage (additive). The ledger started recording
+  // this period, so it is not complete (later periods: the handler test).
+  assert.deepEqual(all.ledger, { firstPeriod: all.period, timeZone: "Asia/Seoul", missingSpendRows: 0, periodComplete: false });
 
   const goal = await (await fetch(`${baseUrl}/budgets/status?scope_type=goal&scope_id=goal-spend&period=${all.period}`, { headers: HUB })).json();
   assert.equal(goal.scopeType, "goal");
@@ -613,6 +629,7 @@ async function exerciseBudgetServer(baseUrl: string): Promise<void> {
   const otherMonth = await (await fetch(`${baseUrl}/budgets/status?period=1999-01`, { headers: HUB })).json();
   assert.equal(otherMonth.period_total.task_count, 0);
   assert.deepEqual(otherMonth.scopes, []);
+  assert.equal(otherMonth.ledger.periodComplete, false, "a period before the ledger started is not complete");
 
   const bad = await fetch(`${baseUrl}/budgets/status?scope_type=team`, { headers: HUB });
   assert.equal(bad.status, 400);
