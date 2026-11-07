@@ -151,7 +151,8 @@ export function createWavePlanRouteEntries(deps: RouteDeps<WavePlanRouteContext>
 }
 
 // ---------------------------------------------------------------------------
-// 3b. Goals (#2499 slice 1): create + read-only listing/detail
+// 3b. Goals (#2499 slice 1): create + read-only listing/detail; budget
+//     status (#2499 slice 2): read-only spend-ledger totals
 // ---------------------------------------------------------------------------
 
 export function createGoalRouteEntries(deps: RouteDeps<GoalRouteContext>): BrokerRouteEntry[] {
@@ -160,6 +161,7 @@ export function createGoalRouteEntries(deps: RouteDeps<GoalRouteContext>): Broke
     entry("POST", ["goals"], "other", "other", dispatch),
     entry("GET", ["goals"], "other", "other", dispatch),
     entry("GET", ["goals", ":id"], "other", "other", dispatch),
+    entry("GET", ["budgets", "status"], "other", "other", dispatch),
   ];
 }
 

@@ -323,6 +323,12 @@ export interface BrokerServerOptions extends BrokerRuntimeHotLimitOptions {
    */
   fastLaneSingleWorkerFinalize?: boolean;
   /**
+   * #2499 slice 2: IANA time zone for spend-ledger periods (`YYYY-MM`).
+   * Falls back to A2A_BUDGET_PERIOD_TIME_ZONE, then `Asia/Seoul`. An invalid
+   * zone fails startup.
+   */
+  budgetPeriodTimeZone?: string;
+  /**
    * JSON trust-anchor file ({ "<brokerId>": "<SPKI public key PEM>" }) for
    * the cross-broker terminal-brief receiver. When set, every inbound
    * projection must carry a request-bound `senderProof` (a JWS over

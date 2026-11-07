@@ -15,6 +15,7 @@ import type {
   A2AExchangeMessageRecord,
   A2AExchangeState,
   ChangeProposal,
+  SpendEventRecord,
   TaskRecord,
   TaskTombstone,
   ValidationResult,
@@ -35,14 +36,17 @@ const HINT_KEYS = [
   "hotAuditEvents",
   "hotWorkers",
   "hotTerminalOutboxEvents",
+  "spendEvents",
 ] as const;
 
 type HintKey = (typeof HINT_KEYS)[number];
 
 // For each category, the ids still retained after retention is applied to a full
 // snapshot. The staging map key equals these ids, so a key ∈ set test filters the
-// staged clones the same way the broker did inline.
-const RETAINED_IDS: Record<HintKey, (snapshot: BrokerSnapshot) => Iterable<string>> = {
+// staged clones the same way the broker did inline. `null` marks a category that
+// retention never prunes (the spend ledger, #2499 slice 2: it is not mirrored in
+// the snapshot, so every staged row is kept).
+const RETAINED_IDS: Record<HintKey, ((snapshot: BrokerSnapshot) => Iterable<string>) | null> = {
   hotExchanges: (s) => s.exchanges.map((exchange) => exchange.id),
   hotExchangeMessages: (s) => s.exchangeMessages.map((message) => message.id),
   hotProposals: (s) => s.proposals.map((proposal) => proposal.id),
@@ -53,6 +57,7 @@ const RETAINED_IDS: Record<HintKey, (snapshot: BrokerSnapshot) => Iterable<strin
   hotAuditEvents: (s) => s.auditEvents.map((event) => event.id),
   hotWorkers: (s) => s.workers.map((worker) => worker.nodeId),
   hotTerminalOutboxEvents: (s) => (s.terminalOutbox ?? []).map((event) => event.id),
+  spendEvents: null,
 };
 
 export class PendingHotStateBuffer {
@@ -67,6 +72,7 @@ export class PendingHotStateBuffer {
     hotAuditEvents: new Map(),
     hotWorkers: new Map(),
     hotTerminalOutboxEvents: new Map(),
+    spendEvents: new Map(),
   };
 
   stageExchange(record: A2AExchangeState): void {
@@ -109,6 +115,16 @@ export class PendingHotStateBuffer {
     this.maps.hotTerminalOutboxEvents.set(record.id, structuredClone(record));
   }
 
+  /**
+   * Stage one spend-ledger row (#2499 slice 2). First write wins, like the
+   * store's `ON CONFLICT(task_id) DO NOTHING`: a second terminal-time staging
+   * for the same task before the next flush never replaces the first.
+   */
+  stageSpendEvent(record: SpendEventRecord): void {
+    if (this.maps.spendEvents.has(record.taskId)) return;
+    this.maps.spendEvents.set(record.taskId, { ...record });
+  }
+
   /** Whether any category has staged records awaiting a hot save. */
   hasPending(): boolean {
     return HINT_KEYS.some((key) => this.maps[key].size > 0);
@@ -139,11 +155,12 @@ export class PendingHotStateBuffer {
     if (!this.hasPending()) {
       return undefined;
     }
-    const retained: Record<HintKey, Set<string>> = {} as Record<HintKey, Set<string>>;
+    const retained = {} as Record<HintKey, Set<string> | null>;
     for (const key of HINT_KEYS) {
-      retained[key] = new Set(RETAINED_IDS[key](snapshot));
+      const ids = RETAINED_IDS[key];
+      retained[key] = ids ? new Set(ids(snapshot)) : null;
     }
-    const hints = this.buildHints((key, id) => retained[key].has(id));
+    const hints = this.buildHints((key, id) => retained[key]?.has(id) ?? true);
     this.clear();
     return hints;
   }

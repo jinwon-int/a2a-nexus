@@ -140,6 +140,7 @@ import { normalizeTaskReadinessMode } from "./task-readiness.js";
 import { loadBrokerPolicyFile } from "a2a-policy-referee";
 import { loadInjectedKnowledgeFile } from "./core/execution/broker-knowledge-injection.js";
 import { resolveFinalizerVerdictEnforcement } from "./core/completion/finalizer-verdict-admission.js";
+import { resolveBudgetPeriodTimeZone } from "./core/store-schemas.js";
 import { loadFinalizerKeyringFile } from "a2a-attestation";
 import { resolveReviewLineageRolloutMode } from "./core/store/review-lineage-store.js";
 import { resolveWavePlanDagV2Mode } from "./core/dispatch/wave-plan-dag-v2-mode.js";
@@ -605,6 +606,11 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const fastLaneSingleWorkerFinalize =
     options.fastLaneSingleWorkerFinalize ??
     resolveBooleanEnv(process.env.A2A_FAST_LANE_SINGLE_WORKER_FINALIZE, false);
+  // Spend-ledger period zone (#2499 slice 2). Invalid value fails startup
+  // loudly (resolve throws); unset or blank is Asia/Seoul (spec Decision 3).
+  const budgetPeriodTimeZone = resolveBudgetPeriodTimeZone(
+    options.budgetPeriodTimeZone ?? process.env.A2A_BUDGET_PERIOD_TIME_ZONE,
+  );
   const hotRuntimeLimits = resolveHotRuntimeLimits(options);
   const maxHotRuntimeNonTerminalTasks = hotRuntimeLimits.maxNonTerminalTasks;
   const maxHotRuntimeTerminalTasks = hotRuntimeLimits.maxTerminalTasks;
@@ -897,6 +903,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       finalizerKeyring,
       fastLaneSkipReviewRound,
       fastLaneSingleWorkerFinalize,
+      budgetPeriodTimeZone,
       snapshotExtensions: pushNotificationSnapshotExtension,
     });
   if (options.broker && pushNotificationSnapshotExtension) {

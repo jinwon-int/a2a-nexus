@@ -11,8 +11,14 @@ import type {
   A2AExchangeMessageRecord,
   A2AExchangeState,
   ChangeProposal,
+  BudgetScopeType,
   GoalListFilters,
   GoalRecord,
+  SpendEventRecord,
+  SpendScopeTotals,
+  SpendTotals,
+  SpendTotalsQuery,
+  SpendTotalsResult,
   TaskRecord,
   TaskTombstone,
   ValidationResult,
@@ -114,6 +120,7 @@ import {
   tombstoneSchema,
   terminalOutboxEventSchema,
   goalRecordSchema,
+  BUDGET_SCOPE_TYPES,
 } from "../store-schemas.js";
 import type {
   ProjectedReviewLineageObservation,
@@ -589,6 +596,12 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     }
     if (sidecars.pushNotificationConfigs !== undefined) {
       snapshot.pushNotificationConfigs = sidecars.pushNotificationConfigs;
+    }
+    // #2499: goals carried by a canonical snapshot written by a store without
+    // a goal table (an imported JSON state file) reach the broker on this load
+    // path too; the broker imports them into broker_goals (create-only).
+    if ((sidecars.goals?.length ?? 0) > 0) {
+      snapshot.goals = sidecars.goals;
     }
     return this.withCanonicalReviewLineages(snapshot, sidecars.reviewLineages);
   }
@@ -1216,6 +1229,103 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   /**
+   * Spend ledger write (#2499 slice 2). Called only from inside the save
+   * transactions (`saveSnapshot` / `saveHotEntityHints`), so each row commits
+   * atomically with the terminal task row staged in the same hints — and on
+   * the worker-thread topology with the same queued write. Insert-once: a
+   * replayed or repeated terminal write for a task already in the ledger is
+   * a no-op, so spend is never counted twice.
+   */
+  private insertSpendEventsUnsafe(events: SpendEventRecord[] | undefined): void {
+    if (!events || events.length === 0) return;
+    const insert = this.stmt(
+      `INSERT INTO broker_spend_events
+        (task_id, recorded_at, period_key, agent_id, lane, goal_id, cost_usd, input_tokens, output_tokens, cost_known)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(task_id) DO NOTHING`,
+    );
+    for (const event of events) {
+      insert.run(
+        event.taskId,
+        event.recordedAt,
+        event.periodKey,
+        event.agentId,
+        event.lane,
+        event.goalId,
+        event.costKnown ? event.costUsd : 0,
+        event.inputTokens,
+        event.outputTokens,
+        event.costKnown ? 1 : 0,
+      );
+    }
+  }
+
+  /**
+   * Spend totals for one period (#2499 slice 2). Each query is one indexed
+   * aggregate over `broker_spend_events` (`(period_key, agent_id|lane|goal_id)`
+   * indexes); nothing scans `broker_tasks.payload`. Rows whose scope column is
+   * NULL (a goal-less task, an unattributed cancel) count toward the period
+   * total but belong to no scope. Groups are ordered by scope id and bounded
+   * by `limit` per scope type.
+   *
+   * Overflow: token sums are read as BigInt (`setReadBigInts`), so a period
+   * total above 2^53 stays exact instead of throwing ERR_OUT_OF_RANGE; SQLite's
+   * integer SUM itself is exact up to 2^63 - 1, i.e. at least ~9.2 million
+   * rows at the 1e12 per-row token cap in one period. USD uses TOTAL(), a
+   * float sum that cannot overflow. Counts are row counts and fit a number.
+   */
+  readSpendTotals(query: SpendTotalsQuery): SpendTotalsResult {
+    const limit = normalizeBoundedSqliteLimit(query.limit);
+    const aggregates = `
+      TOTAL(CASE WHEN cost_known = 1 THEN cost_usd ELSE 0 END) AS usd,
+      COALESCE(SUM(input_tokens), 0) AS input_tokens,
+      COALESCE(SUM(output_tokens), 0) AS output_tokens,
+      COUNT(*) AS task_count,
+      COALESCE(SUM(CASE WHEN cost_known = 0 THEN 1 ELSE 0 END), 0) AS cost_unknown,
+      COALESCE(SUM(CASE WHEN cost_known = 0 AND input_tokens = 0 AND output_tokens = 0 THEN 1 ELSE 0 END), 0) AS unmetered`;
+    type Row = Record<string, unknown>;
+    const read = (sql: string): StatementSync => {
+      const statement = this.stmt(sql);
+      statement.setReadBigInts(true);
+      return statement;
+    };
+    const toTotals = (row: Row | undefined): SpendTotals => ({
+      usdKnownTotal: Math.round(sqliteNumber(row?.usd) * 1e6) / 1e6,
+      inputTokensTotal: sqliteBigInt(row?.input_tokens),
+      outputTokensTotal: sqliteBigInt(row?.output_tokens),
+      taskCount: sqliteNumber(row?.task_count),
+      costUnknownTaskCount: sqliteNumber(row?.cost_unknown),
+      unmeteredTaskCount: sqliteNumber(row?.unmetered),
+    });
+    const total = toTotals(
+      read(`SELECT ${aggregates} FROM broker_spend_events WHERE period_key = ?`).get(query.periodKey) as Row | undefined,
+    );
+    const scopeTypes: readonly BudgetScopeType[] = query.scopeType ? [query.scopeType] : BUDGET_SCOPE_TYPES;
+    const scopes: SpendScopeTotals[] = [];
+    let truncated = false;
+    for (const scopeType of scopeTypes) {
+      // Closed mapping from the validated scope type; never caller text.
+      const column = SPEND_SCOPE_COLUMNS[scopeType];
+      const rows = (query.scopeId !== undefined
+        ? read(`SELECT ${column} AS scope_id, ${aggregates} FROM broker_spend_events
+                 WHERE period_key = ? AND ${column} = ? GROUP BY ${column}`)
+          .all(query.periodKey, query.scopeId)
+        : read(`SELECT ${column} AS scope_id, ${aggregates} FROM broker_spend_events
+                 WHERE period_key = ? AND ${column} IS NOT NULL
+                 GROUP BY ${column} ORDER BY ${column} ASC LIMIT ?`)
+          .all(query.periodKey, limit + 1)) as Row[];
+      if (rows.length > limit) {
+        truncated = true;
+        rows.length = limit;
+      }
+      for (const row of rows) {
+        scopes.push({ scopeType, scopeId: String(row.scope_id), ...toTotals(row) });
+      }
+    }
+    return { total, scopes, truncated };
+  }
+
+  /**
    * #1504 §4: fail-closed startup checks over the EXISTING database, run before
    * `initializeDatabase` can create or rewrite anything. Reads the version
    * markers and the last durable write only when the metadata table already
@@ -1556,6 +1666,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     | "crossBrokerTerminalBriefs"
     | "nclexEvaluationReceipts"
     | "parentRounds"
+    | "goals"
   > {
     const row = this
       .stmt("SELECT payload FROM broker_snapshots WHERE id = 1")
@@ -1572,6 +1683,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
         crossBrokerTerminalBriefs: canonical.crossBrokerTerminalBriefs,
         nclexEvaluationReceipts: canonical.nclexEvaluationReceipts,
         parentRounds: canonical.parentRounds,
+        goals: canonical.goals,
       };
     } catch {
       // Hot-table runtime loading must remain recoverable even when the legacy
@@ -1621,6 +1733,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
         (snapshot.parentRounds?.length ?? 0) > 0;
       const skipFullSnapshot = hasHotHints && !hasSnapshotOnlySidecarState;
       const fit = this.writeSnapshotRow(snapshot, updatedAt, hints, { skipFullSnapshot });
+      this.insertSpendEventsUnsafe(hints?.spendEvents);
       this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION_VALUE));
       this.writePersistDiagnostics(updatedAt, hints, { skipFullSnapshot }, fit);
     });
@@ -1630,6 +1743,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     const updatedAt = new Date().toISOString();
     this.runImmediateTransaction(() => {
       this.writeHotEntityHintRows(hints);
+      this.insertSpendEventsUnsafe(hints.spendEvents);
       this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION_VALUE));
       this.writePersistDiagnostics(updatedAt, hints, { skipFullSnapshot: true });
     });
@@ -2415,6 +2529,36 @@ function hotEntityLane<T>(spec: {
   };
 }
 
+/** Spend-ledger column per budget scope type (#2499 slice 2); a closed map. */
+const SPEND_SCOPE_COLUMNS: Record<BudgetScopeType, "agent_id" | "lane" | "goal_id"> = {
+  agent: "agent_id",
+  lane: "lane",
+  goal: "goal_id",
+};
+
+function sqliteNumber(value: unknown): number {
+  if (typeof value === "bigint") return Number(value);
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+/** An INTEGER aggregate read with `setReadBigInts(true)`, exactly. */
+function sqliteBigInt(value: unknown): bigint {
+  if (typeof value === "bigint") return value;
+  return typeof value === "number" && Number.isSafeInteger(value) ? BigInt(value) : 0n;
+}
+
+/**
+ * Whether the hints carry hot-entity rows. `spendEvents` is deliberately not
+ * counted (#2499 slice 2): no write is gated on this — both save paths insert
+ * spend rows unconditionally (`insertSpendEventsUnsafe`), and the broker
+ * already routes a spend-only persist to `saveHotEntities` (its pending
+ * buffer counts spend). `save()` only receives spend-only hints when the
+ * broker asked for a full save (the retention cadence or `forceFull`);
+ * counting spend here would turn that into a hint-scoped save that skips the
+ * canonical snapshot and the hot-table retention prune on the
+ * repositories-on-write topology, where spend is often the only staged
+ * category.
+ */
 function hintsHasAnyEntries(hints: BrokerStateSaveHints | undefined): boolean {
   if (!hints) return false;
   return (

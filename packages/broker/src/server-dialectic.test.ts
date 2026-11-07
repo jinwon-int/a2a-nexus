@@ -1,5 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { DECISION_DIALECTIC_KIND, DECISION_DIALECTIC_VERSION, type DecisionDialecticTaskInputV1, type DecisionDialecticTaskV1 } from "./decision-dialectic/types.js";
 import { DecisionDialecticExecutionError, extractDecisionDialecticTaskInput, applyDecisionDialecticPatch, buildDecisionDialecticPhaseTaskRequest } from "./decision-dialectic/execution.js";
 import { BrokerError, InMemoryA2ABroker } from "./core/broker.js";
@@ -538,6 +542,147 @@ test("decision-dialectic phase tasks carry the parent's goalId through createTas
     (error: unknown) => error instanceof BrokerError && error.code === "not_found" && /goal not found/.test(error.message),
   );
   assert.equal(broker.getTask("dd-orphan-phase"), null);
+});
+
+// The refusal itself is slice 1's createTask goal gate (assertTaskGoalLink:
+// any non-`pursuing` goal is 409, a missing one 404); this pins it on the HTTP
+// dialectic advance path, with no phase task created.
+test("HTTP decision-dialectic advance refuses a non-pursuing (paused or closed) or missing parent goal and does not advance (#2499)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-dialectic-goal-"));
+  const dbFile = join(dir, "state.sqlite");
+  const server = await startTestServer({
+    stateStore: undefined,
+    persistenceBackend: "sqlite",
+    stateFile: join(dir, "state.json"),
+    sqliteFile: dbFile,
+    brokerId: "brokeralpha",
+    teamId: "team1",
+    edgeSecret: "test-edge-secret",
+    enforceRequesterIdentity: true,
+  });
+  const hubHeaders = jsonHeaders({
+    "x-a2a-edge-secret": "test-edge-secret",
+    "x-a2a-requester-id": "hub-a",
+    "x-a2a-requester-role": "hub",
+  });
+  // No goal transition route exists yet (slice 3), so the goal row is edited
+  // in the store file, as an operator would.
+  const editGoal = (sql: string, ...params: string[]): void => {
+    const db = new DatabaseSync(dbFile);
+    try {
+      db.prepare(sql).run(...params);
+    } finally {
+      db.close();
+    }
+  };
+  const goalStatus = (status: string): void => {
+    const db = new DatabaseSync(dbFile);
+    try {
+      const row = db.prepare("SELECT payload FROM broker_goals WHERE id = 'goal-dd'").get() as { payload: string };
+      db.prepare("UPDATE broker_goals SET status = ?, payload = ? WHERE id = 'goal-dd'")
+        .run(status, JSON.stringify({ ...JSON.parse(row.payload), status }));
+    } finally {
+      db.close();
+    }
+  };
+  try {
+    for (const workerId of ["workerbeta", "workeralpha", "workergamma", "workerdelta"]) {
+      await registerTestWorker(server.baseUrl, workerId, "analyst", "test-edge-secret");
+    }
+    const goalRes = await fetch(`${server.baseUrl}/goals`, {
+      method: "POST",
+      headers: hubHeaders,
+      body: JSON.stringify({ id: "goal-dd", title: "Dialectic goal" }),
+    });
+    assert.equal(goalRes.status, 201);
+    const createRes = await fetch(`${server.baseUrl}/tasks`, {
+      method: "POST",
+      headers: hubHeaders,
+      body: JSON.stringify({
+        intent: "analyze",
+        requester: { id: "hub-a", kind: "node", role: "hub" },
+        target: { id: "workerbeta", kind: "node", role: "analyst" },
+        assignedWorkerId: "workerbeta",
+        brokerOfRecord: "brokeralpha",
+        teamId: "team1",
+        goalId: "goal-dd",
+        message: "goal-linked decision dialectic",
+        payload: buildDecisionDialecticPayload(
+          {
+            revision: 0,
+            state: "OPEN",
+            thesis: undefined,
+            antithesis: undefined,
+            rebuttal: undefined,
+            synthesis: undefined,
+            decision: undefined,
+            outcome: undefined,
+          },
+          "thesis",
+        ),
+      }),
+    });
+    assert.equal(createRes.status, 201);
+    const parent = await createRes.json();
+    assert.equal(parent.goalId, "goal-dd");
+    const childrenOf = () =>
+      server.runtime.broker.listTasks().filter((task) => task.parentTaskId === parent.id);
+    const advance = () =>
+      fetch(`${server.baseUrl}/tasks/${parent.id}/decision-dialectic/advance`, {
+        method: "POST",
+        headers: hubHeaders,
+        body: JSON.stringify({}),
+      });
+    const parentBefore = JSON.stringify(server.runtime.broker.getTask(parent.id));
+
+    // Paused, and closed (`achieved`), goal: 409 invalid_transition, no phase task.
+    for (const status of ["paused", "achieved"]) {
+      goalStatus(status);
+      const refused = await advance();
+      assert.equal(refused.status, 409, status);
+      const refusedBody = await refused.json();
+      assert.equal(refusedBody.error.code, "invalid_transition");
+      assert.deepEqual(refusedBody.error.details, { goalId: "goal-dd", goalStatus: status });
+      assert.deepEqual(childrenOf(), [], status);
+    }
+
+    // Missing goal: 404 not_found, no phase task.
+    editGoal("DELETE FROM broker_goals WHERE id = ?", "goal-dd");
+    const missing = await advance();
+    assert.equal(missing.status, 404);
+    const missingBody = await missing.json();
+    assert.equal(missingBody.error.code, "not_found");
+    assert.deepEqual(missingBody.error.details, { goalId: "goal-dd" });
+    assert.deepEqual(childrenOf(), []);
+    assert.equal(JSON.stringify(server.runtime.broker.getTask(parent.id)), parentBefore, "the parent dialectic is unchanged");
+    const db = new DatabaseSync(dbFile);
+    try {
+      assert.equal(
+        (db.prepare("SELECT COUNT(*) AS n FROM broker_tasks WHERE id <> ?").get(parent.id) as { n: number }).n,
+        0,
+        "no phase task row was persisted",
+      );
+    } finally {
+      db.close();
+    }
+
+    // Restore a pursuing goal: the dialectic advances from the same phase.
+    const restore = await fetch(`${server.baseUrl}/goals`, {
+      method: "POST",
+      headers: hubHeaders,
+      body: JSON.stringify({ id: "goal-dd", title: "Dialectic goal" }),
+    });
+    assert.equal(restore.status, 201);
+    const advanced = await advance();
+    assert.equal(advanced.status, 201);
+    const body = await advanced.json();
+    assert.equal(body.phase, "thesis", "the refused attempts did not move the dialectic");
+    assert.equal(body.childTask.goalId, "goal-dd");
+    assert.equal(childrenOf().length, 1);
+  } finally {
+    await server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("decision-dialectic execution advances phase tasks and applies ordered patches", async () => {

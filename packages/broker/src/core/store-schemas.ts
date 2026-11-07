@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { BrokerError } from "./broker-error.js";
 import { SETTLED_TASK_STATUSES } from "./types.js";
-import type { GoalStatus, GoalTransitionReason } from "./types.js";
+import type { BudgetScopeType, GoalStatus, GoalTransitionReason } from "./types.js";
 
 /**
  * Persisted broker state version. Defined here, beside the snapshot schema that
@@ -1102,6 +1102,62 @@ export const goalRecordSchema = z
       .optional(),
   })
   .passthrough();
+
+/**
+ * Spend ledger vocabulary (#2499 slice 2). Budget scopes are the closed
+ * `BudgetScopeType` list; a period is a calendar month `YYYY-MM` computed in
+ * the broker's budget period time zone (spec Decision 3).
+ */
+export const BUDGET_SCOPE_TYPES = ["agent", "lane", "goal"] as const satisfies readonly BudgetScopeType[];
+export const BUDGET_PERIOD_KEY_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+export const DEFAULT_BUDGET_PERIOD_TIME_ZONE = "Asia/Seoul";
+/**
+ * Upper bounds for worker-reported usage (#2499 slice 2). Telemetry is an
+ * unsigned sidecar; a value above these is treated as malformed (the row is
+ * recorded unmetered), never clamped into a number nobody reported.
+ */
+export const SPEND_MAX_COST_USD = 1e6;
+export const SPEND_MAX_TOKENS = 1e12;
+
+/**
+ * Validate the budget period time zone (`A2A_BUDGET_PERIOD_TIME_ZONE`).
+ * Unset or blank is the default `Asia/Seoul`; anything `Intl` does not accept
+ * as a time zone throws, so a broker with a bad setting fails at startup
+ * instead of bucketing spend into the wrong month. Returns the canonical name
+ * (`asia/seoul` -> `Asia/Seoul`).
+ */
+export function resolveBudgetPeriodTimeZone(raw: string | undefined): string {
+  if (raw === undefined || raw.trim() === "") return DEFAULT_BUDGET_PERIOD_TIME_ZONE;
+  try {
+    return new Intl.DateTimeFormat("en-US", { timeZone: raw.trim() }).resolvedOptions().timeZone;
+  } catch {
+    throw new Error(
+      `invalid A2A_BUDGET_PERIOD_TIME_ZONE='${raw}' (expected an IANA time zone such as Asia/Seoul or UTC)`,
+    );
+  }
+}
+
+const budgetPeriodFormatters = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * `YYYY-MM` of `at` in `timeZone` (an already validated zone). An
+ * unparseable `at` is a programming error and throws.
+ */
+export function budgetPeriodKey(at: string | Date, timeZone: string): string {
+  const date = typeof at === "string" ? new Date(at) : at;
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`budgetPeriodKey: invalid timestamp '${String(at)}'`);
+  }
+  let formatter = budgetPeriodFormatters.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit" });
+    budgetPeriodFormatters.set(timeZone, formatter);
+  }
+  const parts = formatter.formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value ?? "";
+  const month = parts.find((part) => part.type === "month")?.value ?? "";
+  return `${year.padStart(4, "0")}-${month}`;
+}
 
 /**
  * The one caller-influenced field of a terminal-outbox payload that the store

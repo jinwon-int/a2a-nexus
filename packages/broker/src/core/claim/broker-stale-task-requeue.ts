@@ -81,6 +81,8 @@ export interface StaleTaskRequeueContext {
   cancelTask(taskId: string, request: TaskCancelRequest): TaskRecord;
   /** Optional (#2077 step 1) — see TaskTerminalContext.commitMutation. */
   commitMutation?<T>(fn: () => T): T;
+  /** #2499 slice 2 — see TaskTerminalContext.stageTerminalSpend (dead-letter rows). */
+  stageTerminalSpend?(task: TaskRecord): void;
 }
 
 function commitMutation<T>(context: StaleTaskRequeueContext, fn: () => T): T {
@@ -185,6 +187,7 @@ export function requeueStaleTasksDetailed(
           proposalId: task.proposalId,
           note: task.error.message,
         });
+        context.stageTerminalSpend?.(task);
         deadLettered.push(task);
         context.writeTombstone(task, "dead_lettered");
         continue;

@@ -50,19 +50,49 @@ Spec: [`spec.md`](spec.md) · Plan: [`plan.md`](plan.md) · Issue: [#2499](https
 
 ### Slice 2 — spend ledger (record only)
 
-- [ ] On every terminal transition, insert one `broker_spend_events` row keyed by `task_id`; conflicts are ignored.
-- [ ] Read `executionTelemetry` from `result.output` or `error.details.bridgeFailure`; set `cost_known` from the presence of `costUsd`.
-- [ ] `period_key` in the configured zone (default `Asia/Seoul`), as a broker setting.
-- [ ] `GET /budgets/status?scope_type=&scope_id=&period=`:
+- [x] On every terminal transition, insert one `broker_spend_events` row keyed by `task_id`; conflicts are ignored.
+  - Terminal transitions covered: complete, fail (including retry-scheduling fails and stale-sweep dead-letters), and cancel (including cascades and checkpoint expiry).
+    - Each of the four writers of a terminal status (`completeTask`, `failTask`, `cancelTaskRecord`, the stale-sweep dead-letter) stages the row itself, inside its `commitMutation`, before `persistState`.
+    - A fail that schedules a retry records the failed attempt; the retry is a new task id with its own row. A cascade over N non-terminal descendants records N+1 rows; descendants already terminal keep their own earlier row.
+    - One test per path, plus an invariant test: every terminal task row has exactly one spend row and no non-terminal task has one.
+  - The row is staged with the terminal task row and committed in the same store transaction, on both the in-process and the worker-thread SQLite topologies (the worker-thread case is tested on the real `createWorkerThreadPersistence` queue).
+- [x] Read `executionTelemetry` from `result.output` or `error.details.bridgeFailure`; set `cost_known` from the presence of `costUsd`.
+  - Also read from `error.details.nestedError.details.bridgeFailure` (wrapped handler exit) and from a preserved negative review verdict.
+  - Precedence: a failed task tries bridgeFailure, nested bridgeFailure, `result.output`, then the negative-verdict output; other statuses try `result.output` and the negative-verdict output first. The first carrier whose telemetry parses wins, so a malformed carrier falls through to the next valid one.
+  - Values are validated and bounded (`costUsd` ≤ 1e6, tokens ≤ 1e12). When no present carrier parses, the row is recorded unmetered with one `broker.spend.telemetry_malformed` log line.
+  - `agent_id`: `claimedBy`, else the claimant at cancel time (cancellation clears `claimedBy`), else the assignee.
+  - Token, `agent_id` and `lane` semantics are recorded in the spec ("Budgets and spend", clarified in slice 2).
+- [x] `period_key` in the configured zone (default `Asia/Seoul`), as a broker setting: `A2A_BUDGET_PERIOD_TIME_ZONE`. An invalid zone fails startup.
+- [x] `GET /budgets/status?scope_type=&scope_id=&period=`:
   - spend totals (USD known, tokens, unmetered task count);
+  - `period_total` is always the whole period; `scope_total` is the named scope when `scope_type` and `scope_id` are both given, else null;
+  - token totals are exact past 2^53: a number while at most `Number.MAX_SAFE_INTEGER`, else a decimal string;
   - limits shown as none until slice 3.
-- [ ] Tests:
+  - Same read auth as `GET /goals`; 400 on a bad `scope_type`, `scope_id` or `period`.
+  - Spend is SQLite-only: other stores report `available: false`.
+- [x] Tests:
   - replay idempotency;
   - failed and `partial` results recorded;
   - KST month boundary (00:00 KST = 15:00 UTC on the last day);
   - runtimes without cost or tokens.
+- [x] Slice 1 review follow-ups:
+  - `createGoal` rolls back when the save throws: the in-memory goal (store without a goal table) and, on every store, the `goal.created` audit event.
+  - Snapshot `goals` loaded into a SQLite-backed broker are imported into `broker_goals` (create-only; one log line when something was imported or quarantined, none on a restart that finds every goal present). A failed import does not abort startup: it logs `broker.snapshot.goals_import_failed` and carries the goals forward in the snapshot for the next start.
+  - HTTP decision-dialectic advance with a non-pursuing parent goal (paused, or closed such as `achieved`: 409 `invalid_transition`) or a missing one (404 `not_found`) creates no phase task. Test-only: the refusal is slice 1's `createTask` goal gate; no source change was needed.
 
 ### Slice 3 — budgets and enforcement (default off)
+
+Preconditions before enforcement (from the slice 2 review; resolve or record a decision before any mode other than `off` ships):
+
+- [ ] G1 — late telemetry after a cancel. A task canceled while running is recorded unmetered (insert-once), so a result the worker posts later (`lateEvidenceAfterCancel`) never reaches the ledger. Decide one of:
+  - a one-time update of the unmetered row (allowed only when `cost_known = 0` and both token counts are 0, only from the claimant recorded at cancel time, only once);
+  - or explicit semantics that canceled work is unmetered, plus a counter of late results after cancel, shown in budget status.
+- [ ] G2 — terminal tasks with no spend row. If a save fails after the in-memory transition, the staged row is gone and a later save can persist the terminal task row without it. Add a reconciliation check (`broker_tasks` in a terminal status LEFT JOIN `broker_spend_events`, missing rows counted in status and logged) and decide whether it repairs (create-only insert from the stored task) or only reports. An under-count lets spend through enforcement.
+- [ ] G3 — no backfill. Terminal tasks from before slice 2 have no rows, and the deploy month is partial. Either backfill create-only (`ON CONFLICT DO NOTHING`, same `buildTaskSpendEvent`) from terminal `broker_tasks` rows, or start enforcement no earlier than the first full period after the deploy.
+- [ ] Review risk — a failing spend insert fails the terminal transition. Slice 2 keeps this fail-closed on purpose: the row commits in the terminal task's transaction, the only schema constraint (`cost_known IN (0, 1)`) is satisfied by construction, and the failures left (I/O, disk full, lock timeout) would fail the task row write in the same transaction anyway. A non-fatal variant is cheap (a `SAVEPOINT` around the ledger insert, rolled back alone with a log line and counter), but it trades a blocked completion for a silent under-count (G2). Decide with G2; do not change it without stating the new semantics.
+- [ ] Review risk — time zone change mid-period. `period_key` is fixed at insert; changing `A2A_BUDGET_PERIOD_TIME_ZONE` within a month splits that month's rows across differently aligned buckets. Either store the zone in store metadata and refuse (or warn on) a change except at a period boundary, or document that a change applies to new rows only and must be made at a month boundary.
+- [ ] Review risk — telemetry is unsigned. A worker can report up to 1e6 USD per task into a shared lane or goal budget. Decide whether enforcement counts unsigned telemetry as-is, caps per task, or needs signed usage first.
+- [ ] Review risk — the spec "Budgets and spend" clarifications made in slice 2 (`input_tokens` = input + cache creation; "not reported" stored as 0) need spec-owner sign-off.
 
 - [ ] Operator-authenticated budget routes: create, update limit, list. Use the existing operator auth; no new credential.
 - [ ] Enforcement mode setting `off | shadow | on`, default `off`; state whether it applies live or at restart.
