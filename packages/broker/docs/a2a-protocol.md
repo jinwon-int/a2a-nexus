@@ -416,7 +416,12 @@ Alert kind notes:
   subject kind is `budget` with id `<budgetId>:<periodKey>`, so at most one
   alert per budget and period is open at a time. It resolves when the period
   rolls or the limit no longer holds, and can re-open in the same period if
-  the condition returns; exhausted supersedes warn. See
+  the condition returns; exhausted supersedes warn.
+  On the worker SSE stream (`GET /a2a/workers/:workerId/assignment-events`),
+  `worker-assignment-snapshot` can arrive more than once on one connection:
+  after a budget change, a stream that omitted a task gets a fresh snapshot,
+  and the snapshot **replaces** the worker's queued set (it is not merged with
+  the earlier snapshot or live events). See
   `goal-objective-lifecycle.md` ("Budget alerts") and
   `spend-budget-runbook.md`.
 - `gateway.unhealthy` is part of the closed operator alert vocabulary
