@@ -15,16 +15,30 @@ deploy actions and need fresh approval from the owner before anyone runs them.
 All examples use placeholder variables. Never paste a real host name, node
 name or credential into a ticket, log or this document.
 
-```sh
+```bash
 export BROKER_URL="https://broker.example.invalid"   # your broker's base URL
 export OPERATOR_ID="operator-1"                      # your operator identity
-# Keep the edge secret off the curl command line (ps, /proc, shell history):
-# write it to an owner-only header file with the shell builtin printf and
-# pass the file with -H @file (curl 7.55+). Read the value from your secret
-# store; never echo it or paste it into a command.
-umask 077; HDR="$(mktemp)"; trap 'rm -f "$HDR"' EXIT
-printf 'x-a2a-edge-secret: %s\n' "$A2A_EDGE_SECRET_FROM_YOUR_STORE" > "$HDR"
+```
+
+Keep the edge secret off the curl command line (`ps`, `/proc`) and out of
+shell history. Run the next block **as a script** (`bash setup-auth.sh`, or
+paste it into `bash -s`), not line by line into an interactive shell.
+Pasting can feed the following line to `read`, and a failed guard does not
+stop an interactive shell. It is bash-only (`read -s -p`). The header file
+is owner-only and removed when the script exits. Put the calls that need
+`AUTH` in the same script.
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+IFS= read -rs -p 'edge secret: ' A2A_EDGE_SECRET_VALUE </dev/tty; echo
+[ -n "$A2A_EDGE_SECRET_VALUE" ] || { echo 'edge secret is empty' >&2; exit 1; }
+HDR="$(umask 077; mktemp)"
+trap 'rm -f "$HDR"' EXIT
+printf 'x-a2a-edge-secret: %s\n' "$A2A_EDGE_SECRET_VALUE" > "$HDR"   # printf is a builtin: not in ps
+unset A2A_EDGE_SECRET_VALUE
 AUTH=(-H @"$HDR" -H "x-a2a-requester-id: ${OPERATOR_ID}" -H "x-a2a-requester-role: operator")
+# ... curl -sS "${AUTH[@]}" "$BROKER_URL/budgets/status" ...
 ```
 
 Use the operator authentication your deployment already has; the headers above
@@ -43,10 +57,19 @@ store to v14 is a **database migration**:
 
 1. Get the owner's approval first. It covers the migration and, if the backup
    needs the broker stopped, that stop and restart.
-2. Take a backup of the whole broker state database before the upgrade (the
-   store's usual backup procedure, broker stopped or with a consistent
-   snapshot) and record where it is.
-3. Deploy. The broker migrates at startup. A v14 store makes an older binary
+2. Take a backup of the whole broker state database before the upgrade, using
+   the store's usual backup procedure. With SQLite in WAL mode, take it with
+   the SQLite online backup API (`.backup` / `VACUUM INTO`) on the live file,
+   or stop the broker cleanly first. A stopped broker that leaves a `-wal`
+   file still holds committed transactions there: copy the main file together
+   with its `-wal` (and `-shm`), or checkpoint first. Never copy the main file
+   alone.
+3. Verify the backup before deploying: open the copy read-only and check
+   that `PRAGMA integrity_check` returns `ok` and that `broker_metadata` shows
+   the pre-upgrade `schema_version`. Record a backup **reference** (a path
+   relative to your backup root, or the backup system's id; no host or node
+   names), its checksum and the verification result in the approval record.
+4. Deploy. The broker migrates at startup. A v14 store makes an older binary
    refuse to start, so this pre-upgrade backup is the only way back to an
    older release.
 
@@ -205,9 +228,12 @@ Exhausted replaces warn. Alerts are evaluated by the stale-reaper sweep (every
 budgets first), in every mode.
 
 The stale-reaper sweep also runs the spend reconciliation, late-metering
-repair and goal `budget_limited` / resume. If stale reaping is disabled in
-your deployment, none of these run; budget alerts are then computed only once
-at startup.
+repair and goal `budget_limited` / resume. If stale reaping is disabled
+(`STALE_REAPER_ENABLED=0`; default `1`, interval `STALE_REAPER_INTERVAL_SEC`),
+none of these run: budget alerts are computed only once at startup, goals are
+never limited or resumed by budget, and rolling back to mode `off` does not
+resume limited goals until stale reaping is on again. Check it before
+switching the mode.
 
 What to do:
 
@@ -229,10 +255,11 @@ What to do:
 - The worker poll `GET /tasks?assignedWorkerId=worker-a&status=queued` and the
   SSE `worker-assignment-snapshot` **hide** those tasks; the poll adds
   `budgetOmitted` and `budgetScanCapped`. So a polling worker stops getting
-  403s after its next poll. A worker on the SSE stream can still receive one
-  live `worker-assignment` event for a task in a scope that ran out after the
-  event was queued. It gets one 403 on that claim, and the next snapshot hides
-  the task.
+  403s after its next poll. A worker on the SSE stream can still receive live
+  `worker-assignment` events, one per task, for tasks in a scope that ran out
+  after its last snapshot. It gets a 403 on each such claim. The broker sends
+  a fresh `worker-assignment-snapshot` once the stream has omitted a task and
+  the budget state changes; the snapshot replaces the worker's queued set.
 - A create in an exhausted `pause` scope answers **403** `policy_denied` with
   `details.reason: "budget_paused"`.
 - A USD limit refuses only workers that reported a cost this period; token
@@ -266,13 +293,23 @@ In order of preference:
    alerts keep working.
 2. **Revert the code** to an earlier release of the same schema version
    (v14), if one exists. Budgets and the ledger stay in the database
-   untouched. After the first v14 release there is none, so only step 1 or
-   step 3 applies.
+   untouched. If the release you are rolling back from is the first one with
+   schema v14, there is no such release; use step 1 or step 3. (Check the
+   release notes, or `SQLITE_SCHEMA_VERSION` in the candidate release's
+   `packages/broker/src/core/store/store.ts`.)
 3. **Restore the pre-upgrade backup taken in §1** to go back before schema 14
    (**owner approval**: a database restore). This replaces the **whole broker
-   state database**. Everything recorded since the upgrade is lost with it,
-   not only spend: tasks, goals, exchanges, audit events, budgets and the spend
-   ledger. Work that ran after the upgrade is in that store only.
+   state database**. Everything recorded since the backup was taken is lost
+   with it, not only spend: tasks, goals, exchanges, audit events, budgets and
+   the spend ledger. Work that ran after the backup is in the current store
+   only. Before restoring:
+   - stop the broker;
+   - keep a copy of the current (v14) database next to the backup, made the
+     same WAL-safe way as in §1. Verify it with `PRAGMA integrity_check`; its
+     `schema_version` is 14. That way the ledger and audit records since the
+     upgrade are not destroyed with no copy left;
+   - move the current `-wal` and `-shm` files away before putting the restored
+     file in place, so SQLite does not replay v14 WAL frames into it.
 
 Never delete budget or spend rows by hand: the ledger is the audit record, and
 budget audit events are exempt from retention for that reason.

@@ -367,6 +367,26 @@ in-process; this broker owns the reducer and only emits projections.
 A consumer that needs to fan events into its own UI should consume
 the SSE stream and render `A2ATaskProjection` directly.
 
+### Worker assignment stream
+
+Workers can subscribe at `GET /a2a/workers/:workerId/assignment-events`
+(SSE) instead of polling `GET /tasks?assignedWorkerId=&status=queued`.
+
+- `worker-assignment-snapshot`: the worker's queued set, sent at connect
+  time. It can arrive **more than once on one connection**. When monthly
+  spend budgets are enforced (#2499) and the stream has omitted a task
+  whose claim would be refused, the broker sends a fresh snapshot when the
+  budget state changes: a budget is created or its limit changed, the
+  period rolls, or the mode changes at a restart. Each snapshot
+  **replaces** the worker's queued set. It is not merged with the earlier
+  snapshot or with live events.
+- `worker-assignment`: a live assignment event. Under an enforced budget,
+  an event can still name a task whose claim is then refused (403
+  `budget_exhausted`); the next snapshot hides it.
+
+The poll route and the snapshot apply the same budget filter, so a polling
+worker and a streaming worker see the same queued set after a snapshot.
+
 ## Operator Event Model
 
 Operator-facing summary consumers use a separate closed SSE surface at
@@ -416,8 +436,8 @@ Alert kind notes:
   subject kind is `budget` with id `<budgetId>:<periodKey>`, so at most one
   alert per budget and period is open at a time. It resolves when the period
   rolls or the limit no longer holds, and can re-open in the same period if
-  the condition returns; exhausted supersedes warn. See
-  `goal-objective-lifecycle.md` ("Budget alerts") and
+  the condition returns; exhausted supersedes warn. Budget alerts are
+  described in `goal-objective-lifecycle.md` ("Budget alerts") and
   `spend-budget-runbook.md`.
 - `gateway.unhealthy` is part of the closed operator alert vocabulary
   so gateway operators have a stable schema to target, but this broker
