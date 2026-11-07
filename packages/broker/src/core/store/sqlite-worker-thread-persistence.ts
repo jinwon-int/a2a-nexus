@@ -357,7 +357,7 @@ export class SqliteWorkerThread {
 export class WorkerThreadProxyStore extends SqliteBrokerStateStore {
   private readonly queue: WriteQueue;
   private readonly pendingWrites: Promise<unknown>[] = [];
-  /** #2499 slice 3b-2: the most recently tracked write (latestQueuedWrite). */
+  /** #2499 slice 3b-2: the most recently tracked write while it is pending (latestQueuedWrite; cleared on settle, slice 4). */
   private lastWrite: Promise<unknown> | undefined;
   public readonly workerThread: SqliteWorkerThread;
 
@@ -468,6 +468,12 @@ export class WorkerThreadProxyStore extends SqliteBrokerStateStore {
   private trackWrite(promise: Promise<unknown>): void {
     this.pendingWrites.push(promise);
     this.lastWrite = promise;
+    // #2499 slice 4: a settled write is no longer "the latest queued write",
+    // so it cannot be attributed to a later call that queued nothing.
+    const clearLastWrite = (): void => {
+      if (this.lastWrite === promise) this.lastWrite = undefined;
+    };
+    promise.then(clearLastWrite, clearLastWrite);
     // Always leave a trace of a background write failure. Fire-and-forget saves
     // (stale-reaper requeues, snapshot extensions, relay outbox) may never be
     // consumed by awaitDurablePersistenceAck, so without this the rejection was

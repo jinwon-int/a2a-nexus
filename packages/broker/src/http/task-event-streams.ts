@@ -37,12 +37,22 @@ export function handleWorkerAssignmentEventStream(
 
   let stopHeartbeat: () => void = () => undefined;
   let unsubscribe: (() => void) | null = null;
+  let unsubscribeState: (() => void) | null = null;
+  let budgetTimer: NodeJS.Timeout | null = null;
 
   const cleanup = (): void => {
     stopHeartbeat();
     if (unsubscribe) {
       unsubscribe();
       unsubscribe = null;
+    }
+    if (unsubscribeState) {
+      unsubscribeState();
+      unsubscribeState = null;
+    }
+    if (budgetTimer !== null) {
+      clearInterval(budgetTimer);
+      budgetTimer = null;
     }
   };
 
@@ -73,6 +83,48 @@ export function handleWorkerAssignmentEventStream(
       return true;
     }
   };
+  // #2499 slice 4: an assignment the budget filter omitted (from the
+  // snapshot or a live event) is re-announced once it can be allowed again:
+  // when the broker's budget revision changes (a budget write, or the period
+  // rolled; nothing else can lift an omission), a stream that omitted
+  // something since its last snapshot sends a fresh, filtered
+  // `worker-assignment-snapshot`, the authoritative queued set. lastSentId
+  // still advances past an omitted live event, so a reconnect never replays
+  // it; the reconnect's own snapshot lists it once it is allowed. The
+  // revision is checked on every broker state change (budget writes
+  // persist) and, for the period roll, at the heartbeat cadence.
+  let omittedAtRevision: string | null = null;
+  const noteOmission = (): void => {
+    omittedAtRevision ??= broker.getBudgetRevision();
+  };
+  const sendSnapshot = (): void => {
+    const queued = broker.listTasks({ assignedWorkerId: workerId, status: "queued" });
+    // #2499 slice 3b-2: the same budget filter as the worker poll route, so
+    // poll and snapshot list the same tasks.
+    const queuedTasks = broker.filterQueuedListingForWorker(workerId, queued);
+    omittedAtRevision = null;
+    if (queuedTasks.length < queued.length) noteOmission();
+    writeSseEvent(res, "worker-assignment-snapshot", {
+      workerId,
+      count: queuedTasks.length,
+      tasks: queuedTasks.map((task) => ({
+        taskId: task.id,
+        status: task.status,
+        assignedWorkerId: task.assignedWorkerId ?? task.targetNodeId,
+        updatedAt: task.updatedAt,
+      })),
+    });
+  };
+  const reannounceIfBudgetChanged = (): void => {
+    if (omittedAtRevision === null || !flushed || res.writableEnded) return;
+    try {
+      if (broker.getBudgetRevision() === omittedAtRevision) return;
+      budget = undefined;
+      sendSnapshot();
+    } catch {
+      // Fail-open, like the live filter: the stream must not break.
+    }
+  };
   const sendAssignment = (event: TaskStatusEvent): void => {
     if (!isWorkerAssignmentEvent(event, workerId)) {
       return;
@@ -82,6 +134,7 @@ export function handleWorkerAssignmentEventStream(
     }
     lastSentId = event.id;
     if (!budgetAllows(event.taskId)) {
+      noteOmission();
       return;
     }
     writeSseEvent(res, "worker-assignment", buildWorkerAssignmentEvent(event), String(event.id));
@@ -95,24 +148,11 @@ export function handleWorkerAssignmentEventStream(
     sendAssignment(event);
   });
 
+  unsubscribeState = broker.subscribeToState(() => reannounceIfBudgetChanged());
+
   attachSseConnectionCleanup(req, res, cleanup);
 
-  // #2499 slice 3b-2: the same budget filter as the worker poll route, so
-  // poll and snapshot list the same tasks.
-  const queuedTasks = broker.filterQueuedListingForWorker(
-    workerId,
-    broker.listTasks({ assignedWorkerId: workerId, status: "queued" }),
-  );
-  writeSseEvent(res, "worker-assignment-snapshot", {
-    workerId,
-    count: queuedTasks.length,
-    tasks: queuedTasks.map((task) => ({
-      taskId: task.id,
-      status: task.status,
-      assignedWorkerId: task.assignedWorkerId ?? task.targetNodeId,
-      updatedAt: task.updatedAt,
-    })),
-  });
+  sendSnapshot();
 
   for (const event of stream.subscribe({ afterId })) {
     sendAssignment(event);
@@ -125,9 +165,12 @@ export function handleWorkerAssignmentEventStream(
     sendAssignment(event);
   }
   pending.length = 0;
+  reannounceIfBudgetChanged();
 
   if (heartbeatMs > 0) {
     stopHeartbeat = startSseHeartbeat(res, heartbeatMs, cleanup);
+    budgetTimer = setInterval(reannounceIfBudgetChanged, heartbeatMs);
+    budgetTimer.unref?.();
   }
 }
 

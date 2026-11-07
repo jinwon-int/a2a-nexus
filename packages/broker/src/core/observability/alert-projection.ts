@@ -9,7 +9,10 @@
  *   - Deterministic: same input always produces same alerts.
  *   - Composable: alerts are plain data, easy to filter/route.
  */
+import { jsonSafeSpendInteger } from "../store-schemas.js";
 import type {
+  BudgetEnforcementMode,
+  BudgetEvaluation,
   TaskDiagnosticReport,
   TaskError,
   TaskTombstone,
@@ -34,9 +37,13 @@ export type AlertKind =
   | "queue_pressure"
   | "worker.heartbeat_missed"
   | "gateway.unhealthy"
-  | "hot_table_growth";
+  | "hot_table_growth"
+  // #2499 slice 4: a monthly spend budget at its warn threshold / exhausted.
+  | "budget_warn"
+  | "budget_exhausted";
 
-export type AlertSubjectKind = "task" | "worker" | "gateway" | "storage";
+/** #2499 slice 4: `budget` subjects are `${budgetId}:${periodKey}` (one alert per budget and period). */
+export type AlertSubjectKind = "task" | "worker" | "gateway" | "storage" | "budget";
 
 export interface Alert {
   /** Unique alert id (deterministic: `${kind}:${subject.id}`). */
@@ -101,6 +108,12 @@ export interface AlertProjectionOptions {
   workers?: WorkerRecord[];
   /** Threshold after which a worker heartbeat is considered missed. */
   workerHeartbeatMissedAfterMs?: number;
+  /**
+   * #2499 slice 4: budget alerts precomputed by the broker's stale-reaper
+   * sweep (InMemoryA2ABroker.getBudgetAlerts). Taken as given: the
+   * projection reads no store.
+   */
+  budgetAlerts?: Alert[];
   /** Current time override (for testing). */
   nowMs?: number;
 }
@@ -170,6 +183,9 @@ export function projectAlerts(
     const growthAlerts = projectHotTableGrowthAlerts(options.hotTableGrowth, now);
     alerts.push(...growthAlerts);
   }
+
+  // #2499 slice 4: budget alerts come precomputed (no store read here).
+  alerts.push(...(options?.budgetAlerts ?? []));
 
   for (const worker of options?.workers ?? []) {
     const lastSeenMs = Date.parse(worker.lastSeenAt);
@@ -315,6 +331,69 @@ export function projectHotTableGrowthAlerts(
   }
 
   return alerts;
+}
+
+/** #2499 slice 4: which limit an alert is about. */
+export type BudgetAlertLimit = "usd" | "tokens";
+
+/**
+ * #2499 slice 4: the alert for one budget evaluated against one period, or
+ * null when neither limit reached `warnPct`. `budget_exhausted` (critical)
+ * when either limit is exhausted, else `budget_warn` (warning) when either
+ * limit reached `warnPct` percent; exhausted supersedes warn, so one budget
+ * and period project at most one of the two. Either limit counts: an alert is
+ * visibility, not a per-worker refusal (Decision 4 is about claims). The id is
+ * `${kind}:${budgetId}:${periodKey}`, so "once per budget and period" is
+ * structural: the operator differ opens it once, and it resolves when the
+ * period rolls (a new id) or the condition no longer holds. The metadata
+ * carries ids, numbers and modes only (no worker-provided text); token
+ * counts go through jsonSafeSpendInteger (bigint-safe JSON). Pure.
+ */
+export function projectBudgetAlert(input: {
+  evaluation: BudgetEvaluation;
+  enforcement: { configuredMode: BudgetEnforcementMode; effectiveMode: BudgetEnforcementMode | null };
+  detectedAt: string;
+}): Alert | null {
+  const { evaluation } = input;
+  const { budget } = evaluation;
+  const exhausted: BudgetAlertLimit[] = [];
+  if (evaluation.usdExhausted) exhausted.push("usd");
+  if (evaluation.tokensExhausted) exhausted.push("tokens");
+  const atWarn: BudgetAlertLimit[] = [];
+  if (budget.limitUsd !== null && evaluation.usdSpent * 100 >= budget.limitUsd * budget.warnPct) atWarn.push("usd");
+  if (budget.limitTokens !== null && evaluation.tokensSpent * 100n >= BigInt(budget.limitTokens) * BigInt(budget.warnPct)) {
+    atWarn.push("tokens");
+  }
+  const kind: AlertKind | null = exhausted.length > 0 ? "budget_exhausted" : atWarn.length > 0 ? "budget_warn" : null;
+  if (kind === null) return null;
+  const limits = kind === "budget_exhausted" ? exhausted : atWarn;
+  const subjectId = `${budget.id}:${evaluation.periodKey}`;
+  return {
+    id: `${kind}:${subjectId}`,
+    kind,
+    severity: kind === "budget_exhausted" ? "critical" : "warning",
+    subject: { kind: "budget", id: subjectId },
+    summary: kind === "budget_exhausted"
+      ? `Budget ${budget.id} (${budget.scopeType}) exhausted for ${evaluation.periodKey}: ${limits.join(" and ")} limit reached`
+      : `Budget ${budget.id} (${budget.scopeType}) reached ${budget.warnPct}% of its ${limits.join(" and ")} limit for ${evaluation.periodKey}`,
+    detectedAt: input.detectedAt,
+    metadata: {
+      budgetId: budget.id,
+      scopeType: budget.scopeType,
+      scopeId: budget.scopeId,
+      period: budget.period,
+      periodKey: evaluation.periodKey,
+      limits,
+      usdSpent: evaluation.usdSpent,
+      limitUsd: budget.limitUsd,
+      tokensSpent: jsonSafeSpendInteger(evaluation.tokensSpent),
+      limitTokens: budget.limitTokens,
+      warnPct: budget.warnPct,
+      enforce: budget.enforce,
+      configuredMode: input.enforcement.configuredMode,
+      effectiveMode: input.enforcement.effectiveMode,
+    },
+  };
 }
 
 function compactAlertErrorSummary(error: TaskError | undefined): string {

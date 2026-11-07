@@ -214,6 +214,12 @@ export interface CreateGoalRequest {
 export interface GoalListFilters {
   status?: GoalStatus;
   limit?: number;
+  /**
+   * #2499 slice 4: keyset cursor in the listing order (`updatedAt` DESC,
+   * `id` ASC): only goals strictly after this one. Broker-internal (the
+   * not-`on` goal resume pass); the HTTP route does not accept it.
+   */
+  after?: { updatedAt: string; id: string };
 }
 
 /** Budget scope dimensions (#2499, spec "Budgets and spend"). */

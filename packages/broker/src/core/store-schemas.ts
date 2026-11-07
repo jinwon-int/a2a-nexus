@@ -7,6 +7,7 @@ import type {
   BudgetEnforcementMode,
   BudgetPeriod,
   BudgetScopeType,
+  GoalListFilters,
   GoalStatus,
   GoalTransitionReason,
   SpendTotals,
@@ -1063,6 +1064,22 @@ export const goalBudgetPolicySchema = z
     maxResourceUnits: z.number().positive().optional(),
   })
   .strict();
+
+/**
+ * #2499 slice 4: whether a goal passes every GoalListFilters filter except
+ * `limit` (status, keyset cursor), in memory. The SQLite store's listGoals
+ * applies the same filters in SQL; the broker uses this for the JSON-file
+ * store and for its goal overlay, so the two cannot drift.
+ */
+export function goalMatchesListFilters(
+  goal: { id: string; status: GoalStatus; updatedAt: string },
+  filters: GoalListFilters,
+): boolean {
+  if (filters.status !== undefined && goal.status !== filters.status) return false;
+  const after = filters.after;
+  if (after && !(goal.updatedAt < after.updatedAt || (goal.updatedAt === after.updatedAt && goal.id > after.id))) return false;
+  return true;
+}
 
 export const goalRecordSchema = z
   .object({

@@ -152,7 +152,12 @@ function collectLiveActiveReadPathItems<T extends { id: string; status: TaskStat
 
 /** #2499 slice 3b-2: the smallest fetch of the budget-filtered worker poll. */
 const BUDGET_LISTING_MIN_FETCH = 50;
-/** #2499 slice 3b-2: candidate tasks one worker poll scans at most: min(10 x limit, 1000), never below the limit. */
+/**
+ * #2499 slice 3b-2: candidate tasks one worker poll scans at most:
+ * min(10 x limit, 1000), never below the limit. #2499 slice 4: never below
+ * BUDGET_LISTING_MIN_FETCH either, so a small-limit poller scans at least
+ * the minimum fetch.
+ */
 const BUDGET_LISTING_SCAN_FACTOR = 10;
 const BUDGET_LISTING_SCAN_MAX = 1_000;
 
@@ -163,7 +168,7 @@ const BUDGET_LISTING_SCAN_MAX = 1_000;
  * `read(limit)` is the normal read path at a fetch size; each larger fetch
  * is a superset in the same order (the active read path's widening
  * contract), so the fetch widens until `requestedLimit` tasks are kept, the
- * queue is exhausted, or `min(10 x limit, 1000)` candidates were scanned
+ * queue is exhausted, or `max(limit, min(10 x limit, 1000), 50)` candidates were scanned
  * (`scanCapped`). A task is decided once per poll. `omitted` counts the
  * refused tasks ahead of the last kept one (or all scanned when the page is
  * short); the filter's counters are recorded once per call.
@@ -174,7 +179,7 @@ export function listBudgetFilteredWorkerQueue<T extends { id: string }>(
   filter: QueuedListingBudgetFilter,
 ): { items: T[]; omitted: number; scanCapped: boolean } {
   const limit = Math.max(1, Math.floor(requestedLimit));
-  const bound = Math.max(limit, Math.min(BUDGET_LISTING_SCAN_FACTOR * limit, BUDGET_LISTING_SCAN_MAX));
+  const bound = Math.max(limit, Math.min(BUDGET_LISTING_SCAN_FACTOR * limit, BUDGET_LISTING_SCAN_MAX), BUDGET_LISTING_MIN_FETCH);
   let fetch = Math.min(Math.max(limit, BUDGET_LISTING_MIN_FETCH), bound);
   const decisions = new Map<string, QueuedListingBudgetDecision>();
   for (;;) {
