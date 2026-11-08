@@ -1618,3 +1618,52 @@ test("Hermes A2A analysis bridge keeps truncated on-disk source reads on UTF-8 b
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("Hermes A2A analysis bridge warns once per rejected limit env name without echoing the value (#2528)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-env-warning-"));
+  const repoDir = join(tempDir, "a2a-broker");
+  const sourceDir = join(repoDir, "src", "core");
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+
+  try {
+    mkdirSync(sourceDir, { recursive: true });
+    writeFileSync(join(sourceDir, "source.ts"), "ENV_WARNING_MARKER\n");
+    writeFileSync(fakeHermesPath, [
+      "#!/usr/bin/env node",
+      "console.log(JSON.stringify({ status: 'done', summary: 'env warning captured', findings: [], risks: [], recommendations: [], evidenceRefs: [] }));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeHermesPath, 0o755);
+    const message = [
+      "A2AD read-only analysis for a2a-broker.",
+      "Payload JSON:\n" + JSON.stringify({ mode: "analysis-only", noLive: true, sourceOnly: true, repo: "jinwon-int/a2a-broker", path: "src/core/source.ts" }),
+    ].join("\n\n");
+    const run = (extraEnv) => {
+      const env = { ...process.env, HERMES_BIN: fakeHermesPath, A2A_ANALYSIS_REPO_MAP_JSON: JSON.stringify({ "jinwon-int/a2a-broker": repoDir }), ...extraEnv };
+      for (const key of Object.keys(env)) if (key.startsWith("A2A_HERMES_ANALYSIS_") && !(key in extraEnv)) delete env[key];
+      const result = spawnSync(process.execPath, openClawArgs(message), { encoding: "utf8", env });
+      assert.equal(result.status, 0, result.stderr);
+      JSON.parse(result.stdout);
+      return result.stderr.split("\n").filter((line) => line.includes("A2A_HERMES_ANALYSIS_"));
+    };
+
+    const SECRETISH = "bogus-value-7f3a";
+    const lines = run({
+      A2A_HERMES_ANALYSIS_MAX_FILES: SECRETISH,
+      A2A_HERMES_ANALYSIS_MAX_PROMPT_BYTES: "0.5", // parsed at two call sites
+      A2A_HERMES_ANALYSIS_MAX_FILE_BYTES: "4096", // valid: no warning
+    });
+    const count = (name) => lines.filter((line) => line.includes(`${name} `) || line.endsWith(name)).length;
+    assert.equal(count("A2A_HERMES_ANALYSIS_MAX_FILES"), 1, `one warning for MAX_FILES: ${lines.join(" | ")}`);
+    assert.equal(count("A2A_HERMES_ANALYSIS_MAX_PROMPT_BYTES"), 1, `one warning for MAX_PROMPT_BYTES despite two parses: ${lines.join(" | ")}`);
+    assert.equal(count("A2A_HERMES_ANALYSIS_MAX_FILE_BYTES"), 0, "valid value: no warning");
+    assert.equal(lines.length, 2, `only the two rejected names warn: ${lines.join(" | ")}`);
+    assert.ok(lines.every((line) => !line.includes(SECRETISH) && !line.includes("0.5")), "the rejected value is never echoed");
+    assert.ok(lines.every((line) => /not a positive integer/.test(line) && /using the default/.test(line)), "warning says what happened");
+
+    assert.deepEqual(run({}), [], "unset env: no warnings");
+    assert.deepEqual(run({ A2A_HERMES_ANALYSIS_MAX_FILES: "" }), [], "empty value means unset: no warning");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});

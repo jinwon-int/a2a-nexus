@@ -23,8 +23,10 @@ export function safeText(value, fallback = "") {
 }
 
 export function positiveIntegerEnv(value, fallback) {
-	const parsed = Number(value);
-	return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+	// #2528 B7: a value that floors to 0 (e.g. "0.5") is not a positive
+	// integer; use the fallback instead of silently disabling a limit.
+	const parsed = Math.floor(Number(value));
+	return Number.isFinite(parsed) && parsed >= 1 ? parsed : fallback;
 }
 
 export function parseJsonObject(text, label = "JSON") {

@@ -17,6 +17,7 @@ import {
 	normalizePromptViewTelemetry,
 	payloadForPrompt,
 	payloadFromStructuredEnv,
+	positiveIntegerEnv,
 	promptViewTelemetry,
 	sourceCarrierBytes,
 } from "./analysis-source-bundle.mjs";
@@ -271,4 +272,19 @@ test("sourceCarrierBytes and promptViewTelemetry count every carrier shape once 
 	assert.deepEqual(normalizePromptViewTelemetry({ promptBytes: 10, junk: "x" }), { promptBytes: 10 });
 	assert.equal(normalizePromptViewTelemetry({ junk: true }), undefined);
 	assert.equal(normalizePromptViewTelemetry("nope"), undefined);
+});
+
+// #2528 B7: same rule as the hermes/piri analysis parsers (#2524): a value
+// must floor to at least 1, otherwise the fallback is used - "0.5" used to
+// floor to 0 and silently disable a limit.
+test("positiveIntegerEnv falls back unless the value floors to >= 1 (#2528)", () => {
+	for (const value of ["0.5", "0.99", "0", "-1", "-0.5", "abc", "", undefined, null, "Infinity", "NaN"]) {
+		assert.equal(positiveIntegerEnv(value, 7), 7, `value ${JSON.stringify(value)}`);
+	}
+	assert.equal(positiveIntegerEnv("1", 7), 1);
+	assert.equal(positiveIntegerEnv("1.9", 7), 1);
+	assert.equal(positiveIntegerEnv("24576", 7), 24576);
+	assert.equal(positiveIntegerEnv(3, 7), 3);
+	// A caller that passes 0 as the fallback (danso) still gets 0 for junk.
+	assert.equal(positiveIntegerEnv("0.5", 0), 0);
 });

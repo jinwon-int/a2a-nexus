@@ -49,8 +49,10 @@ function safeText(value, fallback = "") {
 }
 
 function positiveIntegerEnv(value, fallback) {
-	const parsed = Number(value);
-	return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+	// #2528 B7: a value that floors to 0 (e.g. "0.5") falls back, same as the
+	// analysis bridges.
+	const parsed = Math.floor(Number(value));
+	return Number.isFinite(parsed) && parsed >= 1 ? parsed : fallback;
 }
 
 function sanitizeName(value) {
@@ -509,4 +511,5 @@ export const __test = Object.freeze({
 	isBootstrapLeakPath,
 	normalizePatchResponse,
 	sanitizeName,
+	positiveIntegerEnv,
 });
