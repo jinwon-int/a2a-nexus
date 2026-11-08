@@ -1,3 +1,5 @@
+import { byteBudget, sliceUtf8AtBoundary } from "./utf8-byte-budget.mjs";
+
 function safeText(value, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
@@ -71,13 +73,15 @@ export function normalizeSourceCarrierFile(item, options = {}) {
   if (!rawContent) {
     return { reason: "empty_content", warning: `skipped empty embedded source file: ${repo}:${path}` };
   }
-  const maxBytes = Math.max(0, Math.min(maxFileBytes, remainingBytes));
+  const maxBytes = byteBudget(Math.min(maxFileBytes, remainingBytes));
   if (maxBytes <= 0) {
     return { reason: "total_budget_exhausted", warning: `dropped embedded source file: reason=total_budget_exhausted path=${repo}:${path}` };
   }
   const buffer = Buffer.from(rawContent, "utf8");
   const truncated = buffer.length > maxBytes;
-  const content = buffer.subarray(0, maxBytes).toString("utf8");
+  // #2528 B8: boundary-safe cut (raw byte offsets turned a split multi-byte
+  // character into U+FFFD in the prompt, the #2005 class).
+  const content = sliceUtf8AtBoundary(buffer, maxBytes).toString("utf8");
   return {
     reason: "ok",
     file: { repo, path, content, contentField, truncated, bytes: buffer.length },

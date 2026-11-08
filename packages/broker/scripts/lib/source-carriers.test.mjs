@@ -102,3 +102,22 @@ test("sourceCarrierStatsFromEnv parses the handler-injected diagnostic stats (#1
   assert.equal(sourceCarrierStatsFromEnv({ A2A_ANALYSIS_SOURCE_CARRIER_STATS: "{not json" }), undefined);
   assert.equal(sourceCarrierStatsFromEnv({ A2A_ANALYSIS_SOURCE_CARRIER_STATS: "[1,2]" }), undefined);
 });
+
+// #2528 B8 audit: embedded payload source files (payload.sourceBundle.files,
+// the main carrier for A2A review lanes) were cut at a raw byte offset, so a
+// multi-byte character at the cut became U+FFFD in the prompt (#2005 class).
+test("normalizeSourceCarrierFile cuts embedded source on a UTF-8 boundary (#2528)", () => {
+  const content = `head ${"가".repeat(10)}`; // 5 + 30 bytes, boundaries at 5 + 3k
+  for (const [maxFileBytes, kept] of [[6, "head "], [7, "head "], [8, "head 가"], [35, content], [7.9, "head "]]) {
+    const result = normalizeSourceCarrierFile({ path: "k.md", content }, { fallbackRepo: "r", maxFileBytes, remainingBytes: 100 });
+    assert.equal(result.reason, "ok");
+    assert.ok(!result.file.content.includes("\uFFFD"), `maxFileBytes ${maxFileBytes}: no U+FFFD`);
+    assert.equal(result.file.content, kept, `maxFileBytes ${maxFileBytes}: whole characters kept`);
+    assert.equal(result.file.truncated, kept !== content);
+    assert.equal(result.file.bytes, Buffer.byteLength(content, "utf8"));
+  }
+  // The remaining total budget cuts on a boundary too.
+  const byRemaining = normalizeSourceCarrierFile({ path: "k.md", content }, { fallbackRepo: "r", maxFileBytes: 100, remainingBytes: 7 });
+  assert.equal(byRemaining.file.content, "head ");
+  assert.match(byRemaining.warning, /keptBytes=5\b/);
+});

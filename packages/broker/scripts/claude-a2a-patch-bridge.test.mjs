@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import {
+  __test,
   buildFanoutSubagentPrompt,
   CLAUDE_ARGV_PROMPT_MAX_BYTES,
   captureMaxTurnCheckpoint,
@@ -2962,4 +2963,28 @@ test("the bridge carries the message-file capability marker the claude-code runn
   assert.ok(source.includes("// a2a-bridge-capability: message-file\n"));
   const profile = readFileSync(new URL("../../docker-runner/profiles/claude-code.sh", import.meta.url), "utf8");
   assert.ok(profile.includes("grep -Fq 'a2a-bridge-capability: message-file' \"$A2A_CLAUDE_PATCH_BRIDGE\""));
+});
+
+// #2528 B8 audit: the transcript fallback cut the subagent description with
+// a UTF-16 slice under a byte-named limit, so multi-byte text could exceed
+// maxOutputBytes (which the validated path enforces in bytes) and a cut
+// between a surrogate pair left a lone surrogate.
+test("transcript subagent fallback caps output in UTF-8 bytes on a character boundary (#2528)", () => {
+  const configDir = mkdtempSync(join(tmpdir(), "claude-fallback-utf8-"));
+  try {
+    const projects = join(configDir, "projects", "p");
+    mkdirSync(projects, { recursive: true });
+    const description = `조사 ${"가".repeat(20)} 😀😀`;
+    const line = JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", name: "Task", input: { subagent_type: "a2a-explorer", description } }] } });
+    writeFileSync(join(projects, "s.jsonl"), `${line}\n`);
+    const options = { maxSubagents: 4, allowedRoles: new Set(["explorer", "implementer", "verifier"]), maxOutputBytes: 10 };
+    const report = __test.extractSubagentReportFromSessionTranscripts({ CLAUDE_CONFIG_DIR: configDir }, 0, options);
+    assert.equal(report.count, 1);
+    const output = report.entries[0].output;
+    assert.ok(Buffer.byteLength(output, "utf8") <= 10, `output is ${Buffer.byteLength(output, "utf8")} bytes`);
+    assert.ok(!output.includes("\uFFFD") && !/[\uD800-\uDBFF]$/.test(output));
+    assert.equal(output, "조사 가"); // 3 + 3 + 1 + 3 = 10 bytes
+  } finally {
+    rmSync(configDir, { recursive: true, force: true });
+  }
 });
