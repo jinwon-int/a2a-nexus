@@ -511,6 +511,37 @@ redacted envelope and refuses malformed fields, mixed record versions,
 duplicate lineages, non-`record` samples, bad timestamp ordering, and a
 same-round replay with a different canonical input digest.
 
+#### Building the envelope from a broker snapshot (#2526)
+
+`GET /review-lineages` returns read-model projections only (it never exposes
+the frozen contract, receipts, diff hashes or the full ledger), so the input
+envelope cannot be built over HTTP. Export it offline from a broker SQLite
+**backup or copy** instead:
+
+```bash
+# 1. verify the backup against its recorded digest, then work on a copy
+sha256sum -c <(echo "$(cat state.sqlite.<tag>.sha256)  state.sqlite.<tag>")
+# 2. export (read-only open; full records stay in memory; writes the envelope 0600)
+node packages/broker/dist/review-lineage-scorecard-export.js \
+  --snapshot /path/to/state-copy.sqlite \
+  --source-round-id <round-id> --as-of <UTC no earlier than the newest record> \
+  --output /path/to/redacted-lineages.json
+# 3. score it
+node packages/review-lifecycle/dist/scorecard-cli.js \
+  --input /path/to/redacted-lineages.json --output /path/to/scorecard.json
+```
+
+The export parses every `record_json` with the same `reviewLineageRecordSchema`
+the observation store uses, keeps only `mode=record` lineages, excludes
+`canary-` lineage ids by default (`--exclude-prefix` replaces the default; pass
+an empty string to exclude nothing), and projects through
+`buildReviewLineageScorecardInput`. It refuses a snapshot that has a non-empty
+`-wal` sibling (likely the serving database) unless `--allow-live` is given,
+refuses to overwrite an existing output, and fails if the envelope would carry a
+raw lineage id or a bare 40/64-hex token. Its summary line reports exported,
+prefix-excluded and non-record counts and the newest `updatedAt`, so `--as-of`
+can be chosen. Delete the snapshot copy once the envelope is written.
+
 Read the output as follows:
 
 - cohorts are separated by the exact global-budget signature;
