@@ -22,32 +22,49 @@ export function byteBudget(maxBytes) {
 }
 
 /**
+ * View any input as the bytes a cut operates on (#2528). Buffers pass through;
+ * every other ArrayBufferView (Uint8Array, DataView, Uint16Array, ...) and a
+ * bare ArrayBuffer are viewed as their underlying bytes without copying;
+ * strings and anything else become their UTF-8 encoding (null/undefined -> "").
+ * Both exported cut helpers use this one rule, so they agree on every input.
+ */
+function toBytes(input) {
+	if (Buffer.isBuffer(input)) return input;
+	if (ArrayBuffer.isView(input)) return Buffer.from(input.buffer, input.byteOffset, input.byteLength);
+	if (input instanceof ArrayBuffer) return Buffer.from(input);
+	return Buffer.from(String(input ?? ""), "utf8");
+}
+
+/** A valid UTF-8 character has at most 3 continuation bytes after its lead. */
+const MAX_CONTINUATION_BYTES = 3;
+
+/**
  * Largest end index <= maxBytes that does not split a UTF-8 character.
  * A byte is a continuation byte iff (byte & 0xc0) === 0x80.
- * String input is measured and scanned as its UTF-8 bytes (#2524).
+ * Input of any kind is measured and scanned as bytes (see toBytes).
+ * The back-off is bounded (#2528): if no lead byte appears within 3 steps the
+ * input is malformed at the cut, and the cut stays at the budget instead of
+ * sliding back towards 0 and dropping everything before it.
  */
 export function utf8BoundaryEnd(buffer, maxBytes) {
-	const bytes = typeof buffer === "string" ? Buffer.from(buffer, "utf8") : buffer;
-	const length = Buffer.byteLength(bytes);
-	let end = Math.min(byteBudget(maxBytes), length);
-	while (end > 0 && end < length && (bytes[end] & 0xc0) === 0x80) end--;
-	return end;
+	const bytes = toBytes(buffer);
+	const length = bytes.length;
+	const limit = Math.min(byteBudget(maxBytes), length);
+	if (limit <= 0 || limit >= length) return limit;
+	const isContinuation = (index) => (bytes[index] & 0xc0) === 0x80;
+	let end = limit;
+	for (let step = 0; step < MAX_CONTINUATION_BYTES && end > 0 && isContinuation(end); step++) end--;
+	return end > 0 && isContinuation(end) ? limit : end;
 }
 
 /**
  * Boundary-safe byte-capped slice. Returns a Buffer of at most maxBytes
  * bytes whose utf8 decoding never contains replacement characters caused
- * by the cut itself.
+ * by the cut itself. Input is viewed as bytes the same way as in
+ * utf8BoundaryEnd (#2524 review, #2528).
  */
 export function sliceUtf8AtBoundary(buffer, maxBytes) {
-	// Any byte view (Buffer, Uint8Array, DataView, ...) is cut as bytes; only
-	// non-byte input is stringified. A plain Uint8Array used to go through
-	// String() and be re-encoded as "234,176,128" text (#2524 review).
-	const buf = Buffer.isBuffer(buffer)
-		? buffer
-		: ArrayBuffer.isView(buffer)
-			? Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength)
-			: Buffer.from(String(buffer ?? ""), "utf8");
+	const buf = toBytes(buffer);
 	const budget = byteBudget(maxBytes);
 	if (buf.length <= budget) return buf;
 	return buf.subarray(0, utf8BoundaryEnd(buf, budget));

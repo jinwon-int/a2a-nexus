@@ -117,3 +117,48 @@ test("byteBudget normalizes budgets to whole bytes (#2524)", () => {
 	assert.equal(byteBudget(Number.NaN), 0);
 	assert.equal(byteBudget(Number.POSITIVE_INFINITY), Number.POSITIVE_INFINITY);
 });
+
+// #2528 A1: one byte normalization for both exported cut helpers.
+test("utf8BoundaryEnd and sliceUtf8AtBoundary agree on every byte container (#2528)", () => {
+	const utf8 = Buffer.from("가나", "utf8"); // boundary at 3
+	const arrayBuffer = utf8.buffer.slice(utf8.byteOffset, utf8.byteOffset + utf8.byteLength);
+	const inputs = {
+		Buffer: utf8,
+		Uint8Array: new Uint8Array(utf8),
+		DataView: new DataView(arrayBuffer),
+		ArrayBuffer: arrayBuffer,
+		string: "가나",
+	};
+	for (const [kind, input] of Object.entries(inputs)) {
+		assert.equal(utf8BoundaryEnd(input, 4), 3, `${kind}: utf8BoundaryEnd backs off to the boundary`);
+		assert.equal(utf8BoundaryEnd(input, 6), 6, `${kind}: whole input fits`);
+		assert.equal(sliceUtf8AtBoundary(input, 4).toString("utf8"), "가", `${kind}: slice cuts as bytes`);
+	}
+});
+
+test("a non-Uint8 typed array is cut by its underlying bytes (#2528)", () => {
+	const utf8 = Buffer.from("가나", "utf8"); // 6 bytes = three 16-bit elements
+	const wide = new Uint16Array(utf8.buffer.slice(utf8.byteOffset, utf8.byteOffset + 6));
+	assert.equal(utf8BoundaryEnd(wide, 4), 3);
+	assert.equal(sliceUtf8AtBoundary(wide, 4).toString("utf8"), "가");
+});
+
+test("non-byte, non-string input is measured as its string form (#2528)", () => {
+	assert.equal(utf8BoundaryEnd(12345, 3), 3);
+	assert.equal(sliceUtf8AtBoundary(12345, 3).toString("utf8"), "123");
+	assert.equal(utf8BoundaryEnd(null, 3), 0);
+});
+
+// #2528 B6: a valid UTF-8 character has at most 3 continuation bytes, so the
+// back-off never needs more than 3 steps. On malformed input (a long run of
+// continuation bytes) the cut used to fall back to 0 and drop everything.
+test("back-off is bounded to 3 bytes on malformed input (#2528)", () => {
+	const malformed = Buffer.from([0x61, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80]);
+	assert.equal(utf8BoundaryEnd(malformed, 6), 6, "no lead byte within 3 steps: cut at the budget");
+	assert.equal(sliceUtf8AtBoundary(malformed, 6).length, 6);
+	// Valid 4-byte characters still back off the full 3 bytes.
+	const emoji = Buffer.from("a😀", "utf8"); // 1 + 4 bytes
+	assert.equal(utf8BoundaryEnd(emoji, 4), 1);
+	assert.equal(utf8BoundaryEnd(emoji, 2), 1);
+	assert.equal(utf8BoundaryEnd(emoji, 5), 5);
+});
