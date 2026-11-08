@@ -121,3 +121,16 @@ test("normalizeSourceCarrierFile cuts embedded source on a UTF-8 boundary (#2528
   assert.equal(byRemaining.file.content, "head ");
   assert.match(byRemaining.warning, /keptBytes=5\b/);
 });
+
+// #2532 review: the boundary-safe cut must not change the reason/ok
+// semantics of odd budgets (a byteBudget wrapper re-labelled them
+// total_budget_exhausted in round 1).
+test("normalizeSourceCarrierFile keeps reason=ok for NaN and sub-1 budgets (#2528)", () => {
+  for (const options of [{ maxFileBytes: Number.NaN, remainingBytes: 100 }, { maxFileBytes: 0.5, remainingBytes: 100 }, { maxFileBytes: 100, remainingBytes: 0.5 }]) {
+    const result = normalizeSourceCarrierFile({ path: "k.md", content: "가나" }, { fallbackRepo: "r", ...options });
+    assert.equal(result.reason, "ok", JSON.stringify(options));
+    assert.equal(result.file.content, "", JSON.stringify(options));
+  }
+  const exhausted = normalizeSourceCarrierFile({ path: "k.md", content: "가나" }, { fallbackRepo: "r", maxFileBytes: 100, remainingBytes: 0 });
+  assert.equal(exhausted.reason, "total_budget_exhausted");
+});

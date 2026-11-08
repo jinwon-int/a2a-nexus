@@ -311,3 +311,33 @@ test("readUtf8FilePrefix reads a file whose fstat size is wrong (procfs reports 
 	assert.ok(Buffer.byteLength(cut.content, "utf8") <= 20 && cut.content.length > 0);
 	assert.ok(cut.bytes >= 21, "reported size is at least what was seen");
 });
+
+// #2532 review: files larger than one 64 KiB read chunk go through the
+// multi-chunk loop (chunk copy, want - total at chunk boundaries).
+test("readUtf8FilePrefix reads across 64 KiB chunks without corrupting earlier chunks (#2528)", () => {
+	const dir = mkdtempSync(join(tmpdir(), "utf8-file-prefix-chunks-"));
+	try {
+		const file = join(dir, "big.txt");
+		// Distinct, position-dependent content so an aliased (reused) chunk
+		// buffer would show up as a mismatch, plus 3-byte characters so the
+		// cut near a chunk boundary must back off.
+		let text = "";
+		for (let i = 0; text.length < 120_000; i++) text += `${i}:가나다|`;
+		writeFileSync(file, text);
+		const size = Buffer.byteLength(text, "utf8");
+		assert.ok(size > 3 * 64 * 1024, `fixture spans several chunks (${size} bytes)`);
+		const whole = readUtf8FilePrefix(file, size);
+		assert.deepEqual(whole, { content: text, truncated: false, bytes: size });
+		for (const budget of [64 * 1024 - 1, 64 * 1024, 64 * 1024 + 1, 2 * 64 * 1024 + 2, size - 1]) {
+			const cut = readUtf8FilePrefix(file, budget);
+			const expected = Buffer.from(text, "utf8").subarray(0, budget);
+			let end = budget;
+			while (end > 0 && (Buffer.from(text, "utf8")[end] & 0xc0) === 0x80) end--;
+			assert.equal(cut.content, expected.subarray(0, end).toString("utf8"), `budget ${budget}: exact prefix on a boundary`);
+			assert.equal(cut.truncated, true);
+			assert.equal(cut.bytes, size);
+		}
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});

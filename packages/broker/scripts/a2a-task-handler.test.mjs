@@ -4292,7 +4292,8 @@ test("trimGithubCommentBody never splits a surrogate pair (#2528)", () => {
   const body = `x${"😀".repeat(40000)}`; // > 64000 bytes; index 59999 is a high surrogate
   const out = __test.trimGithubCommentBody(body);
   const kept = out.split("\n\n---\n\n")[0];
-  assert.ok(kept.length <= 60000);
+  // Index 59999 is a high surrogate, so exactly one unit is backed off.
+  assert.equal(kept.length, 59999, "backs off exactly the split pair, no over-trim");
   assert.ok(!/[\uD800-\uDBFF]$/.test(kept), "no trailing high surrogate");
   assert.equal(Buffer.from(kept, "utf8").toString("utf8"), kept, "lossless as UTF-8");
   assert.match(out, /truncated by a2a-task-handler/);
