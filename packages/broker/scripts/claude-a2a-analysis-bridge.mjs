@@ -24,7 +24,7 @@ import {
   resolveClaudeSettingSources,
   settingSourcesIncludeUser,
 } from "./lib/claude-session-isolation.mjs";
-import { truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
+import { truncateUtf16Safe, truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
 import {
   buildClaudeRuntimeArgs,
 } from "./lib/claude-runtime-flags.mjs";
@@ -133,8 +133,8 @@ function childOutputExcerpt(child, perStreamLimit = 2000) {
   const parts = [];
   const stderrText = safeText(child.stderr).trim();
   const stdoutText = safeText(child.stdout).trim();
-  if (stderrText) parts.push(`stderr: ${stderrText.slice(0, perStreamLimit)}`);
-  if (stdoutText) parts.push(`stdout: ${stdoutText.slice(0, perStreamLimit)}`);
+  if (stderrText) parts.push(`stderr: ${truncateUtf16Safe(stderrText, perStreamLimit)}`);
+  if (stdoutText) parts.push(`stdout: ${truncateUtf16Safe(stdoutText, perStreamLimit)}`);
   return parts.join("\n") || "no output captured";
 }
 
@@ -431,7 +431,7 @@ function looksJsonLikeText(value) {
 function firstSentence(text, max = 240) {
   const compact = safeText(text).replace(/\s+/g, " ").trim();
   if (compact.length <= max) return compact;
-  return `${compact.slice(0, max - 1).trim()}…`;
+  return `${truncateUtf16Safe(compact, max - 1).trim()}…`;
 }
 
 function isProbablyClaudeErrorText(text) {

@@ -20,6 +20,7 @@
 //   A2A_SKILLS_TREE_SHA256_PIN  expected skills digest (preflight)
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { truncateUtf16Safe } from "./utf8-byte-budget.mjs";
 
 // v2 (#2426): the fingerprint also covers the Claude lane isolation mode
 // (#2422/#2424 `--setting-sources`, `--strict-mcp-config`) and whether the lane
@@ -86,7 +87,7 @@ export function normalizeHarnessIsolation(isolation) {
   const rawSources = Array.isArray(isolation.settingSources)
     ? isolation.settingSources.map((part) => text(part)).filter(Boolean).join(",")
     : isolation.settingSources;
-  const settingSources = typeof rawSources === "string" ? rawSources.trim().slice(0, FIELD_MAX) : null;
+  const settingSources = typeof rawSources === "string" ? truncateUtf16Safe(rawSources.trim(), FIELD_MAX) : null;
   const strictMcpConfig = typeof isolation.strictMcpConfig === "boolean" ? isolation.strictMcpConfig : null;
   const laneSkill = LANE_SKILL_STATES.includes(isolation.laneSkill) ? isolation.laneSkill : null;
   return { settingSources, strictMcpConfig, laneSkill };
@@ -116,8 +117,8 @@ export function buildAnalysisHarness({ bridgeFile, runtime, model, isolation, en
   const skills = skillsTreeSha256FromRegistry(env.A2A_SKILLS_REGISTRY_PATH);
   const fields = {
     bridgeFileSha256,
-    runtime: text(runtime).slice(0, FIELD_MAX),
-    model: text(model).slice(0, FIELD_MAX) || null,
+    runtime: truncateUtf16Safe(text(runtime), FIELD_MAX),
+    model: truncateUtf16Safe(text(model), FIELD_MAX) || null,
     skillsTreeSha256: skills.sha256,
     ...normalizeHarnessIsolation(isolation),
   };

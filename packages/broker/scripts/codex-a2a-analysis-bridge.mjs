@@ -18,6 +18,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { analysisCompletionMarker, buildAnalysisHarness } from "./lib/analysis-harness-fingerprint.mjs";
+import { truncateUtf16Safe, truncateUtf16SafeTail } from "./lib/utf8-byte-budget.mjs";
 
 const BRIDGE_FILE = fileURLToPath(import.meta.url);
 
@@ -40,11 +41,12 @@ function safeText(value, fallback = "") {
 }
 
 function redactSecrets(value) {
-  return safeText(value)
+  const redacted = safeText(value)
     .replace(/gh[pousr]_[A-Za-z0-9_]+/g, "[redacted-token]")
     .replace(/\b(Authorization\s*[:=]\s*Bearer\s+)[^\s"']+/gi, "$1[redacted]")
-    .replace(/\b(BROKER_EDGE_SECRET|A2A_EDGE_SECRET|EDGE_SECRET|TOKEN|SECRET|API[_-]?KEY|PASSWORD)=\S+/gi, "$1=[redacted]")
-    .slice(0, 4000);
+    .replace(/\b(BROKER_EDGE_SECRET|A2A_EDGE_SECRET|EDGE_SECRET|TOKEN|SECRET|API[_-]?KEY|PASSWORD)=\S+/gi, "$1=[redacted]");
+  // #2533: never split a surrogate pair at the 4000-unit cap.
+  return truncateUtf16Safe(redacted, 4000);
 }
 
 function die(message) {
@@ -109,7 +111,7 @@ function codexStdoutErrorEvents(stdout, limit = 3) {
     const type = safeText(event?.type, "");
     if (type !== "error" && type !== "turn.failed") continue;
     const message = safeText(event?.error?.message ?? event?.message ?? event?.error, "");
-    events.push(`${type}: ${message || JSON.stringify(event).slice(0, 500)}`);
+    events.push(`${type}: ${message || truncateUtf16Safe(JSON.stringify(event), 500)}`);
     if (events.length >= limit) break;
   }
   return events;
@@ -117,11 +119,12 @@ function codexStdoutErrorEvents(stdout, limit = 3) {
 
 function childOutputExcerpt(child, perStreamLimit = 2000) {
   const parts = [];
-  for (const event of codexStdoutErrorEvents(child.stdout)) parts.push(event.slice(0, perStreamLimit));
+  for (const event of codexStdoutErrorEvents(child.stdout)) parts.push(truncateUtf16Safe(event, perStreamLimit));
   const stderrText = safeText(child.stderr).trim();
   const stdoutText = safeText(child.stdout).trim();
-  if (stderrText) parts.push(`stderr: ${stderrText.slice(0, perStreamLimit)}`);
-  if (stdoutText) parts.push(`stdout: ${stdoutText.slice(-perStreamLimit)}`);
+  if (stderrText) parts.push(`stderr: ${truncateUtf16Safe(stderrText, perStreamLimit)}`);
+  // #2533: tail cut; must not start on the low half of a split pair.
+  if (stdoutText) parts.push(`stdout: ${truncateUtf16SafeTail(stdoutText, perStreamLimit)}`);
   return parts.join("\n") || "no output captured";
 }
 

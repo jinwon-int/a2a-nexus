@@ -58,7 +58,7 @@ import {
 	safeText,
 } from "./lib/analysis-source-bundle.mjs";
 import { sourceCarrierStatsFromEnv } from "./lib/source-carriers.mjs";
-import { truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
+import { truncateUtf16Safe, truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
 
 const BRIDGE_FILE = fileURLToPath(import.meta.url);
 
@@ -142,7 +142,7 @@ function resolveDansoConfig(env) {
 		credentialEnv: spec.credentialEnv,
 		credentialKind: spec.credentialKind,
 		cli: safeText(env.A2A_DANSO_CLI, "danso"),
-		maxTurns: positiveIntegerEnv(env.A2A_DANSO_ANALYSIS_MAX_TURNS, DEFAULT_MAX_TURNS),
+		maxTurns: positiveIntegerEnv(env.A2A_DANSO_ANALYSIS_MAX_TURNS, DEFAULT_MAX_TURNS, "A2A_DANSO_ANALYSIS_MAX_TURNS"),
 		providerTimeoutSec: positiveIntegerEnv(env.A2A_DANSO_PROVIDER_TIMEOUT_SECONDS, 0),
 		maxOutputTokens: positiveIntegerEnv(env.A2A_DANSO_MAX_OUTPUT_TOKENS, 0),
 	};
@@ -212,7 +212,7 @@ function buildDansoPrompt({ message, payload, sourceBundle, flags, model, effort
 function resolveDansoMaxPromptBytes(env) {
 	return Math.min(
 		DANSO_MAX_PROMPT_BYTES,
-		positiveIntegerEnv(env.A2A_DANSO_ANALYSIS_MAX_PROMPT_BYTES, DEFAULT_MAX_PROMPT_BYTES),
+		positiveIntegerEnv(env.A2A_DANSO_ANALYSIS_MAX_PROMPT_BYTES, DEFAULT_MAX_PROMPT_BYTES, "A2A_DANSO_ANALYSIS_MAX_PROMPT_BYTES"),
 	);
 }
 
@@ -356,7 +356,7 @@ function bridgeError({ code, stage, failureShape, message, elapsedMs, context })
 	console.error(`A2A_BRIDGE_ERROR=${JSON.stringify(bounded)}`);
 	// Only danso's own plain diagnostics (no DANSO_* records, no prompt text)
 	// are relayed, and only as a bounded excerpt.
-	if (message) console.error(String(message).slice(0, 2000));
+	if (message) console.error(truncateUtf16Safe(String(message), 2000));
 	process.exit(1);
 }
 
@@ -503,7 +503,12 @@ function main() {
 
 	const timeoutSec = Math.min(
 		MAX_DANSO_TIMEOUT_SEC,
-		positiveIntegerEnv(flags.timeout || env.A2A_DANSO_ANALYSIS_TIMEOUT_SEC, DEFAULT_TIMEOUT_SEC),
+		// Name the env var only when it (not the --timeout flag) was the source.
+		positiveIntegerEnv(
+			flags.timeout || env.A2A_DANSO_ANALYSIS_TIMEOUT_SEC,
+			DEFAULT_TIMEOUT_SEC,
+			flags.timeout ? undefined : "A2A_DANSO_ANALYSIS_TIMEOUT_SEC",
+		),
 	);
 	const prompt = applyDansoPromptBudget(
 		buildDansoPrompt({ message, payload, sourceBundle, flags, model: config.model, effort: config.effort }),

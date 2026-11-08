@@ -211,3 +211,58 @@ test("Codex failure excerpt keeps stdout JSON error events when stderr only carr
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// #2533: the failure excerpt cuts stderr by prefix, stdout by TAIL and the
+// whole message at 4000 units; none of these cuts may split a surrogate pair
+// (a lone half reaches stderr as U+FFFD).
+function runCodexAdapterFailure(stderrText, stdoutText) {
+  const dir = mkdtempSync(join(tmpdir(), "codex-a2a-bridge-utf16-"));
+  const fakeCodex = join(dir, "fake-codex.mjs");
+  const configDir = join(dir, "codex-dir");
+  try {
+    mkdirSync(configDir);
+    writeFileSync(join(configDir, "auth.json"), JSON.stringify(sourceAuth), { mode: 0o600 });
+    writeFileSync(fakeCodex, [
+      "#!/usr/bin/env node",
+      "import { readFileSync } from 'node:fs';",
+      "readFileSync(0, 'utf8');",
+      `process.stderr.write(${JSON.stringify(stderrText)});`,
+      `process.stdout.write(${JSON.stringify(stdoutText)});`,
+      "process.exitCode = 1;",
+    ].join("\n"));
+    chmodSync(fakeCodex, 0o755);
+    return spawnSync(bridgePath, ["-p", "analyze"], {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CODEX_ADAPTER_MODE: "1", A2A_CODEX_BIN: fakeCodex, A2A_CODEX_ANALYSIS_CONFIG_DIR: configDir },
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const CODEX_LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+test("#2533 Codex failure excerpt: stderr prefix cut and stdout tail cut never split a surrogate pair", () => {
+  // stderr: index 1999 is a high surrogate (prefix cut at 2000).
+  // stdout: 2001 units, so the 2000-unit tail would start on a low surrogate.
+  const result = runCodexAdapterFailure(`${"W".repeat(1999)}😀z`, `😀${"s".repeat(1999)}`);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Codex exited with 1/);
+  assert.equal(result.stderr.includes("�"), false, "no replacement character from a split pair");
+  assert.equal(CODEX_LONE_SURROGATE.test(result.stderr), false);
+  assert.ok(result.stderr.includes(`stderr: ${"W".repeat(1999)}\nstdout: sss`), "stderr backs off one unit; the stdout tail drops the lone low half");
+});
+
+test("#2533 Codex redactSecrets 4000-unit cap never splits a surrogate pair", () => {
+  // Neither stream cut splits (stderr is 1999 ASCII units, the stdout tail
+  // starts on a high surrogate), so only the cap is exercised: the excerpt is
+  // 4016 units, and in "Codex exited with 1: <excerpt>" the 4000-unit cap
+  // lands on a high surrogate.
+  const result = runCodexAdapterFailure("W".repeat(1999), "😀".repeat(1500));
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Codex exited with 1/);
+  assert.equal(result.stderr.includes("�"), false, "no replacement character from a split pair");
+  assert.equal(CODEX_LONE_SURROGATE.test(result.stderr), false);
+  const message = result.stderr.replace(/\n$/, "");
+  assert.ok(message.length <= 4000, `message length ${message.length}`);
+});

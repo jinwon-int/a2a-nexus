@@ -22,11 +22,30 @@ export function safeText(value, fallback = "") {
 	return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
-export function positiveIntegerEnv(value, fallback) {
+const warnedEnvNames = new Set();
+
+/**
+ * Parse a positive-integer limit, falling back when the value does not floor
+ * to >= 1. With the optional `name`, a non-blank rejected value is reported
+ * once per name on stderr (#2531/#2533 D1) - the name and the default only,
+ * never the value. An unset or blank value is not a rejection, and callers
+ * that pass no name stay silent. The return value never depends on `name`.
+ */
+export function positiveIntegerEnv(value, fallback, name) {
 	// #2528 B7: a value that floors to 0 (e.g. "0.5") is not a positive
 	// integer; use the fallback instead of silently disabling a limit.
 	const parsed = Math.floor(Number(value));
-	return Number.isFinite(parsed) && parsed >= 1 ? parsed : fallback;
+	if (Number.isFinite(parsed) && parsed >= 1) return parsed;
+	if (name && String(value ?? "").trim() !== "" && !warnedEnvNames.has(name)) {
+		warnedEnvNames.add(name);
+		process.stderr.write(`a2a-analysis-source-bundle: ignoring ${name} (not a positive integer); falling back to the default ${fallback}\n`);
+	}
+	return fallback;
+}
+
+/** Test-only: re-arm the once-per-name env warnings of positiveIntegerEnv. */
+export function __resetEnvWarningsForTest() {
+	warnedEnvNames.clear();
 }
 
 export function parseJsonObject(text, label = "JSON") {
@@ -331,7 +350,13 @@ export function collectSourceBundle(payload, env, { prefix }) {
 	const repos = collectRepos(payload);
 	if (repos.length === 0 && repoMap.has("__default__")) repos.push({ name: "__default__" });
 
-	const limit = (suffix, fallback) => positiveIntegerEnv(env[`${prefix}_${suffix}`] || env[`A2A_HERMES_ANALYSIS_${suffix}`], fallback);
+	// #2533 D2: warn under the name of the variable actually read (the first
+	// non-empty of the bridge-prefixed and the A2A_HERMES_ANALYSIS_ name).
+	const limit = (suffix, fallback) => {
+		const prefixedName = `${prefix}_${suffix}`;
+		const name = env[prefixedName] ? prefixedName : `A2A_HERMES_ANALYSIS_${suffix}`;
+		return positiveIntegerEnv(env[name], fallback, name);
+	};
 	const maxFiles = limit("MAX_FILES", DEFAULT_MAX_FILES);
 	const maxFileBytes = limit("MAX_FILE_BYTES", DEFAULT_MAX_FILE_BYTES);
 	const maxTotalBytes = limit("MAX_TOTAL_BYTES", DEFAULT_MAX_TOTAL_BYTES);

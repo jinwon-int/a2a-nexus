@@ -29,7 +29,7 @@ import {
   receiptShadowInputs,
   reviewShadowInputs,
 } from "./lib/jev-review-shadow.mjs";
-import { truncateUtf16Safe } from "./lib/utf8-byte-budget.mjs";
+import { truncateUtf16Safe, truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
 
 const HANDLER_VERSION = "0.2.20";
 const SOURCE_PATH = fileURLToPath(import.meta.url);
@@ -1181,10 +1181,10 @@ function analysisBridgeArtifactPreflight(command, env = process.env) {
 
 function analysisHarnessPreflightError(commandText, resolved, failures) {
   const bounded = failures.slice(0, 8).map((failure) => ({
-    check: safeText(failure.check, "unknown").slice(0, 64),
-    expected: safeText(failure.expected, "").slice(0, 64) || undefined,
-    actual: safeText(failure.actual, "").slice(0, 64) || undefined,
-    remedy: safeText(failure.remedy, "").slice(0, 240),
+    check: truncateUtf16Safe(safeText(failure.check, "unknown"), 64),
+    expected: truncateUtf16Safe(safeText(failure.expected, ""), 64) || undefined,
+    actual: truncateUtf16Safe(safeText(failure.actual, ""), 64) || undefined,
+    remedy: truncateUtf16Safe(safeText(failure.remedy, ""), 240),
   }));
   return {
     error: {
@@ -1353,8 +1353,11 @@ function markdownList(title, items) {
 function trimGithubCommentBody(body) {
   const max = 64000;
   if (Buffer.byteLength(body, "utf8") <= max) return body;
-  // #2528 B8: published text - never split a surrogate pair at the cut.
-  return `${truncateUtf16Safe(body, 60000)}\n\n---\n\n(truncated by a2a-task-handler to stay under GitHub comment limits)`;
+  // #2533: judge AND cut in UTF-8 bytes. A 60000-unit cut let a multibyte
+  // body over 64000 bytes keep every character while still getting the
+  // notice. The byte cut lands on a character boundary, so it never splits a
+  // surrogate pair either (#2528 B8).
+  return `${truncateUtf8ToBytesSafe(body, 60000)}\n\n---\n\n(truncated by a2a-task-handler to stay under GitHub comment limits)`;
 }
 
 function buildAnalysisEvidenceCommentBody({ task, status, analysisSummary, output }) {
@@ -1482,11 +1485,28 @@ const SOURCE_CARRIER_STAT_KEYS = [
 
 function boundedBridgeFailureString(value, max) {
   const text = safeText(value, "");
-  return text ? text.slice(0, max) : undefined;
+  return text ? truncateUtf16Safe(text, max) : undefined;
 }
 
 function boundedBridgeFailureCount(value) {
   return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+// #2531/#2533 D4: bridges warn about rejected limit env vars before they
+// start work, so those lines used to lead a failure message and push the real
+// cause out of view. Move them to the end, keeping the relative order inside
+// both groups. Only the human-readable message is reordered; the structured
+// parsers (parseAnalysisBridgeFailure, maxTurnFailureEvidence) still read the
+// raw stderr.
+const BRIDGE_ENV_WARNING_LINE_RE = /^[\w.-]+: ignoring [A-Z0-9_]+ \(not a positive integer\)/;
+
+function moveEnvWarningLinesLast(text) {
+  const value = String(text ?? "");
+  const lines = value.split("\n");
+  const warnings = lines.filter((line) => BRIDGE_ENV_WARNING_LINE_RE.test(line));
+  if (warnings.length === 0 || warnings.length === lines.length) return value;
+  const rest = lines.filter((line) => !BRIDGE_ENV_WARNING_LINE_RE.test(line));
+  return [...rest, ...warnings].join("\n");
 }
 
 function normalizeAnalysisBridgeFailure(detail) {
@@ -1494,7 +1514,7 @@ function normalizeAnalysisBridgeFailure(detail) {
   const code = safeText(detail.code, "");
   if (!code) return null;
   const normalized = {
-    code: code.slice(0, BRIDGE_FAILURE_DETAIL_MAX),
+    code: truncateUtf16Safe(code, BRIDGE_FAILURE_DETAIL_MAX),
     stage: boundedBridgeFailureString(detail.stage, BRIDGE_FAILURE_DETAIL_MAX),
     failureShape: boundedBridgeFailureString(detail.failureShape, BRIDGE_FAILURE_DETAIL_MAX),
     adapterClass: boundedBridgeFailureString(detail.adapterClass, BRIDGE_FAILURE_DETAIL_MAX),
@@ -1541,7 +1561,7 @@ function normalizeAnalysisHarness(value) {
     skillCount: boundedBridgeFailureCount(value.skillCount),
     // #2426 (fingerprint v2): isolation inputs. `settingSources` may be the
     // empty string (no sources at all), which is a real value and is kept.
-    settingSources: typeof value.settingSources === "string" ? value.settingSources.slice(0, BRIDGE_FAILURE_DETAIL_MAX) : undefined,
+    settingSources: typeof value.settingSources === "string" ? truncateUtf16Safe(value.settingSources, BRIDGE_FAILURE_DETAIL_MAX) : undefined,
     strictMcpConfig: typeof value.strictMcpConfig === "boolean" ? value.strictMcpConfig : undefined,
     laneSkill: boundedBridgeFailureString(value.laneSkill, 32),
     harnessFingerprint: sha(value.harnessFingerprint),
@@ -1598,7 +1618,7 @@ function withUnmarkedCompletion(result) {
         completion: {
           marked: false,
           at: new Date().toISOString(),
-          reason: safeText(result.error.code, "analysis_bridge_failed").slice(0, 64),
+          reason: truncateUtf16Safe(safeText(result.error.code, "analysis_bridge_failed"), 64),
         },
       },
     },
@@ -1771,7 +1791,7 @@ function runOpenClawAnalysisBridgeOnce(task, env = process.env, sessionId) {
     return {
       error: {
         code: child.signal ? "openclaw_analysis_timeout" : "openclaw_analysis_failed",
-        message: safeText(child.stderr, safeText(child.stdout, `openclaw exited with ${child.status ?? "unknown"}`)),
+        message: moveEnvWarningLinesLast(safeText(child.stderr, safeText(child.stdout, `openclaw exited with ${child.status ?? "unknown"}`))),
         details: {
           exitCode: child.status,
           signal: child.signal ?? undefined,
@@ -2169,7 +2189,7 @@ function runDecisionDialecticBridge(task, env = process.env) {
     return {
       error: {
         code: child.signal ? "decision_dialectic_bridge_timeout" : "decision_dialectic_bridge_failed",
-        message: safeText(child.stderr, safeText(child.stdout, `openclaw exited with ${child.status ?? "unknown"}`)),
+        message: moveEnvWarningLinesLast(safeText(child.stderr, safeText(child.stdout, `openclaw exited with ${child.status ?? "unknown"}`))),
         details: { exitCode: child.status, signal: child.signal ?? undefined, buildInfo: BUILD_INFO },
       },
     };
@@ -2415,7 +2435,10 @@ function extractIssueNumber(task) {
 
 function jsonForPrompt(value, limit = 24000) {
   const text = JSON.stringify(value, null, 2);
-  return text.length <= limit ? text : `${text.slice(0, limit - 40)}\n...\n[truncated ${text.length - limit + 40} chars]`;
+  if (text.length <= limit) return text;
+  // #2533: never split a surrogate pair; report the units actually dropped.
+  const kept = truncateUtf16Safe(text, limit - 40);
+  return `${kept}\n...\n[truncated ${text.length - kept.length} chars]`;
 }
 
 function runOpenClawBridge(task, env = process.env) {
@@ -2503,7 +2526,7 @@ function runOpenClawBridge(task, env = process.env) {
     return {
       error: {
         code: child.signal ? "openclaw_bridge_timeout" : maxTurns ? "openclaw_bridge_max_turns" : "openclaw_bridge_failed",
-        message: safeText(child.stderr, safeText(child.stdout, `openclaw exited with ${child.status ?? "unknown"}`)),
+        message: moveEnvWarningLinesLast(safeText(child.stderr, safeText(child.stdout, `openclaw exited with ${child.status ?? "unknown"}`))),
         details: {
           exitCode: child.status,
           signal: child.signal ?? undefined,
@@ -3177,6 +3200,9 @@ export const __test = Object.freeze({
   resolveWorkerThinking,
   validateWorkerOverrides,
   writeAnalysisBridgeInputFiles,
+  boundedBridgeFailureString,
+  jsonForPrompt,
+  moveEnvWarningLinesLast,
 });
 
 export function handleTask(task, env = process.env) {

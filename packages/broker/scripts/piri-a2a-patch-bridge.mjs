@@ -27,6 +27,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { truncateUtf16Safe } from "./lib/utf8-byte-budget.mjs";
 
 const DEFAULT_TIMEOUT_SEC = 1800;
 const DEFAULT_PIRI_MODEL = "kimi-coding/k3";
@@ -163,7 +164,7 @@ function runAcceptanceInClone({ spec, cloneDir, env }) {
 	const timedOut = Boolean(run.error) && run.error.code === "ETIMEDOUT";
 	const exitCode = typeof run.status === "number" ? run.status : -1;
 	const pass = !run.error && exitCode === spec.expectExitCode;
-	const commandNote = spec.command.join(" ").slice(0, MAX_ACCEPTANCE_NOTE_COMMAND_LENGTH);
+	const commandNote = truncateUtf16Safe(spec.command.join(" "), MAX_ACCEPTANCE_NOTE_COMMAND_LENGTH);
 	return {
 		kind: "smoke",
 		verdict: pass ? "pass" : "fail",

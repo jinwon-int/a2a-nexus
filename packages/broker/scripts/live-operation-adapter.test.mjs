@@ -211,3 +211,28 @@ test("deterministic live adapter rejects wrapper-only success without verify sen
     fx.cleanup();
   }
 });
+
+// #2533: the failed-phase stderr is cut to 2000 UTF-16 units; the cut must not
+// split a surrogate pair.
+test("failed runbook phase stderr excerpt never splits a surrogate pair", () => {
+  const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  const fx = fixture();
+  try {
+    const calls = [];
+    const succeed = successfulSpawn(calls);
+    const spawn = (command, args, options) => {
+      if (command === "/usr/bin/curl") return succeed(command, args, options);
+      calls.push({ command, args, options });
+      // index 1999 is the high half of the emoji
+      return { status: 1, signal: null, stdout: "", stderr: `${"r".repeat(1999)}😀tail` };
+    };
+    const outcome = runLiveOperationTask(task(), env(fx.manifestPath), { spawnSync: spawn });
+    assert.equal(outcome.error?.code, "live_runbook_phase_failed");
+    const stderr = outcome.error.details.stderr;
+    assert.ok(stderr.length <= 2000);
+    assert.equal(stderr, "r".repeat(1999), "backs off exactly the split pair");
+    assert.equal(LONE_SURROGATE.test(stderr), false);
+  } finally {
+    fx.cleanup();
+  }
+});

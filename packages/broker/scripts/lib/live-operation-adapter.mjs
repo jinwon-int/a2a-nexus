@@ -1,6 +1,7 @@
 import { readFileSync, lstatSync, realpathSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { spawnSync as nodeSpawnSync } from "node:child_process";
+import { truncateUtf16Safe } from "./utf8-byte-budget.mjs";
 
 const LIVE_TASK_MODE = "promote-to-live-v1";
 const LIVE_OPERATION_SCHEMA = "a2a.live-operation.v1";
@@ -320,7 +321,7 @@ export function runLiveOperationTask(task, env = process.env, dependencies = {})
           phase,
           status: executed.status ?? null,
           signal: executed.signal ?? null,
-          stderr: String(executed.stderr ?? "").slice(0, 2000),
+          stderr: truncateUtf16Safe(String(executed.stderr ?? ""), 2000),
         });
       }
       let phaseResult;

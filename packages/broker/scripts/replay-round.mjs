@@ -48,6 +48,7 @@ import {
   sourceCarrierPath,
   sourceCarrierStats,
 } from "./lib/source-carriers.mjs";
+import { truncateUtf16Safe } from "./lib/utf8-byte-budget.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SOURCE_ONLY_BRIDGE = join(HERE, "source-only-local-analysis-bridge.mjs");
@@ -205,7 +206,7 @@ function stageBridge(payload, bridgeInput) {
       stage: "bridge",
       status: "fail",
       code: "bridge_exit_nonzero",
-      detail: { exitCode: spawned.status, stderr: (spawned.stderr ?? "").slice(0, 500) },
+      detail: { exitCode: spawned.status, stderr: truncateUtf16Safe(spawned.stderr ?? "", 500) },
     };
   }
   let projection;

@@ -2994,3 +2994,22 @@ test("transcript subagent fallback caps output in UTF-8 bytes on a character bou
     rmSync(configDir, { recursive: true, force: true });
   }
 });
+
+// #2533: tool failure text is cut to a UTF-16 budget; the cut must not leave
+// a lone surrogate (it becomes U+FFFD in the published error).
+test("#2533 patch-bridge failure excerpts never split a surrogate pair at the cut", () => {
+  const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  assert.equal(typeof __test.toolError, "function", "toolError is exposed for tests");
+  // safeText keeps leading text; index 3999 is the high half of the emoji.
+  const stderr = `${"e".repeat(3999)}😀tail`;
+  const error = __test.toolError("git", "apply", { status: 1, signal: null, stderr, stdout: "" });
+  const detail = error.message.slice(error.message.indexOf(": ") + 2);
+  assert.ok(detail.length <= 4000);
+  assert.equal(detail, "e".repeat(3999), "backs off exactly the split pair");
+  assert.equal(LONE_SURROGATE.test(error.message), false);
+
+  assert.equal(typeof __test.childOutputExcerpt, "function", "childOutputExcerpt is exposed for tests");
+  const excerpt = __test.childOutputExcerpt({ stderr: `${"s".repeat(9)}😀z`, stdout: `${"o".repeat(9)}😀z` }, 10);
+  assert.equal(excerpt, `stderr: ${"s".repeat(9)}\nstdout: ${"o".repeat(9)}`);
+  assert.equal(LONE_SURROGATE.test(excerpt), false);
+});

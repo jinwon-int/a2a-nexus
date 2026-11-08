@@ -328,3 +328,20 @@ test("a truncation refusal inside a JSON envelope is not masked by a later field
   assert.equal(got.kind, "no_diff");
   assert.match(got.body, /refusing a partial patch/);
 });
+
+// #2533: the refusal names the offending line cut to 120 UTF-16 units; that
+// cut must not split a surrogate pair (it would surface as U+FFFD).
+test("the partial-patch refusal never splits a surrogate pair in the quoted line (#2533)", () => {
+  const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  const cut = THREE_FILE_DIFF.indexOf("diff --git a/B.txt");
+  // "diff --git a/" is 13 units; 106 more puts the emoji's high half at index 119.
+  const header = `diff --git a/${"x".repeat(106)}😀 b/y`;
+  assert.equal(header.charCodeAt(119) >= 0xd800 && header.charCodeAt(119) <= 0xdbff, true, "fixture straddles the 120-unit cut");
+  const got = extractUnifiedDiff(`${THREE_FILE_DIFF.slice(0, cut)}Now the second file:\n${header}\n${THREE_FILE_DIFF.slice(cut)}`);
+  assert.equal(got.kind, "no_diff");
+  assert.match(got.body, /refusing a partial patch/);
+  const quoted = got.body.match(/output line \d+ \(([^)]*)\)/)[1];
+  assert.ok(quoted.length <= 120);
+  assert.equal(quoted, header.slice(0, 119), "backs off exactly the split pair");
+  assert.equal(LONE_SURROGATE.test(got.body), false, "no lone surrogate in the refusal");
+});

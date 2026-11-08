@@ -4289,13 +4289,113 @@ test("#2393 claim preflight: a pin cannot be verified against a bare bridge comm
 // #2528 B8: the GitHub comment body is published text; the 60000-unit cut
 // must not leave a lone surrogate.
 test("trimGithubCommentBody never splits a surrogate pair (#2528)", () => {
-  const body = `x${"😀".repeat(40000)}`; // > 64000 bytes; index 59999 is a high surrogate
+  const body = `x${"😀".repeat(40000)}`; // 160001 bytes > 64000
   const out = __test.trimGithubCommentBody(body);
   const kept = out.split("\n\n---\n\n")[0];
-  // Index 59999 is a high surrogate, so exactly one unit is backed off.
-  assert.equal(kept.length, 59999, "backs off exactly the split pair, no over-trim");
+  // #2533: the cut is a 60000-BYTE budget; 1 + 14999 * 4 = 59997 bytes is the
+  // longest prefix that does not split a 4-byte emoji.
+  assert.equal(kept, `x${"😀".repeat(14999)}`, "cuts on the last whole character within 60000 bytes");
   assert.ok(!/[\uD800-\uDBFF]$/.test(kept), "no trailing high surrogate");
   assert.equal(Buffer.from(kept, "utf8").toString("utf8"), kept, "lossless as UTF-8");
   assert.match(out, /truncated by a2a-task-handler/);
   assert.equal(__test.trimGithubCommentBody("짧은 본문"), "짧은 본문");
+});
+
+// #2533 C: judge and cut are both UTF-8 bytes. A multibyte body over 64000
+// bytes but under 60000 UTF-16 units used to get the notice with nothing cut.
+test("trimGithubCommentBody judges and cuts by UTF-8 bytes (#2533)", () => {
+  const body = "가".repeat(25000); // 25000 units, 75000 bytes
+  const out = __test.trimGithubCommentBody(body);
+  assert.match(out, /truncated by a2a-task-handler/);
+  const kept = out.split("\n\n---\n\n")[0];
+  assert.ok(kept.length < body.length, "the body part is actually shorter than the input");
+  assert.ok(Buffer.byteLength(kept, "utf8") <= 60000, "body part fits the 60000-byte budget");
+  assert.equal(kept, "가".repeat(20000));
+  const atLimit = "가".repeat(21333); // 63999 bytes
+  assert.equal(__test.trimGithubCommentBody(atLimit), atLimit, "a body of <= 64000 bytes is returned unchanged");
+  const exact = `${"가".repeat(21333)}a`; // exactly 64000 bytes
+  assert.equal(__test.trimGithubCommentBody(exact), exact);
+});
+
+const HANDLER_LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+// #2533 B: bridge-supplied failure strings are cut by UTF-16 units; the cut
+// must not leave a lone surrogate.
+test("boundedBridgeFailureString never splits a surrogate pair (#2533)", () => {
+  assert.equal(typeof __test.boundedBridgeFailureString, "function");
+  const out = __test.boundedBridgeFailureString(`${"a".repeat(63)}😀b`, 64);
+  assert.equal(out, "a".repeat(63));
+  assert.equal(HANDLER_LONE_SURROGATE.test(out), false);
+  assert.equal(__test.boundedBridgeFailureString("", 64), undefined);
+  assert.equal(__test.boundedBridgeFailureString("short", 64), "short");
+});
+
+test("jsonForPrompt never splits a surrogate pair and reports the units it actually dropped (#2533)", () => {
+  assert.equal(typeof __test.jsonForPrompt, "function");
+  const value = `${"a".repeat(58)}${"😀".repeat(30)}`;
+  const text = JSON.stringify(value, null, 2); // index 59 = first emoji's high half
+  const out = __test.jsonForPrompt(value, 100); // keeps limit - 40 = 60 units
+  const [kept, rest] = out.split("\n...\n");
+  assert.equal(kept, text.slice(0, 59), "backs off exactly the split pair");
+  assert.ok(kept.length <= 60);
+  assert.equal(HANDLER_LONE_SURROGATE.test(out), false);
+  assert.equal(rest, `[truncated ${text.length - kept.length} chars]`);
+  assert.equal(__test.jsonForPrompt({ a: 1 }, 100), JSON.stringify({ a: 1 }, null, 2));
+});
+
+// #2531/#2533 D4: bridge env-rejection warnings are written before the bridge
+// starts work, so they used to lead the failure message.
+test("moveEnvWarningLinesLast puts bridge env warnings after the real failure (#2533)", () => {
+  const move = __test.moveEnvWarningLinesLast;
+  assert.equal(typeof move, "function");
+  const warnA = "a2a-analysis-source-bundle: ignoring A2A_DANSO_ANALYSIS_MAX_FILES (not a positive integer); falling back to the default 16";
+  const warnB = "hermes-a2a-analysis-bridge: ignoring A2A_HERMES_ANALYSIS_MAX_FILE_BYTES (not a positive integer); falling back to the default 24576 before any other caps";
+  assert.equal(move(`${warnA}\nreal failure\n${warnB}\nsecond line`), `real failure\nsecond line\n${warnA}\n${warnB}`);
+  assert.equal(move("real failure\nsecond line"), "real failure\nsecond line", "no warnings: unchanged");
+  assert.equal(move(""), "");
+  assert.equal(move(warnA), warnA, "only warnings: unchanged");
+  assert.equal(move("note: ignoring lowercase (not a positive integer)\nx"), "note: ignoring lowercase (not a positive integer)\nx");
+});
+
+test("analysis bridge failure message leads with the real failure, not env warnings (#2533)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-analysis-env-warning-order-"));
+  const bin = join(dir, "failing-bridge.mjs");
+  writeFileSync(bin, `#!/usr/bin/env node
+process.stderr.write('a2a-analysis-source-bundle: ignoring A2A_DANSO_ANALYSIS_MAX_FILES (not a positive integer); falling back to the default 16\\n');
+process.stderr.write('A2A_BRIDGE_ERROR={"code":"analysis_bridge_invalid_json","stage":"extract"}\\n');
+process.stderr.write('real failure\\n');
+process.exit(1);
+`);
+  chmodSync(bin, 0o755);
+  try {
+    const result = handleTask({
+      id: "task-env-warning-order",
+      intent: "analyze",
+      assignedWorkerId: "workerzeta",
+      message: "Analyze #2533 read-only evidence",
+      payload: {
+        mode: "github-read-only-validation",
+        repo: "jinwon-int/a2a-nexus",
+        issue: "#2533",
+        sourceOnly: true,
+        readOnlyValidation: true,
+        noLive: true,
+        noGitHubWrites: true,
+      },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_OPENCLAW_ANALYSIS_TIMEOUT_SEC: "5",
+      A2A_NODE_ID: "workerzeta",
+    });
+    assert.equal(result.error?.code, "openclaw_analysis_failed");
+    const message = String(result.error?.message ?? "");
+    assert.ok(message.startsWith("A2A_BRIDGE_ERROR="), `the real failure leads: ${JSON.stringify(message.slice(0, 80))}`);
+    assert.ok(message.indexOf("real failure") < message.indexOf("ignoring A2A_DANSO_ANALYSIS_MAX_FILES"), "warning moved after the failure");
+    assert.equal(result.error?.details?.bridgeFailure?.code, "analysis_bridge_invalid_json", "bridge failure parsing is unchanged");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
