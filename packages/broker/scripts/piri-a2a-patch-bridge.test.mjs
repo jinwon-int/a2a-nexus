@@ -282,3 +282,13 @@ test("normalizePatchResponse passes the bridge acceptance verdict through", () =
 	const without = __test.normalizePatchResponse({ status: "pr_opened", summary: "ok" });
 	assert.equal(without.acceptance, undefined);
 });
+
+test("piri patch bridge timeout parser falls back unless the value floors to >= 1 (#2528)", () => {
+	// "0.5"/"0.99" are the behaviour change (they used to floor to 0); the rest
+	// pin values that already fell back.
+	for (const value of ["0.5", "0.99", "0", "-1", "-0.5", "abc", "", undefined, null, "Infinity", "NaN"]) {
+		assert.equal(__test.positiveIntegerEnv(value, 900), 900, `value ${JSON.stringify(value)}`);
+	}
+	assert.equal(__test.positiveIntegerEnv("1.5", 900), 1);
+	assert.equal(__test.positiveIntegerEnv("600", 900), 600);
+});

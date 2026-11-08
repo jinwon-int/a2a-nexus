@@ -1618,3 +1618,67 @@ test("Hermes A2A analysis bridge keeps truncated on-disk source reads on UTF-8 b
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("Hermes A2A analysis bridge warns once per rejected limit env name without echoing the value (#2528)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-env-warning-"));
+  const repoDir = join(tempDir, "a2a-broker");
+  const sourceDir = join(repoDir, "src", "core");
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+
+  try {
+    mkdirSync(sourceDir, { recursive: true });
+    writeFileSync(join(sourceDir, "source.ts"), "ENV_WARNING_MARKER\n");
+    writeFileSync(fakeHermesPath, [
+      "#!/usr/bin/env node",
+      "console.log(JSON.stringify({ status: 'done', summary: 'env warning captured', findings: [], risks: [], recommendations: [], evidenceRefs: [] }));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeHermesPath, 0o755);
+    const message = [
+      "A2AD read-only analysis for a2a-broker.",
+      "Payload JSON:\n" + JSON.stringify({ mode: "analysis-only", noLive: true, sourceOnly: true, repo: "jinwon-int/a2a-broker", path: "src/core/source.ts" }),
+    ].join("\n\n");
+    const run = (extraEnv) => {
+      const env = { ...process.env, HERMES_BIN: fakeHermesPath, A2A_ANALYSIS_REPO_MAP_JSON: JSON.stringify({ "jinwon-int/a2a-broker": repoDir }), ...extraEnv };
+      for (const key of Object.keys(env)) if (key.startsWith("A2A_HERMES_ANALYSIS_") && !(key in extraEnv)) delete env[key];
+      const result = spawnSync(process.execPath, openClawArgs(message), { encoding: "utf8", env });
+      assert.equal(result.status, 0, result.stderr);
+      // The fake Hermes answered, so the run went through the whole bridge,
+      // including the second MAX_PROMPT_BYTES parse in the prompt-arg budget.
+      const envelope = JSON.parse(result.stdout);
+      assert.equal(JSON.parse(envelope.payloads[0]?.text).summary, "env warning captured");
+      return result.stderr.split("\n").filter((line) => line.includes("A2A_HERMES_ANALYSIS_"));
+    };
+    // Match the exact name followed by a space, so MAX_FILES never matches MAX_FILE_BYTES.
+    const linesFor = (lines, name) => lines.filter((line) => line.includes(`ignoring ${name} `));
+
+    const SECRETISH = "bogus-value-7f3a";
+    const lines = run({
+      A2A_HERMES_ANALYSIS_MAX_FILES: SECRETISH,
+      A2A_HERMES_ANALYSIS_MAX_PROMPT_BYTES: "0.5", // parsed at two call sites
+      A2A_HERMES_ANALYSIS_MAX_TOTAL_BYTES: "0", // the #2528 A2 case: "0" used to disable collection
+      A2A_HERMES_ANALYSIS_MAX_TREE_ENTRIES: "-1",
+      A2A_HERMES_ANALYSIS_MAX_FILE_BYTES: "4096", // valid: no warning
+    });
+    const expected = {
+      A2A_HERMES_ANALYSIS_MAX_FILES: 16,
+      A2A_HERMES_ANALYSIS_MAX_PROMPT_BYTES: 96 * 1024,
+      A2A_HERMES_ANALYSIS_MAX_TOTAL_BYTES: 160 * 1024,
+      A2A_HERMES_ANALYSIS_MAX_TREE_ENTRIES: 80,
+    };
+    for (const [name, fallback] of Object.entries(expected)) {
+      const mine = linesFor(lines, name);
+      assert.equal(mine.length, 1, `exactly one warning for ${name}: ${lines.join(" | ")}`);
+      assert.match(mine[0], new RegExp(`\\(not a positive integer\\); falling back to the default ${fallback} before any other caps$`), `${name}: wording and exact default`);
+    }
+    assert.equal(linesFor(lines, "A2A_HERMES_ANALYSIS_MAX_FILE_BYTES").length, 0, "valid value: no warning");
+    assert.equal(lines.length, Object.keys(expected).length, `only the rejected names warn: ${lines.join(" | ")}`);
+    assert.ok(lines.every((line) => !line.includes(SECRETISH) && !line.includes("0.5") && !line.includes("-1")), "the rejected value is never echoed");
+
+    assert.deepEqual(run({}), [], "unset env: no warnings");
+    assert.deepEqual(run({ A2A_HERMES_ANALYSIS_MAX_FILES: "" }), [], "empty value means unset: no warning");
+    assert.deepEqual(run({ A2A_HERMES_ANALYSIS_MAX_FILES: "   " }), [], "whitespace-only value means unset: no warning");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
