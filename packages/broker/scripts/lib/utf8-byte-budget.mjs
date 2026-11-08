@@ -15,7 +15,7 @@
  * undefined) while `subarray()` still floored the cut, splitting a
  * character. Non-numeric / NaN budgets mean zero; Infinity stays Infinity.
  */
-function byteBudget(maxBytes) {
+export function byteBudget(maxBytes) {
 	const value = Number(maxBytes);
 	if (Number.isNaN(value)) return 0;
 	return Math.max(0, Math.floor(value));
@@ -40,7 +40,14 @@ export function utf8BoundaryEnd(buffer, maxBytes) {
  * by the cut itself.
  */
 export function sliceUtf8AtBoundary(buffer, maxBytes) {
-	const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(String(buffer ?? ""), "utf8");
+	// Any byte view (Buffer, Uint8Array, DataView, ...) is cut as bytes; only
+	// non-byte input is stringified. A plain Uint8Array used to go through
+	// String() and be re-encoded as "234,176,128" text (#2524 review).
+	const buf = Buffer.isBuffer(buffer)
+		? buffer
+		: ArrayBuffer.isView(buffer)
+			? Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength)
+			: Buffer.from(String(buffer ?? ""), "utf8");
 	const budget = byteBudget(maxBytes);
 	if (buf.length <= budget) return buf;
 	return buf.subarray(0, utf8BoundaryEnd(buf, budget));

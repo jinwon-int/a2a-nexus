@@ -1467,20 +1467,16 @@ test("Hermes bridge passes the structured reviewLineage block through (#2351)", 
   }
 });
 
-test("Hermes A2A analysis bridge keeps truncated on-disk source reads on UTF-8 boundaries, integer or fractional limits (#2524)", () => {
+test("Hermes A2A analysis bridge keeps truncated on-disk source reads on UTF-8 boundaries (#2524)", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-utf8-read-limit-"));
   const repoDir = join(tempDir, "a2a-broker");
   const sourceDir = join(repoDir, "src", "core");
   const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
   const promptPath = join(tempDir, "prompt.txt");
+  const MARKER = "UTF8_READ_MARKER\n"; // 17 bytes
 
   try {
     mkdirSync(sourceDir, { recursive: true });
-    // 'UTF8_READ_MARKER\n' is 17 bytes, then 3-byte Hangul syllables, so
-    // character boundaries sit at 17 + 3k. The bounded disk read used to keep
-    // exactly maxBytes bytes and never back off a split trailing character.
-    writeFileSync(join(sourceDir, "korean.ts"), `UTF8_READ_MARKER\n${"가".repeat(40)}\n`);
-
     writeFileSync(fakeHermesPath, [
       "#!/usr/bin/env node",
       "import { writeFileSync } from 'node:fs';",
@@ -1499,19 +1495,28 @@ test("Hermes A2A analysis bridge keeps truncated on-disk source reads on UTF-8 b
         noLive: true,
         sourceOnly: true,
         repo: "jinwon-int/a2a-broker",
-        path: "src/core/korean.ts",
+        path: "src/core/source.ts",
       }),
     ].join("\n\n");
 
-    // budget -> whole syllables that fit: floor((floor(budget) - 17) / 3)
+    // [label, file body after MARKER, MAX_FILE_BYTES, expected body kept]
+    // Character boundaries sit at 17 + 3k for Hangul and 17 + 4k for emoji.
+    // The bounded disk read used to keep exactly MAX_FILE_BYTES bytes and
+    // never back off a split trailing character, even for integer limits.
+    const hangul = "가".repeat(40);
+    const emoji = "😀".repeat(20);
     const cases = [
-      ["47", 10], // exact boundary (17 + 30)
-      ["48", 10], // one byte into the 11th syllable
-      ["49", 10], // two bytes into the 11th syllable
-      ["48.5", 10], // fractional
-      ["49.9", 10], // fractional
+      ["hangul exact boundary", hangul, "47", "가".repeat(10)],
+      ["hangul 1 byte into a syllable", hangul, "48", "가".repeat(10)],
+      ["hangul 2 bytes into a syllable", hangul, "49", "가".repeat(10)],
+      ["emoji 3 bytes into a code point", emoji, "36", "😀".repeat(4)],
+      ["file exactly at the limit (not truncated)", "가".repeat(10), "47", "가".repeat(10)],
+      ["file one byte over the limit (look-ahead hits EOF)", `${"가".repeat(10)}x`, "47", "가".repeat(10)],
+      ["sub-1 env value falls back to the default limit", hangul, "0.5", hangul],
     ];
-    for (const [fileBytes, syllables] of cases) {
+    for (const [label, body, fileBytes, kept] of cases) {
+      writeFileSync(join(sourceDir, "source.ts"), MARKER + body);
+      rmSync(promptPath, { force: true });
       const result = spawnSync(process.execPath, openClawArgs(message), {
         encoding: "utf8",
         env: {
@@ -1520,14 +1525,19 @@ test("Hermes A2A analysis bridge keeps truncated on-disk source reads on UTF-8 b
           CAPTURE_PROMPT_PATH: promptPath,
           A2A_ANALYSIS_REPO_MAP_JSON: JSON.stringify({ "jinwon-int/a2a-broker": repoDir }),
           A2A_HERMES_ANALYSIS_MAX_FILE_BYTES: fileBytes,
-          A2A_HERMES_ANALYSIS_MAX_TOTAL_BYTES: "200000.5",
         },
       });
 
-      assert.equal(result.status, 0, `${fileBytes}: ${result.stderr}`);
+      assert.equal(result.status, 0, `${label}: ${result.stderr}`);
+      assert.ok(existsSync(promptPath), `${label}: fake hermes was not invoked`);
       const prompt = readFileSync(promptPath, "utf8");
-      assert.ok(!prompt.includes("\uFFFD"), `MAX_FILE_BYTES=${fileBytes} must not cut a multi-byte character`);
-      assert.match(prompt, new RegExp(`UTF8_READ_MARKER\\n${"가".repeat(syllables)}(?!가)`), `MAX_FILE_BYTES=${fileBytes} keeps ${syllables} whole syllables`);
+      assert.ok(!prompt.includes("\uFFFD"), `${label}: MAX_FILE_BYTES=${fileBytes} must not cut a multi-byte character`);
+      const at = prompt.indexOf(MARKER);
+      assert.ok(at >= 0, `${label}: source marker missing`);
+      const after = prompt.slice(at + MARKER.length);
+      assert.ok(after.startsWith(kept), `${label}: expected the kept body to start the source section`);
+      const next = after.slice(kept.length, kept.length + 2);
+      assert.ok(!next.startsWith("가") && !next.startsWith("😀"), `${label}: kept more characters than the limit allows`);
     }
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
