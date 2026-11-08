@@ -1236,8 +1236,11 @@ function extractSubagentReportFromSessionTranscripts(env, startedAtMs, options) 
     while (seenIds.has(id)) id = `${id}-x`;
     seenIds.add(id);
     // #2528 B8: maxOutputBytes is a UTF-8 byte cap (the validated path at
-    // normalizeFanoutSubagentReport enforces it in bytes); cut on a character boundary.
-    return { role, id, writeSet: [], status: "complete", output: truncateUtf8ToBytesSafe(event.description, options.maxOutputBytes) };
+    // normalizeFanoutSubagentReport enforces it in bytes); cut on a character
+    // boundary. No finite cap means no cap, as before (#2532 review).
+    const cap = Number(options.maxOutputBytes);
+    const output = Number.isFinite(cap) ? truncateUtf8ToBytesSafe(event.description, cap) : event.description;
+    return { role, id, writeSet: [], status: "complete", output };
   });
   return { count: entries.length, entries };
 }

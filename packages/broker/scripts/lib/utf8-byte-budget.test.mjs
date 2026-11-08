@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -290,7 +290,19 @@ test("readUtf8FilePrefix cuts on-disk text on a UTF-8 boundary from the bytes ac
 	}
 });
 
-test("readUtf8FilePrefix reads a file whose fstat size is wrong (procfs reports 0) (#2528)", { skip: !existsSync("/proc/self/status") }, () => {
+test("readUtf8FilePrefix reads a file whose fstat size is wrong (procfs reports 0) (#2528)", { skip: !existsSync("/proc/self/status") }, (t) => {
+	// The point of this test is a file whose fstat size is wrong; check that
+	// precondition instead of assuming it (#2532 review).
+	if (statSync("/proc/self/status").size !== 0) {
+		t.skip("fstat reports a non-zero size for /proc/self/status here");
+		return;
+	}
+	// Finite budget larger than the content: the chunked path (the one hermes
+	// uses) must still read past the reported 0 bytes.
+	const finite = readUtf8FilePrefix("/proc/self/status", 1_000_000);
+	assert.ok(finite.content.length > 0, "content is read through the chunked path");
+	assert.equal(finite.truncated, false);
+	assert.equal(finite.bytes, Buffer.byteLength(finite.content, "utf8"));
 	const whole = readUtf8FilePrefix("/proc/self/status", Number.POSITIVE_INFINITY);
 	assert.ok(whole.content.length > 0, "content is read even though fstat says 0 bytes");
 	assert.equal(whole.truncated, false);

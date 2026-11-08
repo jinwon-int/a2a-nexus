@@ -2984,6 +2984,12 @@ test("transcript subagent fallback caps output in UTF-8 bytes on a character bou
     assert.ok(Buffer.byteLength(output, "utf8") <= 10, `output is ${Buffer.byteLength(output, "utf8")} bytes`);
     assert.ok(!output.includes("\uFFFD") && !/[\uD800-\uDBFF]$/.test(output));
     assert.equal(output, "조사 가"); // 3 + 3 + 1 + 3 = 10 bytes
+    // A cut inside a 4-byte character backs off to the boundary.
+    writeFileSync(join(projects, "s.jsonl"), `${JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", name: "Task", input: { subagent_type: "a2a-explorer", description: "ab😀c" } }] } })}\n`);
+    assert.equal(__test.extractSubagentReportFromSessionTranscripts({ CLAUDE_CONFIG_DIR: configDir }, 0, { ...options, maxOutputBytes: 5 }).entries[0].output, "ab");
+    // No finite cap keeps the whole description, as before (#2532 review).
+    const { maxOutputBytes: _ignored, ...uncapped } = options;
+    assert.equal(__test.extractSubagentReportFromSessionTranscripts({ CLAUDE_CONFIG_DIR: configDir }, 0, uncapped).entries[0].output, "ab😀c");
   } finally {
     rmSync(configDir, { recursive: true, force: true });
   }

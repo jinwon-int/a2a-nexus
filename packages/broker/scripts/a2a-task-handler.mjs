@@ -29,6 +29,7 @@ import {
   receiptShadowInputs,
   reviewShadowInputs,
 } from "./lib/jev-review-shadow.mjs";
+import { truncateUtf16Safe } from "./lib/utf8-byte-budget.mjs";
 
 const HANDLER_VERSION = "0.2.20";
 const SOURCE_PATH = fileURLToPath(import.meta.url);
@@ -1352,7 +1353,8 @@ function markdownList(title, items) {
 function trimGithubCommentBody(body) {
   const max = 64000;
   if (Buffer.byteLength(body, "utf8") <= max) return body;
-  return `${body.slice(0, 60000)}\n\n---\n\n(truncated by a2a-task-handler to stay under GitHub comment limits)`;
+  // #2528 B8: published text - never split a surrogate pair at the cut.
+  return `${truncateUtf16Safe(body, 60000)}\n\n---\n\n(truncated by a2a-task-handler to stay under GitHub comment limits)`;
 }
 
 function buildAnalysisEvidenceCommentBody({ task, status, analysisSummary, output }) {
@@ -3157,6 +3159,7 @@ function handleBuiltinTask(task, env = process.env) {
 }
 
 export const __test = Object.freeze({
+  trimGithubCommentBody,
   buildRunnerTask,
   DEFAULT_OPENCLAW_TIMEOUT_SEC,
   DEFAULT_RUNNER_TASK_TIMEOUT_MS,

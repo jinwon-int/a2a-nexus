@@ -1724,6 +1724,7 @@ test("Hermes A2A analysis bridge keeps gh failure diagnostics surrogate-safe and
     assert.ok(reasonText.includes("😀"), "the diagnostic text is present");
     assert.ok(!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(reasonText), "no lone surrogate in the diagnostics");
     assert.ok(!text.includes("\\ud83d\""), "no escaped lone surrogate at a string end");
+    assert.ok(!reasonText.includes("\uFFFD"), "no replacement character either");
     // PR_* limit names warn too (#2531 review: they were not covered).
     const warnings = result.stderr.split("\n").filter((line) => line.startsWith("hermes-a2a-analysis-bridge: ignoring "));
     assert.deepEqual(warnings.map((line) => line.split(" ")[2]), ["A2A_HERMES_ANALYSIS_PR_DIFF_BYTES"]);

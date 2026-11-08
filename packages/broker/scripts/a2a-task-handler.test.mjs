@@ -4285,3 +4285,16 @@ test("#2393 claim preflight: a pin cannot be verified against a bare bridge comm
   assert.equal(result.error.code, "analysis_bridge_harness_preflight_failed");
   assert.match(result.error.details.failures[0].remedy, /not a script path/);
 });
+
+// #2528 B8: the GitHub comment body is published text; the 60000-unit cut
+// must not leave a lone surrogate.
+test("trimGithubCommentBody never splits a surrogate pair (#2528)", () => {
+  const body = `x${"😀".repeat(40000)}`; // > 64000 bytes; index 59999 is a high surrogate
+  const out = __test.trimGithubCommentBody(body);
+  const kept = out.split("\n\n---\n\n")[0];
+  assert.ok(kept.length <= 60000);
+  assert.ok(!/[\uD800-\uDBFF]$/.test(kept), "no trailing high surrogate");
+  assert.equal(Buffer.from(kept, "utf8").toString("utf8"), kept, "lossless as UTF-8");
+  assert.match(out, /truncated by a2a-task-handler/);
+  assert.equal(__test.trimGithubCommentBody("짧은 본문"), "짧은 본문");
+});
