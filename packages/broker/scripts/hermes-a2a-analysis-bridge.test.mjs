@@ -1514,7 +1514,7 @@ test("Hermes A2A analysis bridge keeps truncated on-disk source reads on UTF-8 b
       const telemetry = prompt.match(/"canonicalBytes": (\d+)/);
       return { headerLine, content: prompt.slice(open, close), prompt, canonicalBytes: telemetry ? Number(telemetry[1]) : undefined };
     }
-    function runBridge(label, envOverrides, bridgeMessage = message) {
+    function runBridge(label, envOverrides, bridgeMessage = message, { section = true } = {}) {
       rmSync(promptPath, { force: true });
       const result = spawnSync(process.execPath, openClawArgs(bridgeMessage), {
         encoding: "utf8",
@@ -1530,7 +1530,7 @@ test("Hermes A2A analysis bridge keeps truncated on-disk source reads on UTF-8 b
       assert.ok(existsSync(promptPath), `${label}: fake hermes was not invoked`);
       const prompt = readFileSync(promptPath, "utf8");
       assert.ok(!prompt.includes("\uFFFD"), `${label}: a cut must not split a multi-byte character`);
-      return { ...projectedSection(prompt, label), prompt };
+      return section ? { ...projectedSection(prompt, label), prompt } : { prompt };
     }
 
     // [label, file body after MARKER, MAX_FILE_BYTES, expected body kept, truncated]
@@ -1566,9 +1566,10 @@ test("Hermes A2A analysis bridge keeps truncated on-disk source reads on UTF-8 b
     // The payload names a directory holding two files, so the walkTree path
     // (and with it MAX_TREE_ENTRIES) is exercised, and a limit kept below 1
     // instead of falling back ("0.5" -> 0.5) is caught: it admits only one of
-    // the two files. "abc" (NaN) disables the bounds rather than shrinking
-    // them; telling it apart from the defaults would need more files than the
-    // default caps, so here it is a no-crash/fallback guard only.
+    // the two files. "abc" (NaN) left unparsed empties the byte limits
+    // (byteBudget(NaN) = 0, so nothing is kept) and is caught for
+    // MAX_FILE_BYTES/MAX_TOTAL_BYTES; for the count limits it removes the
+    // bounds, which only more files than the default caps could reveal.
     writeFileSync(join(sourceDir, "source.ts"), MARKER + hangul);
     writeFileSync(join(sourceDir, "second.ts"), "SECOND_FILE_MARKER\n");
     const directoryMessage = [
@@ -1589,6 +1590,29 @@ test("Hermes A2A analysis bridge keeps truncated on-disk source reads on UTF-8 b
         assert.ok(prompt.includes("### jinwon-int/a2a-broker:src/core/second.ts") && prompt.includes("SECOND_FILE_MARKER"), `${label}: both directory files collected`);
         assert.equal(headerLine.endsWith(" (truncated)"), false, `${label}: not truncated`);
       }
+    }
+
+    // Positive controls (#2529 review): a valid value is applied, so a bridge
+    // that ignored the env and always used the defaults would fail here.
+    // walkTree sorts entries, so second.ts (19 bytes) is collected first.
+    const SECOND = "### jinwon-int/a2a-broker:src/core/second.ts";
+    for (const name of ["MAX_FILES", "MAX_TREE_ENTRIES"]) {
+      const label = `A2A_HERMES_ANALYSIS_${name}="1" is applied`;
+      const { prompt } = runBridge(label, { [`A2A_HERMES_ANALYSIS_${name}`]: "1" }, directoryMessage, { section: false });
+      assert.ok(prompt.includes(SECOND), `${label}: first file collected`);
+      assert.ok(!prompt.includes(HEADER), `${label}: second file not collected`);
+    }
+    {
+      const label = 'A2A_HERMES_ANALYSIS_MAX_TOTAL_BYTES="20" is applied';
+      const { headerLine, content } = runBridge(label, { A2A_HERMES_ANALYSIS_MAX_TOTAL_BYTES: "20" }, directoryMessage);
+      assert.equal(content, "U", `${label}: 19 bytes went to second.ts, 1 byte is left for source.ts`);
+      assert.ok(headerLine.endsWith(" (truncated)"), `${label}: truncated`);
+    }
+    {
+      const label = 'A2A_HERMES_ANALYSIS_MAX_FILE_BYTES="20" is applied';
+      const { headerLine, content } = runBridge(label, { A2A_HERMES_ANALYSIS_MAX_FILE_BYTES: "20" }, directoryMessage);
+      assert.equal(content, `${MARKER}가`, `${label}: 17 marker bytes + one 3-byte syllable`);
+      assert.ok(headerLine.endsWith(" (truncated)"), `${label}: truncated`);
     }
   } finally {
     rmSync(tempDir, { recursive: true, force: true });

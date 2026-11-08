@@ -57,7 +57,9 @@ function sequenceLength(lead) {
 /**
  * Largest end index <= maxBytes that does not split a UTF-8 character.
  * A byte is a continuation byte iff (byte & 0xc0) === 0x80.
- * Input of any kind is measured and scanned as bytes (see toBytes).
+ * Input of any kind is measured and scanned as bytes (see toBytes), and the
+ * result is a BYTE offset into those bytes - for a Uint16Array or other wide
+ * typed array it is not an element index (use sliceUtf8AtBoundary to cut).
  *
  * When the cut lands on a continuation byte, look back at most 3 bytes for
  * the lead byte of that character and cut before it only if that lead really
@@ -86,7 +88,9 @@ export function utf8BoundaryEnd(buffer, maxBytes) {
  * Boundary-safe byte-capped slice. Returns a Buffer of at most maxBytes
  * bytes whose utf8 decoding never contains replacement characters caused
  * by the cut itself. Input is viewed as bytes the same way as in
- * utf8BoundaryEnd (#2524 review, #2528).
+ * utf8BoundaryEnd (#2524 review, #2528). The result is a zero-copy view of
+ * byte input: for a SharedArrayBuffer another thread may change the bytes
+ * after the cut, which voids the guarantee - copy first if that can happen.
  */
 export function sliceUtf8AtBoundary(buffer, maxBytes) {
 	const buf = toBytes(buffer);

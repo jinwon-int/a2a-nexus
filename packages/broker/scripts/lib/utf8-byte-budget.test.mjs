@@ -195,8 +195,9 @@ test("malformed bytes at the cut keep the cut at the budget, one rule for every 
 	// A lead whose sequence is shorter than the distance back is not "the" lead:
 	// 2-byte lead, then 3 continuation bytes (one stray) - the cut stays.
 	assert.equal(utf8BoundaryEnd(Buffer.from([0xc3, 0xa9, 0x80, 0x80, 0x61]), 3), 3);
-	// 4 continuation bytes after a 4-byte lead: the lead is 4 back, its
-	// sequence (4) does not run past the cut, so the run is malformed.
+	// A complete 4-byte character followed by a stray continuation byte: the
+	// 3-step look-back finds no lead (index 0 is 4 back, beyond the bound), so
+	// the cut stays at the budget and the complete emoji is kept.
 	assert.equal(utf8BoundaryEnd(Buffer.from([0xf0, 0x9f, 0x98, 0x80, 0x80, 0x61]), 4), 4);
 	// The result never exceeds the budget.
 	for (const buf of [strayAfterAscii, runFromStart]) {
@@ -214,17 +215,29 @@ test("on valid UTF-8 the bounded back-off matches the unbounded one at every cut
 		return end;
 	};
 	const alphabet = ["a", "é", "가", "😀", "ࠀ", "�", "\u{10FFFF}"];
+	// 32-bit LCG in exact integer arithmetic (Math.imul); a plain double
+	// multiply loses the low bits past 2^53 (#2529 review). Use the high bits.
 	let seed = 2529;
-	const next = () => (seed = (seed * 1103515245 + 12345) % 2147483648);
+	const next = () => {
+		seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+		return seed >>> 16;
+	};
+	const lengths = new Set();
 	for (let round = 0; round < 200; round++) {
 		let text = "";
 		const len = 1 + (next() % 12);
+		lengths.add(len);
 		for (let i = 0; i < len; i++) text += alphabet[next() % alphabet.length];
 		const bytes = Buffer.from(text, "utf8");
 		for (let budget = 0; budget <= bytes.length; budget++) {
 			const cut = utf8BoundaryEnd(bytes, budget);
 			assert.equal(cut, unbounded(bytes, budget), `${JSON.stringify(text)} budget ${budget}`);
-			assert.ok(!bytes.subarray(0, cut).toString("utf8").includes("�") || text.includes("�"));
+			// Lossless prefix: decoding and re-encoding the kept bytes gives the
+			// same bytes, so the cut produced no replacement character (this also
+			// holds when the text itself contains a literal U+FFFD).
+			const prefix = bytes.subarray(0, cut);
+			assert.ok(Buffer.from(prefix.toString("utf8"), "utf8").equals(prefix), `${JSON.stringify(text)} budget ${budget}: lossless prefix`);
 		}
 	}
+	assert.equal(lengths.size, 12, "the generator covers every text length 1..12");
 });
