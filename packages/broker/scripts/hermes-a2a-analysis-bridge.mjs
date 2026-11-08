@@ -220,7 +220,11 @@ function readTextFile(path, maxBytes) {
   try {
     const size = fstatSync(fd).size;
     const truncated = size > maxBytes;
-    const length = truncated ? maxBytes : size;
+    // #2524: when truncating, read one byte past the budget. The boundary
+    // check needs the byte at index maxBytes to see whether the cut lands
+    // inside a character; a buffer of exactly maxBytes bytes always passed
+    // the slice fast path and kept a split trailing character.
+    const length = truncated ? Math.floor(maxBytes) + 1 : size;
     const buffer = Buffer.allocUnsafe(length);
     let offset = 0;
     while (offset < length) {
@@ -485,10 +489,12 @@ function collectSourceBundle(payload, env) {
   const repos = collectRepos(payload);
   if (repos.length === 0 && repoMap.has("__default__")) repos.push({ name: "__default__" });
 
-  const maxFiles = Number(env.A2A_HERMES_ANALYSIS_MAX_FILES || DEFAULT_MAX_FILES);
-  const maxFileBytes = Number(env.A2A_HERMES_ANALYSIS_MAX_FILE_BYTES || DEFAULT_MAX_FILE_BYTES);
-  const maxTotalBytes = Number(env.A2A_HERMES_ANALYSIS_MAX_TOTAL_BYTES || DEFAULT_MAX_TOTAL_BYTES);
-  const maxTreeEntries = Number(env.A2A_HERMES_ANALYSIS_MAX_TREE_ENTRIES || DEFAULT_TREE_ENTRIES);
+  // #2524: same whole-number parser as the piri bridge reads for these env
+  // names, so a fractional/NaN value never reaches the byte-capped cuts.
+  const maxFiles = positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_MAX_FILES, DEFAULT_MAX_FILES);
+  const maxFileBytes = positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_MAX_FILE_BYTES, DEFAULT_MAX_FILE_BYTES);
+  const maxTotalBytes = positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_MAX_TOTAL_BYTES, DEFAULT_MAX_TOTAL_BYTES);
+  const maxTreeEntries = positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_MAX_TREE_ENTRIES, DEFAULT_TREE_ENTRIES);
   const maxPromptBytes = positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_MAX_PROMPT_BYTES, DEFAULT_MAX_PROMPT_BYTES);
 
   const files = [];

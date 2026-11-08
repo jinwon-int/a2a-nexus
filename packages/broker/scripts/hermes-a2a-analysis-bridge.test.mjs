@@ -1466,3 +1466,70 @@ test("Hermes bridge passes the structured reviewLineage block through (#2351)", 
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("Hermes A2A analysis bridge keeps truncated on-disk source reads on UTF-8 boundaries, integer or fractional limits (#2524)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-utf8-read-limit-"));
+  const repoDir = join(tempDir, "a2a-broker");
+  const sourceDir = join(repoDir, "src", "core");
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+  const promptPath = join(tempDir, "prompt.txt");
+
+  try {
+    mkdirSync(sourceDir, { recursive: true });
+    // 'UTF8_READ_MARKER\n' is 17 bytes, then 3-byte Hangul syllables, so
+    // character boundaries sit at 17 + 3k. The bounded disk read used to keep
+    // exactly maxBytes bytes and never back off a split trailing character.
+    writeFileSync(join(sourceDir, "korean.ts"), `UTF8_READ_MARKER\n${"가".repeat(40)}\n`);
+
+    writeFileSync(fakeHermesPath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from 'node:fs';",
+      "const args = process.argv.slice(2);",
+      "const prompt = args[args.indexOf('-q') + 1];",
+      "writeFileSync(process.env.CAPTURE_PROMPT_PATH, prompt);",
+      "console.log(JSON.stringify({ status: 'done', summary: 'utf8 read limit captured', findings: [], risks: [], recommendations: [], evidenceRefs: [] }));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeHermesPath, 0o755);
+
+    const message = [
+      "A2AD read-only analysis for a2a-broker.",
+      "Payload JSON:\n" + JSON.stringify({
+        mode: "analysis-only",
+        noLive: true,
+        sourceOnly: true,
+        repo: "jinwon-int/a2a-broker",
+        path: "src/core/korean.ts",
+      }),
+    ].join("\n\n");
+
+    // budget -> whole syllables that fit: floor((floor(budget) - 17) / 3)
+    const cases = [
+      ["47", 10], // exact boundary (17 + 30)
+      ["48", 10], // one byte into the 11th syllable
+      ["49", 10], // two bytes into the 11th syllable
+      ["48.5", 10], // fractional
+      ["49.9", 10], // fractional
+    ];
+    for (const [fileBytes, syllables] of cases) {
+      const result = spawnSync(process.execPath, openClawArgs(message), {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          HERMES_BIN: fakeHermesPath,
+          CAPTURE_PROMPT_PATH: promptPath,
+          A2A_ANALYSIS_REPO_MAP_JSON: JSON.stringify({ "jinwon-int/a2a-broker": repoDir }),
+          A2A_HERMES_ANALYSIS_MAX_FILE_BYTES: fileBytes,
+          A2A_HERMES_ANALYSIS_MAX_TOTAL_BYTES: "200000.5",
+        },
+      });
+
+      assert.equal(result.status, 0, `${fileBytes}: ${result.stderr}`);
+      const prompt = readFileSync(promptPath, "utf8");
+      assert.ok(!prompt.includes("\uFFFD"), `MAX_FILE_BYTES=${fileBytes} must not cut a multi-byte character`);
+      assert.match(prompt, new RegExp(`UTF8_READ_MARKER\\n${"가".repeat(syllables)}(?!가)`), `MAX_FILE_BYTES=${fileBytes} keeps ${syllables} whole syllables`);
+    }
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
