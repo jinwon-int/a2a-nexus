@@ -15,7 +15,7 @@ import {
 import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
 // #2303 item 5: content-free prompt/source byte counters for the telemetry.
 import { promptViewTelemetry } from "./lib/analysis-source-bundle.mjs";
-import { sliceUtf8AtBoundary, truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
+import { byteBudget, sliceUtf8AtBoundary, truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
 
 const BRIDGE_FILE = fileURLToPath(import.meta.url);
 
@@ -214,13 +214,20 @@ function insideRoot(root, candidate) {
 }
 
 function readTextFile(path, maxBytes) {
-  // Bounded read: only maxBytes come off disk even for multi-MB files; the
-  // reported size still reflects the whole file.
+  // Bounded read: at most budget + 1 bytes come off disk even for multi-MB
+  // files (one look-ahead byte for the boundary check); the reported size
+  // still reflects the whole file. The budget is normalized once (#2524) so
+  // the truncated flag, the read length and the cut all use the same integer.
+  const budget = byteBudget(maxBytes);
   const fd = openSync(path, "r");
   try {
     const size = fstatSync(fd).size;
-    const truncated = size > maxBytes;
-    const length = truncated ? maxBytes : size;
+    const truncated = size > budget;
+    // #2524: when truncating, read one byte past the budget. The boundary
+    // check needs the byte at index `budget` to see whether the cut lands
+    // inside a character; a buffer of exactly `budget` bytes always passed
+    // the slice fast path and kept a split trailing character.
+    const length = truncated ? budget + 1 : size;
     const buffer = Buffer.allocUnsafe(length);
     let offset = 0;
     while (offset < length) {
@@ -230,7 +237,7 @@ function readTextFile(path, maxBytes) {
     }
     // #2005: decode only up to a UTF-8 character boundary — a raw byte cut
     // turns a split multi-byte character into U+FFFD replacement characters.
-    const sliced = sliceUtf8AtBoundary(buffer.subarray(0, offset), maxBytes);
+    const sliced = sliceUtf8AtBoundary(buffer.subarray(0, offset), budget);
     return { content: sliced.toString("utf8"), truncated, bytes: size };
   } finally {
     closeSync(fd);
@@ -388,7 +395,7 @@ function redactForDiagnostics(text) {
 
 function boundedTextFile(repo, path, content, maxBytes) {
   const buffer = Buffer.from(String(content || ""), "utf8");
-  const limit = Math.max(0, maxBytes);
+  const limit = byteBudget(maxBytes);
   const truncated = buffer.length > limit;
   return {
     repo,
@@ -485,10 +492,12 @@ function collectSourceBundle(payload, env) {
   const repos = collectRepos(payload);
   if (repos.length === 0 && repoMap.has("__default__")) repos.push({ name: "__default__" });
 
-  const maxFiles = Number(env.A2A_HERMES_ANALYSIS_MAX_FILES || DEFAULT_MAX_FILES);
-  const maxFileBytes = Number(env.A2A_HERMES_ANALYSIS_MAX_FILE_BYTES || DEFAULT_MAX_FILE_BYTES);
-  const maxTotalBytes = Number(env.A2A_HERMES_ANALYSIS_MAX_TOTAL_BYTES || DEFAULT_MAX_TOTAL_BYTES);
-  const maxTreeEntries = Number(env.A2A_HERMES_ANALYSIS_MAX_TREE_ENTRIES || DEFAULT_TREE_ENTRIES);
+  // #2524: same whole-number parser as the piri bridge reads for these env
+  // names, so a fractional/NaN value never reaches the byte-capped cuts.
+  const maxFiles = positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_MAX_FILES, DEFAULT_MAX_FILES);
+  const maxFileBytes = positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_MAX_FILE_BYTES, DEFAULT_MAX_FILE_BYTES);
+  const maxTotalBytes = positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_MAX_TOTAL_BYTES, DEFAULT_MAX_TOTAL_BYTES);
+  const maxTreeEntries = positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_MAX_TREE_ENTRIES, DEFAULT_TREE_ENTRIES);
   const maxPromptBytes = positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_MAX_PROMPT_BYTES, DEFAULT_MAX_PROMPT_BYTES);
 
   const files = [];
@@ -1047,8 +1056,10 @@ function recoverHermesAnalysisJsonFromStateDb(child, env) {
 }
 
 function positiveIntegerEnv(value, fallback) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+  // #2524: a value that floors to 0 (e.g. "0.5") is not a positive integer;
+  // use the fallback instead of silently collecting nothing.
+  const parsed = Math.floor(Number(value));
+  return Number.isFinite(parsed) && parsed >= 1 ? parsed : fallback;
 }
 
 function truncateUtf8ToBytes(text, maxBytes) {
