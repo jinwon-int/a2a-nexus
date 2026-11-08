@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import {
 	byteBudget,
+	readUtf8FilePrefix,
 	sliceUtf8AtBoundary,
+	truncateUtf16Safe,
 	truncateUtf8ToBytesSafe,
 	utf8BoundaryEnd,
 } from "./utf8-byte-budget.mjs";
@@ -240,4 +246,98 @@ test("on valid UTF-8 the bounded back-off matches the unbounded one at every cut
 		}
 	}
 	assert.equal(lengths.size, 12, "the generator covers every text length 1..12");
+});
+
+// #2528 A4: diagnostics are cut by UTF-16 code units (.slice(0, n)); a cut
+// between a surrogate pair leaves a lone high surrogate that becomes U+FFFD
+// once the text is written as UTF-8.
+test("truncateUtf16Safe never leaves a lone high surrogate at the cut (#2528)", () => {
+	const text = `x${"😀".repeat(10)}`; // pairs start at odd indices
+	for (let limit = 0; limit <= text.length; limit++) {
+		const out = truncateUtf16Safe(text, limit);
+		assert.ok(out.length <= limit, `limit ${limit}`);
+		assert.ok(!/[\uD800-\uDBFF]$/.test(out), `limit ${limit}: no trailing high surrogate`);
+		assert.ok(Buffer.from(out, "utf8").toString("utf8") === out, `limit ${limit}: lossless as UTF-8`);
+	}
+	assert.equal(truncateUtf16Safe(text, 2), "x");
+	assert.equal(truncateUtf16Safe(text, 3), "x😀");
+	assert.equal(truncateUtf16Safe("abc", 2), "ab");
+	assert.equal(truncateUtf16Safe("abc", 10), "abc");
+	assert.equal(truncateUtf16Safe("abc", 1.9), "a");
+	assert.equal(truncateUtf16Safe(null, 5), "");
+});
+
+// #2528 B5: the bounded read decides truncation from the bytes it actually
+// read, not from a fstat size that can be stale (file rewritten between stat
+// and read) or wrong (procfs reports 0).
+test("readUtf8FilePrefix cuts on-disk text on a UTF-8 boundary from the bytes actually read (#2528)", () => {
+	const dir = mkdtempSync(join(tmpdir(), "utf8-file-prefix-"));
+	try {
+		const file = join(dir, "k.txt");
+		writeFileSync(file, `ab${"가".repeat(5)}`); // 2 + 15 bytes
+		assert.deepEqual(readUtf8FilePrefix(file, 4), { content: "ab", truncated: true, bytes: 17 });
+		assert.deepEqual(readUtf8FilePrefix(file, 5), { content: "ab가", truncated: true, bytes: 17 });
+		assert.deepEqual(readUtf8FilePrefix(file, 17), { content: `ab${"가".repeat(5)}`, truncated: false, bytes: 17 });
+		assert.deepEqual(readUtf8FilePrefix(file, 16), { content: `ab${"가".repeat(4)}`, truncated: true, bytes: 17 });
+		assert.deepEqual(readUtf8FilePrefix(file, 4.9), { content: "ab", truncated: true, bytes: 17 });
+		assert.deepEqual(readUtf8FilePrefix(file, 0), { content: "", truncated: true, bytes: 17 });
+		assert.deepEqual(readUtf8FilePrefix(file, Number.POSITIVE_INFINITY), { content: `ab${"가".repeat(5)}`, truncated: false, bytes: 17 });
+		const empty = join(dir, "empty.txt");
+		writeFileSync(empty, "");
+		assert.deepEqual(readUtf8FilePrefix(empty, 10), { content: "", truncated: false, bytes: 0 });
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("readUtf8FilePrefix reads a file whose fstat size is wrong (procfs reports 0) (#2528)", { skip: !existsSync("/proc/self/status") }, (t) => {
+	// The point of this test is a file whose fstat size is wrong; check that
+	// precondition instead of assuming it (#2532 review).
+	if (statSync("/proc/self/status").size !== 0) {
+		t.skip("fstat reports a non-zero size for /proc/self/status here");
+		return;
+	}
+	// Finite budget larger than the content: the chunked path (the one hermes
+	// uses) must still read past the reported 0 bytes.
+	const finite = readUtf8FilePrefix("/proc/self/status", 1_000_000);
+	assert.ok(finite.content.length > 0, "content is read through the chunked path");
+	assert.equal(finite.truncated, false);
+	assert.equal(finite.bytes, Buffer.byteLength(finite.content, "utf8"));
+	const whole = readUtf8FilePrefix("/proc/self/status", Number.POSITIVE_INFINITY);
+	assert.ok(whole.content.length > 0, "content is read even though fstat says 0 bytes");
+	assert.equal(whole.truncated, false);
+	const cut = readUtf8FilePrefix("/proc/self/status", 20);
+	assert.equal(cut.truncated, true, "truncation is decided from the bytes read");
+	assert.ok(Buffer.byteLength(cut.content, "utf8") <= 20 && cut.content.length > 0);
+	assert.ok(cut.bytes >= 21, "reported size is at least what was seen");
+});
+
+// #2532 review: files larger than one 64 KiB read chunk go through the
+// multi-chunk loop (chunk copy, want - total at chunk boundaries).
+test("readUtf8FilePrefix reads across 64 KiB chunks without corrupting earlier chunks (#2528)", () => {
+	const dir = mkdtempSync(join(tmpdir(), "utf8-file-prefix-chunks-"));
+	try {
+		const file = join(dir, "big.txt");
+		// Distinct, position-dependent content so an aliased (reused) chunk
+		// buffer would show up as a mismatch, plus 3-byte characters so the
+		// cut near a chunk boundary must back off.
+		let text = "";
+		for (let i = 0; text.length < 120_000; i++) text += `${i}:가나다|`;
+		writeFileSync(file, text);
+		const size = Buffer.byteLength(text, "utf8");
+		assert.ok(size > 3 * 64 * 1024, `fixture spans several chunks (${size} bytes)`);
+		const whole = readUtf8FilePrefix(file, size);
+		assert.deepEqual(whole, { content: text, truncated: false, bytes: size });
+		for (const budget of [64 * 1024 - 1, 64 * 1024, 64 * 1024 + 1, 2 * 64 * 1024 + 2, size - 1]) {
+			const cut = readUtf8FilePrefix(file, budget);
+			const expected = Buffer.from(text, "utf8").subarray(0, budget);
+			let end = budget;
+			while (end > 0 && (Buffer.from(text, "utf8")[end] & 0xc0) === 0x80) end--;
+			assert.equal(cut.content, expected.subarray(0, end).toString("utf8"), `budget ${budget}: exact prefix on a boundary`);
+			assert.equal(cut.truncated, true);
+			assert.equal(cut.bytes, size);
+		}
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });

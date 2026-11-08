@@ -9,6 +9,7 @@
  * through these helpers so the cut always lands on a character boundary.
  */
 
+import { closeSync, fstatSync, openSync, readFileSync, readSync } from "node:fs";
 import { types } from "node:util";
 
 /**
@@ -108,4 +109,59 @@ export function truncateUtf8ToBytesSafe(text, maxBytes) {
 	const budget = byteBudget(maxBytes);
 	if (Buffer.byteLength(value, "utf8") <= budget) return value;
 	return sliceUtf8AtBoundary(Buffer.from(value, "utf8"), budget).toString("utf8");
+}
+
+/**
+ * Cut a string to at most maxUnits UTF-16 code units without splitting a
+ * surrogate pair (#2528 A4). Diagnostics are capped with `.slice(0, n)`; a
+ * cut right after a high surrogate leaves a lone surrogate, which becomes
+ * U+FFFD (or an escaped "\ud83d" in JSON) once the text is written out.
+ */
+export function truncateUtf16Safe(text, maxUnits) {
+	const value = String(text ?? "");
+	const limit = byteBudget(maxUnits); // whole-number normalization, units here
+	if (value.length <= limit) return value;
+	let end = limit;
+	if (end > 0) {
+		const before = value.charCodeAt(end - 1);
+		if (before >= 0xd800 && before <= 0xdbff) end -= 1;
+	}
+	return value.slice(0, end);
+}
+
+const READ_CHUNK_BYTES = 64 * 1024;
+
+/**
+ * Read at most maxBytes of a UTF-8 text file, cut on a character boundary
+ * (#2524, #2528 B5). It reads up to one byte past the budget (the look-ahead
+ * the boundary check needs) and decides truncation from the bytes actually
+ * read, never from a fstat size, which can be stale (the file was rewritten
+ * between stat and read) or wrong (procfs reports 0). `bytes` is the file
+ * size: exact when not truncated, otherwise at least what was seen.
+ */
+export function readUtf8FilePrefix(path, maxBytes) {
+	const budget = byteBudget(maxBytes);
+	if (!Number.isFinite(budget)) {
+		const whole = readFileSync(path);
+		return { content: whole.toString("utf8"), truncated: false, bytes: whole.length };
+	}
+	const want = budget + 1;
+	const fd = openSync(path, "r");
+	try {
+		const chunks = [];
+		let total = 0;
+		const chunk = Buffer.allocUnsafe(Math.min(READ_CHUNK_BYTES, want));
+		while (total < want) {
+			const read = readSync(fd, chunk, 0, Math.min(chunk.length, want - total), total);
+			if (read <= 0) break;
+			chunks.push(Buffer.from(chunk.subarray(0, read)));
+			total += read;
+		}
+		const bytes = Buffer.concat(chunks, total);
+		const truncated = total > budget;
+		const content = sliceUtf8AtBoundary(bytes, budget).toString("utf8");
+		return { content, truncated, bytes: truncated ? Math.max(fstatSync(fd).size, total) : total };
+	} finally {
+		closeSync(fd);
+	}
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { closeSync, existsSync, fstatSync, openSync, readFileSync, readdirSync, readSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
@@ -15,7 +15,7 @@ import {
 import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
 // #2303 item 5: content-free prompt/source byte counters for the telemetry.
 import { promptViewTelemetry } from "./lib/analysis-source-bundle.mjs";
-import { byteBudget, sliceUtf8AtBoundary, truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
+import { byteBudget, readUtf8FilePrefix, sliceUtf8AtBoundary, truncateUtf16Safe, truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
 
 const BRIDGE_FILE = fileURLToPath(import.meta.url);
 
@@ -32,6 +32,10 @@ const DEFAULT_PR_FETCH_TIMEOUT_MS = 15_000;
 // larger. Hermes currently accepts one-shot prompts via `hermes chat -q`, so the
 // bridge must keep that single query argument below the OS per-argument limit.
 const DEFAULT_MAX_PROMPT_BYTES = 96 * 1024;
+// Read at two call sites (source projection and the argv prompt budget); one
+// constant so a misspelled name is a ReferenceError, not a silent default
+// that the warn-once dedupe would hide (#2531 review).
+const ENV_MAX_PROMPT_BYTES = "A2A_HERMES_ANALYSIS_MAX_PROMPT_BYTES";
 
 function die(message, code = 1) {
   console.error(message);
@@ -214,34 +218,9 @@ function insideRoot(root, candidate) {
 }
 
 function readTextFile(path, maxBytes) {
-  // Bounded read: at most budget + 1 bytes come off disk even for multi-MB
-  // files (one look-ahead byte for the boundary check); the reported size
-  // still reflects the whole file. The budget is normalized once (#2524) so
-  // the truncated flag, the read length and the cut all use the same integer.
-  const budget = byteBudget(maxBytes);
-  const fd = openSync(path, "r");
-  try {
-    const size = fstatSync(fd).size;
-    const truncated = size > budget;
-    // #2524: when truncating, read one byte past the budget. The boundary
-    // check needs the byte at index `budget` to see whether the cut lands
-    // inside a character; a buffer of exactly `budget` bytes always passed
-    // the slice fast path and kept a split trailing character.
-    const length = truncated ? budget + 1 : size;
-    const buffer = Buffer.allocUnsafe(length);
-    let offset = 0;
-    while (offset < length) {
-      const read = readSync(fd, buffer, offset, length - offset, offset);
-      if (read <= 0) break;
-      offset += read;
-    }
-    // #2005: decode only up to a UTF-8 character boundary — a raw byte cut
-    // turns a split multi-byte character into U+FFFD replacement characters.
-    const sliced = sliceUtf8AtBoundary(buffer.subarray(0, offset), budget);
-    return { content: sliced.toString("utf8"), truncated, bytes: size };
-  } finally {
-    closeSync(fd);
-  }
+  // #2524/#2528 B5: bounded, boundary-safe read that decides truncation from
+  // the bytes actually read (see lib/utf8-byte-budget.mjs readUtf8FilePrefix).
+  return readUtf8FilePrefix(path, maxBytes);
 }
 
 function walkTree(root, maxEntries) {
@@ -385,12 +364,13 @@ function normalizeGithubPrRef(payload) {
 }
 
 function redactForDiagnostics(text) {
-  return String(text || "")
+  const redacted = String(text || "")
     .replace(/(GH_TOKEN|GITHUB_TOKEN|TOKEN|SECRET|PASSWORD|AUTHORIZATION)=[^\s]+/gi, "$1=[REDACTED]")
     .replace(/Bearer\s+[A-Za-z0-9._~+/-]+/gi, "Bearer [REDACTED]")
     .replace(/github_pat_[A-Za-z0-9_]+/g, "github_pat_[REDACTED]")
-    .replace(/ghp_[A-Za-z0-9_]+/g, "ghp_[REDACTED]")
-    .slice(0, 1000);
+    .replace(/ghp_[A-Za-z0-9_]+/g, "ghp_[REDACTED]");
+  // #2528 A4: never split a surrogate pair at the 1000-unit cap.
+  return truncateUtf16Safe(redacted, 1000);
 }
 
 function boundedTextFile(repo, path, content, maxBytes) {
@@ -498,7 +478,7 @@ function collectSourceBundle(payload, env) {
   const maxFileBytes = envPositiveInteger(env, "A2A_HERMES_ANALYSIS_MAX_FILE_BYTES", DEFAULT_MAX_FILE_BYTES);
   const maxTotalBytes = envPositiveInteger(env, "A2A_HERMES_ANALYSIS_MAX_TOTAL_BYTES", DEFAULT_MAX_TOTAL_BYTES);
   const maxTreeEntries = envPositiveInteger(env, "A2A_HERMES_ANALYSIS_MAX_TREE_ENTRIES", DEFAULT_TREE_ENTRIES);
-  const maxPromptBytes = envPositiveInteger(env, "A2A_HERMES_ANALYSIS_MAX_PROMPT_BYTES", DEFAULT_MAX_PROMPT_BYTES);
+  const maxPromptBytes = envPositiveInteger(env, ENV_MAX_PROMPT_BYTES, DEFAULT_MAX_PROMPT_BYTES);
 
   const files = [];
   const warnings = [];
@@ -1082,7 +1062,7 @@ function truncateUtf8ToBytes(text, maxBytes) {
 }
 
 function applyHermesPromptArgBudget(prompt, env) {
-  const maxPromptBytes = envPositiveInteger(env, "A2A_HERMES_ANALYSIS_MAX_PROMPT_BYTES", DEFAULT_MAX_PROMPT_BYTES);
+  const maxPromptBytes = envPositiveInteger(env, ENV_MAX_PROMPT_BYTES, DEFAULT_MAX_PROMPT_BYTES);
   const promptBytes = Buffer.byteLength(prompt, "utf8");
   if (promptBytes <= maxPromptBytes) return prompt;
 

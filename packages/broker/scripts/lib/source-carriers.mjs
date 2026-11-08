@@ -1,3 +1,5 @@
+import { sliceUtf8AtBoundary } from "./utf8-byte-budget.mjs";
+
 function safeText(value, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
@@ -77,7 +79,10 @@ export function normalizeSourceCarrierFile(item, options = {}) {
   }
   const buffer = Buffer.from(rawContent, "utf8");
   const truncated = buffer.length > maxBytes;
-  const content = buffer.subarray(0, maxBytes).toString("utf8");
+  // #2528 B8: boundary-safe cut (raw byte offsets turned a split multi-byte
+  // character into U+FFFD in the prompt, the #2005 class). The helper floors
+  // the budget itself, so the reason/ok semantics above are unchanged.
+  const content = sliceUtf8AtBoundary(buffer, maxBytes).toString("utf8");
   return {
     reason: "ok",
     file: { repo, path, content, contentField, truncated, bytes: buffer.length },

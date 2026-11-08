@@ -1628,8 +1628,12 @@ test("Hermes A2A analysis bridge warns once per rejected limit env name without 
   try {
     mkdirSync(sourceDir, { recursive: true });
     writeFileSync(join(sourceDir, "source.ts"), "ENV_WARNING_MARKER\n");
+    const promptPath = join(tempDir, "prompt.txt");
     writeFileSync(fakeHermesPath, [
       "#!/usr/bin/env node",
+      "import { writeFileSync } from 'node:fs';",
+      "const args = process.argv.slice(2);",
+      "writeFileSync(process.env.CAPTURE_PROMPT_PATH, args[args.indexOf('-q') + 1]);",
       "console.log(JSON.stringify({ status: 'done', summary: 'env warning captured', findings: [], risks: [], recommendations: [], evidenceRefs: [] }));",
       "",
     ].join("\n"));
@@ -1639,7 +1643,8 @@ test("Hermes A2A analysis bridge warns once per rejected limit env name without 
       "Payload JSON:\n" + JSON.stringify({ mode: "analysis-only", noLive: true, sourceOnly: true, repo: "jinwon-int/a2a-broker", path: "src/core/source.ts" }),
     ].join("\n\n");
     const run = (extraEnv) => {
-      const env = { ...process.env, HERMES_BIN: fakeHermesPath, A2A_ANALYSIS_REPO_MAP_JSON: JSON.stringify({ "jinwon-int/a2a-broker": repoDir }), ...extraEnv };
+      const env = { ...process.env, HERMES_BIN: fakeHermesPath, CAPTURE_PROMPT_PATH: promptPath, A2A_ANALYSIS_REPO_MAP_JSON: JSON.stringify({ "jinwon-int/a2a-broker": repoDir }), ...extraEnv };
+      rmSync(promptPath, { force: true });
       for (const key of Object.keys(env)) if (key.startsWith("A2A_HERMES_ANALYSIS_") && !(key in extraEnv)) delete env[key];
       const result = spawnSync(process.execPath, openClawArgs(message), { encoding: "utf8", env });
       assert.equal(result.status, 0, result.stderr);
@@ -1647,7 +1652,10 @@ test("Hermes A2A analysis bridge warns once per rejected limit env name without 
       // including the second MAX_PROMPT_BYTES parse in the prompt-arg budget.
       const envelope = JSON.parse(result.stdout);
       assert.equal(JSON.parse(envelope.payloads[0]?.text).summary, "env warning captured");
-      return result.stderr.split("\n").filter((line) => line.includes("A2A_HERMES_ANALYSIS_"));
+      // The fallback took effect (#2531 review): the source was still collected.
+      assert.ok(readFileSync(promptPath, "utf8").includes("ENV_WARNING_MARKER"), "source collected with the fallback limits");
+      // Only lines with the exact warning prefix (#2531 review).
+      return result.stderr.split("\n").filter((line) => line.startsWith("hermes-a2a-analysis-bridge: ignoring A2A_HERMES_ANALYSIS_"));
     };
     // Match the exact name followed by a space, so MAX_FILES never matches MAX_FILE_BYTES.
     const linesFor = (lines, name) => lines.filter((line) => line.includes(`ignoring ${name} `));
@@ -1678,6 +1686,48 @@ test("Hermes A2A analysis bridge warns once per rejected limit env name without 
     assert.deepEqual(run({}), [], "unset env: no warnings");
     assert.deepEqual(run({ A2A_HERMES_ANALYSIS_MAX_FILES: "" }), [], "empty value means unset: no warning");
     assert.deepEqual(run({ A2A_HERMES_ANALYSIS_MAX_FILES: "   " }), [], "whitespace-only value means unset: no warning");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("Hermes A2A analysis bridge keeps gh failure diagnostics surrogate-safe and warns for rejected PR_* limits (#2528)", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-gh-diag-"));
+  const fakeGhPath = join(tempDir, "fake-gh.mjs");
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+  try {
+    // 1 ASCII char then emoji pairs: UTF-16 index 999 is a high surrogate, so
+    // a plain .slice(0, 1000) would end in a lone surrogate.
+    writeFileSync(fakeGhPath, [
+      "#!/usr/bin/env node",
+      `process.stderr.write("x" + "😀".repeat(700));`,
+      "process.exit(1);",
+      "",
+    ].join("\n"));
+    chmodSync(fakeGhPath, 0o755);
+    writeFileSync(fakeHermesPath, "#!/usr/bin/env node\nconsole.log(JSON.stringify({ status: 'done', summary: 'should not run', findings: [], risks: [], recommendations: [], evidenceRefs: [] }));\n");
+    chmodSync(fakeHermesPath, 0o755);
+    const message = [
+      "A2AD read-only analysis for a2a-broker.",
+      "Payload JSON:\n" + JSON.stringify({ mode: "analysis-only", noLive: true, sourceOnly: true, repo: "jinwon-int/a2a-broker", prNumber: 4242 }),
+    ].join("\n\n");
+    const env = { ...process.env, HERMES_BIN: fakeHermesPath, A2A_HERMES_ANALYSIS_GITHUB_PR_BIN: fakeGhPath, A2A_HERMES_ANALYSIS_PR_DIFF_BYTES: "0" };
+    for (const key of Object.keys(env)) if (key.startsWith("A2A_HERMES_ANALYSIS_") && !["A2A_HERMES_ANALYSIS_GITHUB_PR_BIN", "A2A_HERMES_ANALYSIS_PR_DIFF_BYTES"].includes(key)) delete env[key];
+    delete env.A2A_ANALYSIS_REPO_MAP_JSON;
+    const result = spawnSync(process.execPath, openClawArgs(message), { encoding: "utf8", env });
+    assert.equal(result.status, 0, result.stderr);
+    const text = JSON.parse(result.stdout).payloads[0]?.text ?? "";
+    const response = JSON.parse(text);
+    const all = JSON.stringify(response);
+    assert.match(all, /gh pr diff 4242 failed/, "the gh failure reason reaches the response");
+    const reasonText = [response.summary, ...(response.findings || []), ...(response.risks || [])].join("\n");
+    assert.ok(reasonText.includes("😀"), "the diagnostic text is present");
+    assert.ok(!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(reasonText), "no lone surrogate in the diagnostics");
+    assert.ok(!text.includes("\\ud83d\""), "no escaped lone surrogate at a string end");
+    assert.ok(!reasonText.includes("\uFFFD"), "no replacement character either");
+    // PR_* limit names warn too (#2531 review: they were not covered).
+    const warnings = result.stderr.split("\n").filter((line) => line.startsWith("hermes-a2a-analysis-bridge: ignoring "));
+    assert.deepEqual(warnings.map((line) => line.split(" ")[2]), ["A2A_HERMES_ANALYSIS_PR_DIFF_BYTES"]);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

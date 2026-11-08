@@ -40,6 +40,7 @@ import {
   attachClaudeModelTelemetry,
   claudeInvocationModelTelemetry,
 } from "./lib/claude-model-telemetry.mjs";
+import { truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
 
 // ---------------------------------------------------------------------------
 // Process-tree timeout / session-isolation hardening (issue #1129)
@@ -1234,7 +1235,12 @@ function extractSubagentReportFromSessionTranscripts(env, startedAtMs, options) 
     let id = `${event.agent || "subagent"}-${index + 1}`.replace(/[^A-Za-z0-9._:-]/g, "-").slice(0, 128);
     while (seenIds.has(id)) id = `${id}-x`;
     seenIds.add(id);
-    return { role, id, writeSet: [], status: "complete", output: event.description.slice(0, options.maxOutputBytes) };
+    // #2528 B8: maxOutputBytes is a UTF-8 byte cap (the validated path at
+    // normalizeFanoutSubagentReport enforces it in bytes); cut on a character
+    // boundary. No finite cap means no cap, as before (#2532 review).
+    const cap = Number(options.maxOutputBytes);
+    const output = Number.isFinite(cap) ? truncateUtf8ToBytesSafe(event.description, cap) : event.description;
+    return { role, id, writeSet: [], status: "complete", output };
   });
   return { count: entries.length, entries };
 }
@@ -2923,4 +2929,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 export const __test = Object.freeze({
   extractUnifiedDiff,
   describeRejectedDiff,
+  extractSubagentReportFromSessionTranscripts,
 });
