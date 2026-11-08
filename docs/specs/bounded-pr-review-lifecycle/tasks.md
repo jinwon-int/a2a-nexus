@@ -149,8 +149,13 @@ runtime acceptance, completion/retry hook, fixer apply path, deploy/restart, or
 - [x] Budget cohorts are separated by exact budget signature; recommendations
   are advisory-only with 30/100 terminal-sample floors and no apply/runtime
   consumer.
-- [ ] Record-mode scorecard over at least 30 real terminal lineages; tune budget
+- [x] Record-mode scorecard over at least 30 real terminal lineages; tune budget
   defaults only if the committed evidence crosses an advisory threshold.
+  Done 2026-11-08 (#2274): 81 record-mode lineages (77 terminal) from the T2
+  broker, one budget cohort; every advisory recommendation `hold` and
+  `maxReviewerReplacements` `not_observable`, no `investigate_*` — no
+  threshold crossed, so `DEFAULT_LINEAGE_BUDGET` is unchanged. Envelope built
+  with the snapshot export CLI (#2526).
 - [x] Broad `enforce` default remains a separate operator decision; runtime
   continues to accept only `off` / `record`.
 
