@@ -162,3 +162,69 @@ test("back-off is bounded to 3 bytes on malformed input (#2528)", () => {
 	assert.equal(utf8BoundaryEnd(emoji, 2), 1);
 	assert.equal(utf8BoundaryEnd(emoji, 5), 5);
 });
+
+test("SharedArrayBuffer and a cross-realm ArrayBuffer are cut as bytes (#2529 review)", async () => {
+	const utf8 = Buffer.from("가나", "utf8");
+	const shared = new SharedArrayBuffer(utf8.length);
+	new Uint8Array(shared).set(utf8);
+	assert.equal(utf8BoundaryEnd(shared, 4), 3);
+	assert.equal(sliceUtf8AtBoundary(shared, 4).toString("utf8"), "가");
+	const { runInNewContext } = await import("node:vm");
+	const foreign = runInNewContext("new Uint8Array([0xEA,0xB0,0x80,0xEB,0x82,0x98]).buffer");
+	assert.equal(foreign instanceof ArrayBuffer, false, "fixture really is from another realm");
+	assert.equal(utf8BoundaryEnd(foreign, 4), 3);
+	assert.equal(sliceUtf8AtBoundary(foreign, 4).toString("utf8"), "가");
+});
+
+test("malformed bytes at the cut keep the cut at the budget, one rule for every case (#2529 review)", () => {
+	// Stray continuation run after complete ASCII: never drop the valid 'aa'.
+	const strayAfterAscii = Buffer.from([0x61, 0x61, 0x80, 0x80, 0x80, 0x80]);
+	for (let budget = 1; budget <= 5; budget++) {
+		assert.equal(utf8BoundaryEnd(strayAfterAscii, budget), budget, `stray run, budget ${budget}`);
+	}
+	// A continuation run starting at index 0: same rule, no drop to 0.
+	const runFromStart = Buffer.alloc(8, 0x80);
+	for (let budget = 1; budget <= 7; budget++) {
+		assert.equal(utf8BoundaryEnd(runFromStart, budget), budget, `run from start, budget ${budget}`);
+	}
+	// Invalid (0xF8) and overlong (0xC0) leads do not start a sequence.
+	assert.equal(utf8BoundaryEnd(Buffer.from([0x61, 0xf8, 0x80, 0x80]), 2), 2);
+	assert.equal(utf8BoundaryEnd(Buffer.from([0xc0, 0x80, 0x61]), 1), 1);
+	// A complete character followed by a stray continuation byte is kept.
+	assert.equal(utf8BoundaryEnd(Buffer.from([0xc3, 0xa9, 0x80, 0x61]), 2), 2);
+	// A lead whose sequence is shorter than the distance back is not "the" lead:
+	// 2-byte lead, then 3 continuation bytes (one stray) - the cut stays.
+	assert.equal(utf8BoundaryEnd(Buffer.from([0xc3, 0xa9, 0x80, 0x80, 0x61]), 3), 3);
+	// 4 continuation bytes after a 4-byte lead: the lead is 4 back, its
+	// sequence (4) does not run past the cut, so the run is malformed.
+	assert.equal(utf8BoundaryEnd(Buffer.from([0xf0, 0x9f, 0x98, 0x80, 0x80, 0x61]), 4), 4);
+	// The result never exceeds the budget.
+	for (const buf of [strayAfterAscii, runFromStart]) {
+		for (let budget = 0; budget <= buf.length + 1; budget++) {
+			assert.ok(utf8BoundaryEnd(buf, budget) <= budget);
+		}
+	}
+});
+
+test("on valid UTF-8 the bounded back-off matches the unbounded one at every cut (#2529 review)", () => {
+	// Reference: the pre-#2528 unbounded back-off.
+	const unbounded = (bytes, limit) => {
+		let end = Math.min(limit, bytes.length);
+		while (end > 0 && end < bytes.length && (bytes[end] & 0xc0) === 0x80) end--;
+		return end;
+	};
+	const alphabet = ["a", "é", "가", "😀", "ࠀ", "�", "\u{10FFFF}"];
+	let seed = 2529;
+	const next = () => (seed = (seed * 1103515245 + 12345) % 2147483648);
+	for (let round = 0; round < 200; round++) {
+		let text = "";
+		const len = 1 + (next() % 12);
+		for (let i = 0; i < len; i++) text += alphabet[next() % alphabet.length];
+		const bytes = Buffer.from(text, "utf8");
+		for (let budget = 0; budget <= bytes.length; budget++) {
+			const cut = utf8BoundaryEnd(bytes, budget);
+			assert.equal(cut, unbounded(bytes, budget), `${JSON.stringify(text)} budget ${budget}`);
+			assert.ok(!bytes.subarray(0, cut).toString("utf8").includes("�") || text.includes("�"));
+		}
+	}
+});

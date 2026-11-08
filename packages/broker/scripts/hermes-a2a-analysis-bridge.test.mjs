@@ -1501,15 +1501,18 @@ test("Hermes A2A analysis bridge keeps truncated on-disk source reads on UTF-8 b
 
     // Extract the exact projected source text for src/core/source.ts.
     const HEADER = "### jinwon-int/a2a-broker:src/core/source.ts";
-    function projectedSection(prompt, label) {
-      const at = prompt.indexOf(HEADER);
-      assert.ok(at >= 0, `${label}: source header missing`);
+    function projectedSection(prompt, label, header = HEADER) {
+      const at = prompt.indexOf(header);
+      assert.ok(at >= 0, `${label}: source header missing (${header})`);
       const headerLine = prompt.slice(at, prompt.indexOf("\n", at));
-      const open = prompt.indexOf("```text\n", at) + "```text\n".length;
+      const fence = prompt.indexOf("```text\n", at);
+      assert.equal(fence, at + headerLine.length + 1, `${label}: the text block must follow the header line`);
+      const open = fence + "```text\n".length;
       // sourceSectionText emits content, "\n", the (empty) omission note, then "\n```".
       const close = prompt.indexOf("\n\n```", open);
       assert.ok(close >= open, `${label}: source code block not closed as expected`);
-      return { headerLine, content: prompt.slice(open, close) };
+      const telemetry = prompt.match(/"canonicalBytes": (\d+)/);
+      return { headerLine, content: prompt.slice(open, close), prompt, canonicalBytes: telemetry ? Number(telemetry[1]) : undefined };
     }
     function runBridge(label, envOverrides, bridgeMessage = message) {
       rmSync(promptPath, { force: true });
@@ -1527,7 +1530,7 @@ test("Hermes A2A analysis bridge keeps truncated on-disk source reads on UTF-8 b
       assert.ok(existsSync(promptPath), `${label}: fake hermes was not invoked`);
       const prompt = readFileSync(promptPath, "utf8");
       assert.ok(!prompt.includes("\uFFFD"), `${label}: a cut must not split a multi-byte character`);
-      return projectedSection(prompt, label);
+      return { ...projectedSection(prompt, label), prompt };
     }
 
     // [label, file body after MARKER, MAX_FILE_BYTES, expected body kept, truncated]
@@ -1548,8 +1551,11 @@ test("Hermes A2A analysis bridge keeps truncated on-disk source reads on UTF-8 b
     ];
     for (const [label, body, fileBytes, kept, truncated] of cases) {
       writeFileSync(join(sourceDir, "source.ts"), MARKER + body);
-      const { headerLine, content } = runBridge(label, { A2A_HERMES_ANALYSIS_MAX_FILE_BYTES: String(fileBytes) });
+      const { headerLine, content, canonicalBytes } = runBridge(label, { A2A_HERMES_ANALYSIS_MAX_FILE_BYTES: String(fileBytes) });
       assert.equal(content, MARKER + kept, `${label}: kept content is exactly the whole characters within the limit`);
+      // `bytes` metadata (#2528 A3): the projection telemetry sums each file's
+      // reported size, which must be the whole file, not the kept or read length.
+      assert.equal(canonicalBytes, Buffer.byteLength(MARKER + body, "utf8"), `${label}: reported bytes are the original file size`);
       assert.ok(Buffer.byteLength(content, "utf8") <= fileBytes, `${label}: kept bytes stay within MAX_FILE_BYTES=${fileBytes}`);
       assert.equal(headerLine.endsWith(" (truncated)"), truncated, `${label}: truncated marker`);
     }
@@ -1557,9 +1563,14 @@ test("Hermes A2A analysis bridge keeps truncated on-disk source reads on UTF-8 b
     // #2524/#2528 A3: values that are not a positive integer fall back to the
     // defaults for every limit name (a small file is then kept whole) instead
     // of collecting nothing ("0", "0.5", "-1") or breaking the loop bounds ("abc").
-    // The payload names the directory, so the walkTree path (and with it
-    // MAX_TREE_ENTRIES) is exercised, not just a single-file read.
+    // The payload names a directory holding two files, so the walkTree path
+    // (and with it MAX_TREE_ENTRIES) is exercised, and a limit kept below 1
+    // instead of falling back ("0.5" -> 0.5) is caught: it admits only one of
+    // the two files. "abc" (NaN) disables the bounds rather than shrinking
+    // them; telling it apart from the defaults would need more files than the
+    // default caps, so here it is a no-crash/fallback guard only.
     writeFileSync(join(sourceDir, "source.ts"), MARKER + hangul);
+    writeFileSync(join(sourceDir, "second.ts"), "SECOND_FILE_MARKER\n");
     const directoryMessage = [
       "A2AD read-only analysis for a2a-broker.",
       "Payload JSON:\n" + JSON.stringify({
@@ -1573,8 +1584,9 @@ test("Hermes A2A analysis bridge keeps truncated on-disk source reads on UTF-8 b
     for (const name of ["MAX_FILES", "MAX_FILE_BYTES", "MAX_TOTAL_BYTES", "MAX_TREE_ENTRIES"]) {
       for (const value of ["0", "-1", "abc", "0.5"]) {
         const label = `A2A_HERMES_ANALYSIS_${name}=${JSON.stringify(value)} falls back to the default`;
-        const { headerLine, content } = runBridge(label, { [`A2A_HERMES_ANALYSIS_${name}`]: value }, directoryMessage);
+        const { headerLine, content, prompt } = runBridge(label, { [`A2A_HERMES_ANALYSIS_${name}`]: value }, directoryMessage);
         assert.equal(content, MARKER + hangul, label);
+        assert.ok(prompt.includes("### jinwon-int/a2a-broker:src/core/second.ts") && prompt.includes("SECOND_FILE_MARKER"), `${label}: both directory files collected`);
         assert.equal(headerLine.endsWith(" (truncated)"), false, `${label}: not truncated`);
       }
     }

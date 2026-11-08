@@ -9,6 +9,8 @@
  * through these helpers so the cut always lands on a character boundary.
  */
 
+import { types } from "node:util";
+
 /**
  * Normalize a byte budget to a whole number of bytes (#2524). A fractional
  * budget used to skip the continuation-byte check (`buffer[4.5]` is
@@ -31,7 +33,9 @@ export function byteBudget(maxBytes) {
 function toBytes(input) {
 	if (Buffer.isBuffer(input)) return input;
 	if (ArrayBuffer.isView(input)) return Buffer.from(input.buffer, input.byteOffset, input.byteLength);
-	if (input instanceof ArrayBuffer) return Buffer.from(input);
+	// isAnyArrayBuffer also covers SharedArrayBuffer and an ArrayBuffer from
+	// another realm (vm context), which `instanceof ArrayBuffer` misses (#2529 review).
+	if (types.isAnyArrayBuffer(input)) return Buffer.from(input);
 	return Buffer.from(String(input ?? ""), "utf8");
 }
 
@@ -39,12 +43,29 @@ function toBytes(input) {
 const MAX_CONTINUATION_BYTES = 3;
 
 /**
+ * Byte length of the UTF-8 sequence a lead byte starts, or 1 for ASCII and
+ * for bytes that cannot start a valid multi-byte sequence (0xC0/0xC1
+ * overlong leads, 0xF5-0xFF).
+ */
+function sequenceLength(lead) {
+	if (lead >= 0xc2 && lead <= 0xdf) return 2;
+	if (lead >= 0xe0 && lead <= 0xef) return 3;
+	if (lead >= 0xf0 && lead <= 0xf4) return 4;
+	return 1;
+}
+
+/**
  * Largest end index <= maxBytes that does not split a UTF-8 character.
  * A byte is a continuation byte iff (byte & 0xc0) === 0x80.
  * Input of any kind is measured and scanned as bytes (see toBytes).
- * The back-off is bounded (#2528): if no lead byte appears within 3 steps the
- * input is malformed at the cut, and the cut stays at the budget instead of
- * sliding back towards 0 and dropping everything before it.
+ *
+ * When the cut lands on a continuation byte, look back at most 3 bytes for
+ * the lead byte of that character and cut before it only if that lead really
+ * starts a sequence that runs past the cut. Otherwise the bytes at the cut
+ * are malformed (a stray continuation run, an invalid or overlong lead, a run
+ * from index 0), and the cut stays at the budget (#2528, #2529 review): one
+ * rule for every malformed case, never sliding back to drop valid text. On
+ * valid UTF-8 this is the same cut as the unbounded back-off.
  */
 export function utf8BoundaryEnd(buffer, maxBytes) {
 	const bytes = toBytes(buffer);
@@ -52,9 +73,13 @@ export function utf8BoundaryEnd(buffer, maxBytes) {
 	const limit = Math.min(byteBudget(maxBytes), length);
 	if (limit <= 0 || limit >= length) return limit;
 	const isContinuation = (index) => (bytes[index] & 0xc0) === 0x80;
-	let end = limit;
-	for (let step = 0; step < MAX_CONTINUATION_BYTES && end > 0 && isContinuation(end); step++) end--;
-	return end > 0 && isContinuation(end) ? limit : end;
+	if (!isContinuation(limit)) return limit;
+	for (let back = 1; back <= MAX_CONTINUATION_BYTES && limit - back >= 0; back++) {
+		const index = limit - back;
+		if (isContinuation(index)) continue;
+		return sequenceLength(bytes[index]) > back ? index : limit;
+	}
+	return limit;
 }
 
 /**
