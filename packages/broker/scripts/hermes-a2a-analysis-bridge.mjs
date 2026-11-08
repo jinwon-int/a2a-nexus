@@ -426,14 +426,14 @@ function runBoundedGh(args, env, { timeoutMs, maxBytes }) {
 }
 
 function fetchGithubPrSourceBundle(prRef, env, limits, remainingBytes) {
-  const timeoutMs = positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_PR_FETCH_TIMEOUT_MS, DEFAULT_PR_FETCH_TIMEOUT_MS, "A2A_HERMES_ANALYSIS_PR_FETCH_TIMEOUT_MS");
+  const timeoutMs = envPositiveInteger(env, "A2A_HERMES_ANALYSIS_PR_FETCH_TIMEOUT_MS", DEFAULT_PR_FETCH_TIMEOUT_MS);
   const diffBudget = Math.min(
-    positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_PR_DIFF_BYTES, DEFAULT_PR_DIFF_BYTES, "A2A_HERMES_ANALYSIS_PR_DIFF_BYTES"),
+    envPositiveInteger(env, "A2A_HERMES_ANALYSIS_PR_DIFF_BYTES", DEFAULT_PR_DIFF_BYTES),
     limits.maxFileBytes,
     remainingBytes,
   );
   const metadataBudget = Math.min(
-    positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_PR_METADATA_BYTES, DEFAULT_PR_METADATA_BYTES, "A2A_HERMES_ANALYSIS_PR_METADATA_BYTES"),
+    envPositiveInteger(env, "A2A_HERMES_ANALYSIS_PR_METADATA_BYTES", DEFAULT_PR_METADATA_BYTES),
     limits.maxFileBytes,
     Math.max(0, remainingBytes - diffBudget),
   );
@@ -494,11 +494,11 @@ function collectSourceBundle(payload, env) {
 
   // #2524: same whole-number parser as the piri bridge reads for these env
   // names, so a fractional/NaN value never reaches the byte-capped cuts.
-  const maxFiles = positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_MAX_FILES, DEFAULT_MAX_FILES, "A2A_HERMES_ANALYSIS_MAX_FILES");
-  const maxFileBytes = positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_MAX_FILE_BYTES, DEFAULT_MAX_FILE_BYTES, "A2A_HERMES_ANALYSIS_MAX_FILE_BYTES");
-  const maxTotalBytes = positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_MAX_TOTAL_BYTES, DEFAULT_MAX_TOTAL_BYTES, "A2A_HERMES_ANALYSIS_MAX_TOTAL_BYTES");
-  const maxTreeEntries = positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_MAX_TREE_ENTRIES, DEFAULT_TREE_ENTRIES, "A2A_HERMES_ANALYSIS_MAX_TREE_ENTRIES");
-  const maxPromptBytes = positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_MAX_PROMPT_BYTES, DEFAULT_MAX_PROMPT_BYTES, "A2A_HERMES_ANALYSIS_MAX_PROMPT_BYTES");
+  const maxFiles = envPositiveInteger(env, "A2A_HERMES_ANALYSIS_MAX_FILES", DEFAULT_MAX_FILES);
+  const maxFileBytes = envPositiveInteger(env, "A2A_HERMES_ANALYSIS_MAX_FILE_BYTES", DEFAULT_MAX_FILE_BYTES);
+  const maxTotalBytes = envPositiveInteger(env, "A2A_HERMES_ANALYSIS_MAX_TOTAL_BYTES", DEFAULT_MAX_TOTAL_BYTES);
+  const maxTreeEntries = envPositiveInteger(env, "A2A_HERMES_ANALYSIS_MAX_TREE_ENTRIES", DEFAULT_TREE_ENTRIES);
+  const maxPromptBytes = envPositiveInteger(env, "A2A_HERMES_ANALYSIS_MAX_PROMPT_BYTES", DEFAULT_MAX_PROMPT_BYTES);
 
   const files = [];
   const warnings = [];
@@ -1066,9 +1066,15 @@ function positiveIntegerEnv(value, fallback, name) {
   // rejected value; an unset or blank value is not a rejection.
   if (name && String(value ?? "").trim() !== "" && !warnedEnvNames.has(name)) {
     warnedEnvNames.add(name);
-    process.stderr.write(`hermes-a2a-analysis-bridge: ignoring ${name} (not a positive integer); using the default ${fallback}\n`);
+    process.stderr.write(`hermes-a2a-analysis-bridge: ignoring ${name} (not a positive integer); falling back to the default ${fallback} before any other caps\n`);
   }
   return fallback;
+}
+
+// Read env[name] and parse it, so the name that is read and the name that is
+// warned about can never drift apart (#2531 review).
+function envPositiveInteger(env, name, fallback) {
+  return positiveIntegerEnv(env?.[name], fallback, name);
 }
 
 function truncateUtf8ToBytes(text, maxBytes) {
@@ -1076,7 +1082,7 @@ function truncateUtf8ToBytes(text, maxBytes) {
 }
 
 function applyHermesPromptArgBudget(prompt, env) {
-  const maxPromptBytes = positiveIntegerEnv(env.A2A_HERMES_ANALYSIS_MAX_PROMPT_BYTES, DEFAULT_MAX_PROMPT_BYTES, "A2A_HERMES_ANALYSIS_MAX_PROMPT_BYTES");
+  const maxPromptBytes = envPositiveInteger(env, "A2A_HERMES_ANALYSIS_MAX_PROMPT_BYTES", DEFAULT_MAX_PROMPT_BYTES);
   const promptBytes = Buffer.byteLength(prompt, "utf8");
   if (promptBytes <= maxPromptBytes) return prompt;
 
