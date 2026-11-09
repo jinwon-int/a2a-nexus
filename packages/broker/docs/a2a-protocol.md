@@ -208,6 +208,17 @@ Requester / hub side (context updates):
 - `POST /tasks/:id/approve` (operator/hub only) records approval metadata and
   resumes an approval-gated task from `blocked` to `queued`.
 
+Persistence failure (#2523): when a durable write fails the broker
+fails closed. Until a recovery save succeeds (or the broker restarts),
+every mutating HTTP request, including a retry that memory would answer
+idempotently, gets 503 `state_unavailable` (`details.reasonCode:
+"persistence_degraded"`); retry with backoff. Reads are served. A 2xx
+on a mutating REST route means the transition is on disk. JSON-RPC
+calls that would change state are refused too (`state_unavailable`
+has no JSON-RPC counterpart, so it maps to -32603); JSON-RPC replies do not wait for a durable ACK, so
+an idempotent no-op reply is not refused. See
+`persistence-durability.md` ("Failed durable writes: fail closed").
+
 The legacy library exposed an `applyA2ATaskProtocolUpdate` helper that
 fanned out into either branch above. There is no in-process
 equivalent in this broker; callers reach the same behavior over HTTP
@@ -442,6 +453,10 @@ Alert kind notes:
   the condition returns; exhausted supersedes warn. Budget alerts are
   described in `goal-objective-lifecycle.md` ("Budget alerts") and
   `spend-budget-runbook.md`.
+- `persistence_degraded` (critical, #2523) is open while a failed
+  durable write keeps the broker refusing mutations. Subject kind
+  `storage`, id `broker-persistence`; it resolves when a recovery save
+  succeeds. See `persistence-durability.md`.
 - `gateway.unhealthy` is part of the closed operator alert vocabulary
   so gateway operators have a stable schema to target, but this broker
   does **not** synthesize a new gateway entity, health monitor, or

@@ -325,6 +325,9 @@ for (const wiring of ["hints", "repositories"] as const) {
       assert.deepEqual(h.broker.listAuditEvents({ action: "budget.updated" }), []);
       assert.equal(h.query("SELECT id FROM broker_audit_events WHERE action = 'budget.updated'").length, 0);
       h.sql("DROP TRIGGER budget_update_fail");
+      // #2523: the failed write degraded persistence; the recovery save (one
+      // commit of its own) clears it, so the count below is the write's alone.
+      assert.equal(h.broker.retryDegradedPersistence(), "ok");
 
       // One commit per budget write, row and audit together.
       const before = h.store.commits;

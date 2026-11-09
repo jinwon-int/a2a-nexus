@@ -277,7 +277,11 @@ enforcement is `off`.
    in the same transaction anyway, the failure is visible and the worker retries, and a
    silent under-count would weaken enforcement. With the reconciliation in place, a
    non-fatal variant buys nothing. The same holds for the G1 late-metering update, which
-   rides the late-evidence transaction.
+   rides the late-evidence transaction. #2523: the failed write no longer loses the row.
+   The broker puts the drained spend and metering rows back and fails closed (503
+   `state_unavailable` for every mutation, retries included) until a recovery save writes
+   them with the terminal task row, so a retry can no longer get 200 with no spend row.
+   The reconciliation stays as the repair for rows lost before #2523.
 9. **G3 — partial deploy period: no enforcement before the first full period.** The
    reconciliation backfills what the hot table still has, but tasks pruned before the
    deploy are gone. Slice 3b runs `on` as `shadow` for any period where

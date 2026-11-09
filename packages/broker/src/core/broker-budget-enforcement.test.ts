@@ -1962,6 +1962,13 @@ for (const wiring of WIRINGS) {
              WHEN OLD.task_id IN ('t-retry', 't-abandon') BEGIN SELECT RAISE(ABORT, 'metering write failed'); END`);
       for (const id of ["t-retry", "t-abandon"]) {
         assert.throws(() => quiet(() => h.broker.completeTask(id, "worker-a", { summary: "late", output: TELEMETRY })), /metering write failed/);
+        // #2523: the failed save now keeps its metering in the pending buffer
+        // and degrades persistence. This test is about the restage pass that
+        // repairs a metering lost before #2523, so simulate that loss: drop
+        // the kept rows and let a recovery save (it writes no metering) clear
+        // the state.
+        (h.broker["pendingHot"] as PendingHotStateBuffer).clear();
+        assert.equal(h.broker.retryDegradedPersistence(), "ok");
       }
       const settled = h.broker["lateMeteringSettled"] as Set<string>;
       const attempts = h.broker["lateMeteringAttempts"] as Map<string, number>;

@@ -9,6 +9,11 @@
 // category drains into one optional field of BrokerStateSaveHints; the map key
 // equals the record id used both for staging and for the retained-id filter, so
 // retention can be applied by key without re-deriving ids per category.
+//
+// #2523: a drained batch whose durable write fails is put back (`restore`), and
+// `DurableWriteHealth` holds the fail-closed state that write failure opens:
+// the two decide together what the next save must carry and whether the broker
+// may accept a mutation at all.
 import type {
   ArtifactRecord,
   AuditEvent,
@@ -45,7 +50,48 @@ const HINT_KEYS = [
   "goals",
 ] as const;
 
-type HintKey = (typeof HINT_KEYS)[number];
+export type PendingHintKey = (typeof HINT_KEYS)[number];
+type HintKey = PendingHintKey;
+
+/** The ten hot-table categories (the rest are ledger/budget/goal rows with no hot table). */
+const HOT_TABLE_HINT_KEYS: ReadonlySet<HintKey> = new Set(HINT_KEYS.slice(0, 10));
+
+/**
+ * #2523: `hints` without the hot-table categories (undefined when nothing is
+ * left). A save given these takes the store's full-write path, which rewrites
+ * every hot table from the snapshot; the spend, metering, budget and goal rows
+ * have no snapshot copy, so they must still ride the hints.
+ */
+export function withoutHotTableHints(hints: BrokerStateSaveHints | undefined): BrokerStateSaveHints | undefined {
+  if (!hints) return undefined;
+  const kept: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(hints)) {
+    if (!HOT_TABLE_HINT_KEYS.has(key as HintKey)) kept[key] = value;
+  }
+  return Object.keys(kept).length > 0 ? (kept as BrokerStateSaveHints) : undefined;
+}
+
+// The staging-map key of a drained record, per category (restore re-keys by it).
+const HINT_RECORD_ID: Record<HintKey, (record: unknown) => string> = {
+  hotExchanges: (r) => (r as { id: string }).id,
+  hotExchangeMessages: (r) => (r as { id: string }).id,
+  hotProposals: (r) => (r as { id: string }).id,
+  hotArtifacts: (r) => (r as { id: string }).id,
+  hotValidations: (r) => (r as { id: string }).id,
+  hotTasks: (r) => (r as { id: string }).id,
+  hotTombstones: (r) => (r as { taskId: string }).taskId,
+  hotAuditEvents: (r) => (r as { id: string }).id,
+  hotWorkers: (r) => (r as { nodeId: string }).nodeId,
+  hotTerminalOutboxEvents: (r) => (r as { id: string }).id,
+  spendEvents: (r) => (r as { taskId: string }).taskId,
+  spendMeterings: (r) => (r as { taskId: string }).taskId,
+  budgets: (r) => (r as { id: string }).id,
+  goals: (r) => (r as { id: string }).id,
+};
+
+// First write wins for these (see stageSpendEvent): a restored row is the
+// earlier write, so it replaces anything staged for the same task since.
+const FIRST_WRITE_WINS: ReadonlySet<HintKey> = new Set(["spendEvents", "spendMeterings"]);
 
 // For each category, the ids still retained after retention is applied to a full
 // snapshot. The staging map key equals these ids, so a key ∈ set test filters the
@@ -234,6 +280,29 @@ export class PendingHotStateBuffer {
     return hints;
   }
 
+  /**
+   * #2523: put back the hints a failed durable write consumed, so no row is
+   * lost with the write. A row staged again since (a newer version of the
+   * same record) is kept; for the first-write-wins ledger categories the
+   * restored row is the earlier write and replaces it. `except` skips
+   * categories whose owner already resyncs memory from the store on a failed
+   * queued write (budgets, goals): re-staging them would write a row memory
+   * no longer holds. Re-writing a row that did commit is harmless: every lane
+   * is an upsert, the spend insert is ON CONFLICT DO NOTHING and the late
+   * metering update applies once.
+   */
+  restore(hints: BrokerStateSaveHints, options: { except?: readonly HintKey[] } = {}): void {
+    const drained = hints as Partial<Record<HintKey, unknown[]>>;
+    for (const key of HINT_KEYS) {
+      if (options.except?.includes(key)) continue;
+      const map = this.maps[key];
+      for (const record of drained[key] ?? []) {
+        const id = HINT_RECORD_ID[key](record);
+        if (FIRST_WRITE_WINS.has(key) || !map.has(id)) map.set(id, record);
+      }
+    }
+  }
+
   private buildHints(keep: (key: HintKey, id: string) => boolean): BrokerStateSaveHints {
     const hints: Record<string, unknown[]> = {};
     for (const key of HINT_KEYS) {
@@ -248,5 +317,106 @@ export class PendingHotStateBuffer {
       }
     }
     return hints as BrokerStateSaveHints;
+  }
+}
+
+/** #2523: where a durable write failed: synchronously in this process, or in a queued (worker-thread) write. */
+export type DurableWriteTopology = "in_process" | "queued";
+
+/** #2523: the fail-closed persistence state, as served by `/health` (`persistenceWrites`). */
+export interface DurableWriteHealthSnapshot {
+  state: "ok" | "degraded";
+  /** When the current degraded period began (null while ok). */
+  degradedSince: string | null;
+  lastFailure: { at: string; topology: DurableWriteTopology; message: string } | null;
+  /** Failed durable writes since process start (every failure, also while degraded). */
+  failuresTotal: number;
+  /** Degraded periods ended by a successful recovery save since process start. */
+  recoveriesTotal: number;
+  lastRecoveredAt: string | null;
+  recoveryProbe: { inFlight: boolean; lastAt: string | null; intervalMs: number };
+}
+
+const FAILURE_MESSAGE_MAX_CHARS = 300;
+
+/**
+ * #2523: fail-closed persistence state. A failed durable write opens it; the
+ * broker then refuses mutations (503 `state_unavailable`) until a recovery
+ * save — a full save of memory issued after the failure — succeeds, or the
+ * process restarts (a restart reloads memory from disk).
+ *
+ * Every failure bumps `epoch`. A recovery probe takes the epoch when it
+ * starts and clears the state only if no failure arrived meanwhile, so a
+ * queued write that fails after the probe was queued keeps the broker
+ * degraded. The first probe after the state opens may run at once (a one-off
+ * fault self-heals on the next mutation); later probes run at most once per
+ * `probeIntervalMs`, and never two queued at a time.
+ */
+export class DurableWriteHealth {
+  private degradedSince: string | undefined;
+  private epoch = 0;
+  private lastFailure: DurableWriteHealthSnapshot["lastFailure"] = null;
+  private failuresTotal = 0;
+  private recoveriesTotal = 0;
+  private lastRecoveredAt: string | null = null;
+  private lastProbeAtMs: number | undefined;
+  private probeInFlight = false;
+
+  constructor(private readonly probeIntervalMs: number) {}
+
+  get degraded(): boolean {
+    return this.degradedSince !== undefined;
+  }
+
+  /** Record one failed durable write; true when it opened the degraded state. */
+  markFailed(error: unknown, topology: DurableWriteTopology, nowMs = Date.now()): boolean {
+    const at = new Date(nowMs).toISOString();
+    const message = error instanceof Error ? error.message : String(error);
+    this.epoch += 1;
+    this.failuresTotal += 1;
+    this.lastFailure = { at, topology, message: message.slice(0, FAILURE_MESSAGE_MAX_CHARS) };
+    if (this.degradedSince !== undefined) return false;
+    this.degradedSince = at;
+    this.lastProbeAtMs = undefined;
+    return true;
+  }
+
+  /**
+   * Claim a recovery probe: the epoch token to pass to `probeSettled`, or
+   * undefined when not degraded, a queued probe is still in flight, or the
+   * interval since the last probe has not elapsed.
+   */
+  beginProbe(options: { queued: boolean }, nowMs = Date.now()): number | undefined {
+    if (!this.degraded || this.probeInFlight) return undefined;
+    if (this.lastProbeAtMs !== undefined && nowMs - this.lastProbeAtMs < this.probeIntervalMs) return undefined;
+    this.lastProbeAtMs = nowMs;
+    this.probeInFlight = options.queued;
+    return this.epoch;
+  }
+
+  /** Settle a probe; true when its success cleared the degraded state. */
+  probeSettled(token: number, ok: boolean, nowMs = Date.now()): boolean {
+    this.probeInFlight = false;
+    if (!ok || !this.degraded || token !== this.epoch) return false;
+    this.degradedSince = undefined;
+    this.recoveriesTotal += 1;
+    this.lastRecoveredAt = new Date(nowMs).toISOString();
+    return true;
+  }
+
+  snapshot(): DurableWriteHealthSnapshot {
+    return {
+      state: this.degraded ? "degraded" : "ok",
+      degradedSince: this.degradedSince ?? null,
+      lastFailure: this.lastFailure ? { ...this.lastFailure } : null,
+      failuresTotal: this.failuresTotal,
+      recoveriesTotal: this.recoveriesTotal,
+      lastRecoveredAt: this.lastRecoveredAt,
+      recoveryProbe: {
+        inFlight: this.probeInFlight,
+        lastAt: this.lastProbeAtMs === undefined ? null : new Date(this.lastProbeAtMs).toISOString(),
+        intervalMs: this.probeIntervalMs,
+      },
+    };
   }
 }
