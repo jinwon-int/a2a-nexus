@@ -400,8 +400,12 @@ export interface BudgetEvaluation {
   tokensSpent: bigint;
   usdExhausted: boolean;
   tokensExhausted: boolean;
-  /** Either limit reached `warnPct` percent (also true once exhausted). */
+  /** Either limit reached `warnPct` percent (also true once exhausted): `usdWarn || tokensWarn`. */
   warn: boolean;
+  /** #2520: the USD limit is set and reached `warnPct` percent (the per-limit parts of `warn`). */
+  usdWarn: boolean;
+  /** #2520: the token limit is set and reached `warnPct` percent. */
+  tokensWarn: boolean;
 }
 
 /**
@@ -415,8 +419,9 @@ export interface BudgetEnforcementCounters {
   /**
    * Tasks omitted from (or, in shadow, kept in) worker queued listings. Each
    * listing evaluation adds its count, so the totals grow with poll frequency
-   * (a held long poll re-evaluates on every wake); `lastOmittedCount` is the
-   * latest listing's count.
+   * (a held long poll re-evaluates on every wake and at least every 250 ms
+   * drain-check slice); `lastOmittedCount` is the latest listing's count.
+   * #2520: kept as per-evaluation counts (no per-task-per-period state).
    */
   listing: { omittedTotal: number; lastOmittedAt: string | null; lastOmittedCount: number; wouldOmitTotal: number };
   creates: { refusedTotal: number; wouldRefuseTotal: number; lastAt: string | null };

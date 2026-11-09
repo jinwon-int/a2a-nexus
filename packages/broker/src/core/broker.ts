@@ -454,6 +454,18 @@ const LATE_METERING_MAX_ATTEMPTS = 3;
  * previous result meanwhile.
  */
 const BUDGET_ALERT_SWEEP_LIMIT = 200;
+/**
+ * #2520: budgets evaluated by the startup alert pass, before the server
+ * listens (by id). Budgets past it stay queued and are evaluated first by
+ * the next sweeps (BUDGET_ALERT_SWEEP_LIMIT each).
+ */
+const BUDGET_ALERT_STARTUP_LIMIT = 1_000;
+/**
+ * #2520: at most this share of a budget-alert sweep (at least one budget)
+ * retries budgets whose last evaluation failed, oldest failure first; the
+ * others failing stay in the round-robin.
+ */
+const BUDGET_ALERT_RETRY_SHARE = 0.25;
 
 /** #2499 slice 3b: budgets loaded at startup (all of them; more refuses startup). */
 const BUDGET_LOAD_LIMIT = 10_000;
@@ -736,6 +748,16 @@ export class InMemoryA2ABroker {
   private readonly lateMeteringAttempts = new Map<string, number>();
   /** #2499 slice 4: keyset cursor of the not-`on` goal resume pass (undefined: start). */
   private goalResumeCursor: { updatedAt: string; id: string } | undefined;
+  /**
+   * #2520: a goal may be budget-limited by a budget that is no longer in
+   * memory (a rolled-back or resynced goal-budget write, or a write that did
+   * not survive a restart). Set at startup and whenever a goal-scope budget
+   * leaves memory; cleared when a goal resume pass has walked every
+   * budget_limited goal (applyGoalBudgetLimits).
+   */
+  private goalBudgetOrphanCheck = true;
+  /** #2520: a resume in the current resume walk failed (the orphan check then stays set). */
+  private goalResumeWalkFailed = false;
   /** #2499 slice 4: shadow would-limit decisions already counted, per goal, for `goalWouldLimitPeriod`. */
   private goalWouldLimitPeriod: string | undefined;
   private readonly goalWouldLimitCounted = new Set<string>();
@@ -745,12 +767,20 @@ export class InMemoryA2ABroker {
    * stale-reaper sweep (and once at startup); getBudgetAlerts serves it to
    * the alert projection from memory. `budgetAlertDirty` holds budgets
    * written since their last evaluation (evaluated first).
+   * #2520: `budgetAlertFailed` holds budgets whose last evaluation failed,
+   * oldest failure first; at most BUDGET_ALERT_RETRY_SHARE of a sweep goes
+   * to them, so budgets that always fail cannot starve the others.
    */
   private readonly budgetAlertEntries = new Map<string, { periodKey: string; alert: Alert | null }>();
   private readonly budgetAlertDirty = new Set<string>();
+  private readonly budgetAlertFailed = new Set<string>();
   private budgetAlertCursor: string | undefined;
   private budgetAlertIdsKey = "";
-  /** #2499 slice 4: bumped on every in-memory budget change (getBudgetRevision). */
+  /**
+   * #2499 slice 4: bumped on every in-memory budget change (getBudgetRevision).
+   * #2520: also when the alert sweep sees a budget become exhausted or stop
+   * being exhausted.
+   */
   private budgetRevision = 0;
   /**
    * #2499 slice 3b-2: the newest budget write per id (generation, its audit
@@ -918,10 +948,13 @@ export class InMemoryA2ABroker {
     this.applyRetentionPolicy();
     this.initializeSpendLedger();
     this.loadBudgets();
-    // #2499 slice 4: the budget alert set is computed once, for every budget,
+    // #2499 slice 4: the budget alert set is computed once at startup,
     // before the server builds its operator alert differ, so a restart does
     // not re-open an alert that still holds (like every other alert kind).
-    this.evaluateBudgetAlerts({ all: true });
+    // #2520: bounded (BUDGET_ALERT_STARTUP_LIMIT budgets, by id; every loaded
+    // budget is queued); the rest are evaluated first by the next sweeps,
+    // and budgets whose read failed here are retried within the retry share.
+    this.evaluateBudgetAlerts({ limit: BUDGET_ALERT_STARTUP_LIMIT });
   }
 
   /**
@@ -1269,14 +1302,28 @@ export class InMemoryA2ABroker {
       // id ASC). #2499 slice 4: every filter (status and the keyset cursor)
       // goes through goalMatchesListFilters, and the store is read past the
       // limit by the overlay size, so overlay records that no longer match
-      // cannot leave the page short.
-      const rows = store.listGoals({ ...filters, limit: limit + this.goalUpdates.size });
+      // cannot leave the page short. #2520: the store clamps one read at
+      // HOT_READ_HARD_MAX_LIMIT, so past it the over-fetch continues with
+      // keyset reads after the last row until it has `limit` plus the
+      // overlay size rows or the table is exhausted.
+      const pageLimit = Math.min(limit, HOT_READ_HARD_MAX_LIMIT);
+      const wanted = pageLimit + this.goalUpdates.size;
+      const rows: GoalRecord[] = [];
+      let after = filters.after;
+      while (rows.length < wanted) {
+        const chunk = Math.min(wanted - rows.length, HOT_READ_HARD_MAX_LIMIT);
+        const batch = store.listGoals({ ...filters, limit: chunk, ...(after ? { after } : {}) });
+        rows.push(...batch);
+        const last = batch[batch.length - 1];
+        if (batch.length < chunk || !last) break;
+        after = { updatedAt: last.updatedAt, id: last.id };
+      }
       const merged = new Map(rows.map((goal) => [goal.id, goal]));
       for (const [id, goal] of this.goalUpdates) merged.set(id, structuredClone(goal));
       return [...merged.values()]
         .filter((goal) => goalMatchesListFilters(goal, filters))
         .sort((a, b) => compare(b.updatedAt, a.updatedAt) || compare(a.id, b.id))
-        .slice(0, limit);
+        .slice(0, pageLimit);
     }
     return [...this.goals.values()]
       .filter((goal) => goalMatchesListFilters(goal, filters))
@@ -1715,9 +1762,11 @@ export class InMemoryA2ABroker {
   private indexBudget(budget: BudgetRecord): void {
     this.budgets.set(budget.id, budget);
     this.budgetIdsByScope.set(budgetScopeKey(budget.scopeType, budget.scopeId, budget.period), budget.id);
-    // #2499 slice 4: re-evaluated first by the next alert sweep.
+    // #2499 slice 4: re-evaluated first by the next alert sweep (#2520: a
+    // write also lifts it out of the capped failed retries).
     this.budgetRevision += 1;
     this.budgetAlertDirty.add(budget.id);
+    this.budgetAlertFailed.delete(budget.id);
   }
 
   private unindexBudget(id: string): void {
@@ -1725,6 +1774,13 @@ export class InMemoryA2ABroker {
     if (!budget) return;
     this.budgets.delete(id);
     this.budgetRevision += 1;
+    // #2520: a goal this budget limited would otherwise stay budget_limited;
+    // the next resume pass walks every budget_limited goal from the start.
+    if (budget.scopeType === "goal") {
+      this.goalBudgetOrphanCheck = true;
+      this.goalResumeCursor = undefined;
+      this.goalResumeWalkFailed = false;
+    }
     const key = budgetScopeKey(budget.scopeType, budget.scopeId, budget.period);
     if (this.budgetIdsByScope.get(key) === id) this.budgetIdsByScope.delete(key);
   }
@@ -1866,7 +1922,7 @@ export class InMemoryA2ABroker {
     const isThisAudit = (event: AuditEvent) =>
       event.action === action && event.targetType === "budget" && event.targetId === budget.id;
     const earlier = new Set([...this.auditEvents.values()].filter(isThisAudit).map((event) => event.id));
-    const writeBefore = this.stateStore?.latestQueuedWrite?.();
+    const writeBefore = this.latestQueuedWrite();
     let auditEventId: string | undefined;
     try {
       this.commitMutation(() => {
@@ -1906,8 +1962,17 @@ export class InMemoryA2ABroker {
    * by an earlier call is never attributed to this one.
    */
   private queuedWriteSince(before: Promise<unknown> | undefined): Promise<unknown> | undefined {
-    const after = this.stateStore?.latestQueuedWrite?.();
+    const after = this.latestQueuedWrite();
     return after !== undefined && after !== before ? after : undefined;
+  }
+
+  /**
+   * #2520: the state store's latest queued write. The one read of it, so
+   * the `before` a caller takes and queuedWriteSince's `after` always come
+   * from the same object.
+   */
+  private latestQueuedWrite(): Promise<unknown> | undefined {
+    return this.stateStore?.latestQueuedWrite?.();
   }
 
   private settleBudgetWrite(id: string, generation: number): void {
@@ -2215,9 +2280,21 @@ export class InMemoryA2ABroker {
    * anything). Effective `on` with a refusing scope throws the claim's
    * `policy_denied` / `budget_exhausted` (counted and logged like a claim
    * refusal); otherwise nothing is counted (the real claim counts).
+   * #2520: takes the create request the send is about to submit and
+   * normalizes it exactly as createTask does (like assertCreateBudgetAllowed),
+   * so the claim scopes are the created task's: lane = its intent, goal = its
+   * goalId, claimant = its assigned worker (else its target).
    */
-  assertClaimBudgetAllowed(input: { workerId: string; lane: string; goalId?: string | null }): void {
-    this.applyClaimBudget({ ...input, goalId: input.goalId ?? null }, { countShadow: false });
+  assertClaimBudgetAllowed(request: CreateTaskRequest): void {
+    const normalized = this.normalizeCreateTaskRequest(request).request;
+    this.applyClaimBudget(
+      {
+        workerId: normalized.assignedWorkerId ?? normalized.target.id,
+        lane: normalized.intent,
+        goalId: normalized.goalId ?? null,
+      },
+      { countShadow: false },
+    );
   }
 
   private applyClaimBudget(
@@ -2389,12 +2466,23 @@ export class InMemoryA2ABroker {
    * failure). Never throws: a failed read counts in `checkFailed`, a failed
    * transition logs a rate-limited line.
    *
-   * #2499 slice 4: without any goal budget nothing is read (no goal can be
-   * budget-limited: budgets are never deleted and their scope never
-   * changes). The not-`on` resume pass walks `budget_limited` goals with a
-   * keyset cursor, so goals limited for another reason cannot pin it and
-   * more than `limit` budget-limited goals are all resumed over sweeps.
+   * #2499 slice 4: the not-`on` resume pass walks `budget_limited` goals
+   * with a keyset cursor, so goals limited for another reason cannot pin it
+   * and more than `limit` budget-limited goals are all resumed over sweeps.
    * Shadow counts `goals.wouldLimitTotal` once per goal per period.
+   *
+   * #2520: budgets are never deleted by an operator, but a goal budget can
+   * leave memory (a rolled-back write, a failed queued write resynced from
+   * the store, or a write that did not survive a restart), and a goal it
+   * limited would then stay `budget_limited`. So, once per process start and
+   * again after a goal-scope budget leaves memory (goalBudgetOrphanCheck),
+   * the resume pass also runs in effective `on` and resumes the goals a
+   * budget limited that no longer have a goal budget in memory (note
+   * `budget_available`). Without any goal budget only that pass runs (one
+   * goal-list read per page, no enforcement metadata or spend read), with
+   * note `budget_enforcement_not_on` when the configured mode is not `on`;
+   * once it has walked every budget_limited goal without a failed resume
+   * nothing is read (a failed resume keeps the check for the next sweep).
    */
   applyGoalBudgetLimits(options: { limit?: number } = {}): { limited: string[]; resumed: string[] } | undefined {
     if (!this.budgetStore()) return undefined;
@@ -2407,16 +2495,16 @@ export class InMemoryA2ABroker {
         break;
       }
     }
-    if (!hasGoalBudget) return { limited, resumed };
+    if (!hasGoalBudget && !this.goalBudgetOrphanCheck) return { limited, resumed };
     const limit = Math.max(1, Math.floor(options.limit ?? GOAL_BUDGET_SWEEP_LIMIT));
     const counters = this.budgetCounters.goals;
     let context: BudgetReadContext | undefined;
-    if (this.budgetEnforcementMode !== "off") {
+    if (hasGoalBudget && this.budgetEnforcementMode !== "off") {
       context = this.budgetReadContext();
       if (context.enforcement.failed) return { limited, resumed };
     }
     const on = context?.enforcement.state.effectiveMode === "on";
-    const transition = (goal: GoalRecord, toLimit: boolean, budgetId: string | undefined, note: string): void => {
+    const transition = (goal: GoalRecord, toLimit: boolean, budgetId: string | undefined, note: string): boolean => {
       const line = { goalId: goal.id, ...(budgetId !== undefined ? { budgetId } : {}) };
       try {
         if (toLimit) {
@@ -2431,23 +2519,41 @@ export class InMemoryA2ABroker {
         counters.lastAt = isoNow();
         const event = toLimit ? "broker.budget.goal_limited" : "broker.budget.goal_resumed";
         console.warn(JSON.stringify({ event, ...line, note }));
+        return true;
       } catch (error) {
         this.warnRateLimited("broker.budget.goal_transition_failed", {
           event: "broker.budget.goal_transition_failed",
           ...line,
           error: error instanceof Error ? error.message : String(error),
         });
+        return false;
       }
     };
-    if (!on) {
-      // Enforcement is not on: no goal stays limited by a budget.
+    if (!on || this.goalBudgetOrphanCheck) {
+      // Enforcement is not on: no goal stays limited by a budget. In `on`
+      // (orphan check only): a goal whose goal budget left memory.
+      // Without any goal budget the effective mode is not read: the
+      // configured mode names the note.
+      const notOn = hasGoalBudget ? !on : this.budgetEnforcementMode !== "on";
+      const orphanOnly = hasGoalBudget && on;
       try {
         const cursor = this.goalResumeCursor;
         const page = this.listGoals({ status: "budget_limited", limit, ...(cursor ? { after: cursor } : {}) });
         const last = page[page.length - 1];
         this.goalResumeCursor = page.length === limit && last ? { updatedAt: last.updatedAt, id: last.id } : undefined;
         for (const goal of page) {
-          if (lastGoalLimitReason(goal) === "budget_exhausted") transition(goal, false, undefined, "budget_enforcement_not_on");
+          if (lastGoalLimitReason(goal) !== "budget_exhausted") continue;
+          if (orphanOnly && this.budgetForScope("goal", goal.id)) continue;
+          if (!transition(goal, false, undefined, notOn ? "budget_enforcement_not_on" : "budget_available")) {
+            this.goalResumeWalkFailed = true;
+          }
+        }
+        // Every budget_limited goal has been walked once. #2520: the orphan
+        // check ends only when no resume in that walk failed; otherwise the
+        // next sweep walks again from the start and retries.
+        if (this.goalResumeCursor === undefined) {
+          if (!this.goalResumeWalkFailed) this.goalBudgetOrphanCheck = false;
+          this.goalResumeWalkFailed = false;
         }
       } catch (error) {
         this.warnRateLimited("broker.budget.goal_transition_failed", {
@@ -2528,7 +2634,7 @@ export class InMemoryA2ABroker {
     const store = this.goalStore();
     const previousUpdate = this.goalUpdates.get(goal.id);
     const previousStaged = this.pendingHot.stagedGoal(goal.id);
-    const writeBefore = this.stateStore?.latestQueuedWrite?.();
+    const writeBefore = this.latestQueuedWrite();
     let auditEventId: string | undefined;
     try {
       this.commitMutation(() => {
@@ -2668,7 +2774,7 @@ export class InMemoryA2ABroker {
       // One write per pass; once a task's save failed, its pass writes row by
       // row, so one bad row cannot hold back the others.
       const submit = (batch: SpendLateMeteringRecord[], ids: string[]): boolean => {
-        const writeBefore = store.latestQueuedWrite?.();
+        const writeBefore = this.latestQueuedWrite();
         try {
           store.saveHotEntities!.call(store, { spendMeterings: batch });
         } catch (error) {
@@ -2753,21 +2859,37 @@ export class InMemoryA2ABroker {
   /**
    * #2499 slice 4: evaluate budget alerts (spec "Alerts and read surfaces").
    * Run by every stale-reaper sweep (after the reconciliation and the goal
-   * limits) and once at startup for every budget (`all`). Each evaluated
-   * budget gets one aggregate read (evaluateBudget) against the current
-   * period; its alert (projectBudgetAlert: `budget_exhausted`, else
-   * `budget_warn`, else none) is cached for getBudgetAlerts. Per sweep at
-   * most `limit` (BUDGET_ALERT_SWEEP_LIMIT) budgets: budgets written since
-   * their last evaluation first, then round-robin by id; the rest keep their
-   * previous result. A budget whose read fails keeps its previous alert (no
-   * flapping), stays queued for the next sweep, and counts in `checkFailed`
-   * (`source: "alert"`). Alerts are visibility only, so they are computed in
-   * every enforcement mode, but only on a store with a spend ledger. Mode
-   * `off` reads no enforcement metadata; nothing is read without budgets.
+   * limits) and once at startup (bounded by BUDGET_ALERT_STARTUP_LIMIT; every
+   * loaded budget starts queued). Each evaluated budget gets one aggregate
+   * read (evaluateBudget) against the current period; its alert
+   * (projectBudgetAlert: `budget_exhausted`, else `budget_warn`, else none)
+   * is cached for getBudgetAlerts. Per call at most `limit`
+   * (BUDGET_ALERT_SWEEP_LIMIT) budgets: budgets written since their last
+   * evaluation first, by id; then (#2520) budgets whose last evaluation
+   * failed, oldest failure first, at most a quarter of `limit` (at least
+   * one); then round-robin by id over every other budget (failed ones past
+   * that share included); the rest keep their previous result. Alerts are
+   * visibility only, so they are computed in every enforcement mode, but
+   * only on a store with a spend ledger. Mode `off` reads no enforcement
+   * metadata; nothing is read without budgets.
+   *
+   * #2520: each budget's read, projection and cache update run in one try.
+   * A budget whose evaluation fails keeps its previous alert (no flapping),
+   * stays queued as a failed retry for the next calls (moved behind the
+   * other failed retries, so budgets that always fail take turns and never
+   * take more than the retry share) and counts in `checkFailed`
+   * (`source: "alert"`). Only a call in which every evaluation
+   * succeeded ends the run of consecutive failures, so a failure that
+   * recurs on every sweep is not masked by the other budgets' successes.
+   * A same-id alert keeps its first `detectedAt` for as long as it stays
+   * open (a failed read does not close it); an alert that resolved and opens
+   * again gets the time of the sweep that re-opened it, like its new
+   * `operator-alert-opened` event. A budget that becomes exhausted, or stops
+   * being exhausted, bumps the budget revision (getBudgetRevision).
    * `changed`: the projected alert set (ids) differs from the previous call.
    * Never throws.
    */
-  evaluateBudgetAlerts(options: { limit?: number; all?: boolean } = {}): { evaluated: number; failed: number; changed: boolean } | undefined {
+  evaluateBudgetAlerts(options: { limit?: number } = {}): { evaluated: number; failed: number; changed: boolean } | undefined {
     if (!this.budgetStore() || !this.hasSpendLedger()) return undefined;
     let evaluated = 0;
     let failed = 0;
@@ -2775,6 +2897,7 @@ export class InMemoryA2ABroker {
       if (this.budgets.size === 0) {
         this.budgetAlertEntries.clear();
         this.budgetAlertDirty.clear();
+        this.budgetAlertFailed.clear();
       } else {
         const periodKey = this.budgetPeriodKey();
         const enforcement = this.budgetEnforcementMode === "off"
@@ -2788,42 +2911,49 @@ export class InMemoryA2ABroker {
           if (!this.budgets.has(id)) this.budgetAlertEntries.delete(id);
         }
         const byId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-        let page: BudgetRecord[];
-        if (options.all) {
-          page = [...this.budgets.values()];
-        } else {
-          const limit = Math.max(1, Math.floor(options.limit ?? BUDGET_ALERT_SWEEP_LIMIT));
-          const dirty = [...this.budgetAlertDirty].filter((id) => this.budgets.has(id)).sort(byId).slice(0, limit);
-          const picked = new Set(dirty);
-          // Round-robin over the other budgets by id, continuing after the
-          // cursor and wrapping to the start within the same sweep.
-          const cursor = this.budgetAlertCursor;
-          const others = [...this.budgets.keys()].filter((id) => !picked.has(id)).sort(byId);
-          const start = cursor === undefined ? 0 : others.findIndex((id) => id > cursor);
-          const rotated = start <= 0 ? others : [...others.slice(start), ...others.slice(0, start)];
-          const rest = rotated.slice(0, limit - dirty.length);
-          if (rest.length > 0) this.budgetAlertCursor = rest[rest.length - 1];
-          page = [...dirty, ...rest].map((id) => this.budgets.get(id)!);
+        const limit = Math.max(1, Math.floor(options.limit ?? BUDGET_ALERT_SWEEP_LIMIT));
+        for (const id of this.budgetAlertFailed) {
+          if (!this.budgets.has(id)) this.budgetAlertFailed.delete(id);
         }
+        const dirty = [...this.budgetAlertDirty]
+          .filter((id) => this.budgets.has(id) && !this.budgetAlertFailed.has(id))
+          .sort(byId)
+          .slice(0, limit);
+        const retryCap = Math.min(limit - dirty.length, Math.max(1, Math.floor(limit * BUDGET_ALERT_RETRY_SHARE)));
+        const retries = [...this.budgetAlertFailed].slice(0, Math.max(0, retryCap));
+        const picked = new Set([...dirty, ...retries]);
+        // Round-robin over the other budgets by id, continuing after the
+        // cursor and wrapping to the start within the same sweep.
+        const cursor = this.budgetAlertCursor;
+        const others = [...this.budgets.keys()].filter((id) => !picked.has(id)).sort(byId);
+        const start = cursor === undefined ? 0 : others.findIndex((id) => id > cursor);
+        const rotated = start <= 0 ? others : [...others.slice(start), ...others.slice(0, start)];
+        const rest = rotated.slice(0, limit - picked.size);
+        if (rest.length > 0) this.budgetAlertCursor = rest[rest.length - 1];
+        const page = [...dirty, ...retries, ...rest].map((id) => this.budgets.get(id)!);
         const now = isoNow();
         for (const budget of page) {
-          let evaluation: BudgetEvaluation;
           try {
-            evaluation = this.evaluateBudget(budget, periodKey);
+            const evaluation = this.evaluateBudget(budget, periodKey);
+            const previous = this.budgetAlertEntries.get(budget.id)?.alert ?? null;
+            let alert = projectBudgetAlert({ evaluation, enforcement: modes, detectedAt: now });
+            // Same alert (same id: kind, budget, period) keeps its first detection time.
+            if (alert && previous && previous.id === alert.id) alert = { ...alert, detectedAt: previous.detectedAt };
+            this.budgetAlertEntries.set(budget.id, { periodKey, alert });
+            this.budgetAlertDirty.delete(budget.id);
+            this.budgetAlertFailed.delete(budget.id);
+            if ((previous?.kind === "budget_exhausted") !== (alert?.kind === "budget_exhausted")) this.budgetRevision += 1;
+            evaluated += 1;
           } catch (error) {
             failed += 1;
+            this.budgetAlertDirty.delete(budget.id);
+            // Behind the other failed retries (insertion order).
+            this.budgetAlertFailed.delete(budget.id);
+            this.budgetAlertFailed.add(budget.id);
             this.recordBudgetCheckFailure(error, { source: "alert" });
-            continue;
           }
-          evaluated += 1;
-          this.budgetCheckFailures.consecutive = 0;
-          this.budgetAlertDirty.delete(budget.id);
-          const previous = this.budgetAlertEntries.get(budget.id)?.alert ?? null;
-          let alert = projectBudgetAlert({ evaluation, enforcement: modes, detectedAt: now });
-          // Same alert (same id: kind, budget, period) keeps its first detection time.
-          if (alert && previous && previous.id === alert.id) alert = { ...alert, detectedAt: previous.detectedAt };
-          this.budgetAlertEntries.set(budget.id, { periodKey, alert });
         }
+        if (evaluated > 0 && failed === 0) this.budgetCheckFailures.consecutive = 0;
       }
     } catch (error) {
       this.warnRateLimited("broker.budget.alert_evaluation_failed", {
@@ -2856,8 +2986,14 @@ export class InMemoryA2ABroker {
   /**
    * #2499 slice 4: changes whenever a budget changes in memory or the period
    * rolls; nothing else can make a budget-omitted task claimable again (the
-   * mode is fixed at startup and spend only grows). The worker assignment
-   * stream re-announces omitted assignments when it changes.
+   * mode is fixed at startup and spend only grows). #2520: it also changes
+   * when the alert sweep sees a budget become exhausted (spend reached a
+   * limit) or stop being exhausted, so a scope that just ran out is noticed
+   * the next time the sweep evaluates that budget: the next sweep with up to
+   * BUDGET_ALERT_SWEEP_LIMIT budgets, otherwise within one round-robin
+   * cycle (a budget written since its last evaluation goes first). The
+   * worker assignment stream sends a fresh, filtered
+   * snapshot when it changes.
    */
   getBudgetRevision(): string {
     return `${this.budgetRevision}:${this.budgetPeriodKey()}`;

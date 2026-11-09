@@ -210,7 +210,7 @@ test("raising the limit resolves the alert on the next sweep (changed budgets ar
       budget(h, { id: `b-${index}`, scopeType: "lane", scopeId: `lane-${index}`, limitTokens: 10 });
       spend(h, { lane: `lane-${index}`, inputTokens: 20 });
     }
-    quiet(() => h.broker.evaluateBudgetAlerts({ all: true }));
+    sweep(h);
     assert.equal(ids(h).length, 5);
     const differ = new OperatorAlertDiffer(h.broker.getBudgetAlerts());
     h.broker.updateBudget("b-4", { limitTokens: 1_000, actorId: "operator-1" });
@@ -412,7 +412,7 @@ test("projectBudgetAlert: bigint token totals project as decimal strings; both l
   };
   const tokensSpent = BigInt(Number.MAX_SAFE_INTEGER) * 2n;
   const alert = projectBudgetAlert({
-    evaluation: { budget: record, periodKey: "2026-11", usdSpent: 3, tokensSpent, usdExhausted: true, tokensExhausted: true, warn: true },
+    evaluation: { budget: record, periodKey: "2026-11", usdSpent: 3, tokensSpent, usdExhausted: true, tokensExhausted: true, warn: true, usdWarn: true, tokensWarn: true },
     enforcement: { configuredMode: "on", effectiveMode: null },
     detectedAt: "2026-11-07T00:00:00.000Z",
   }) as Alert;
@@ -422,11 +422,287 @@ test("projectBudgetAlert: bigint token totals project as decimal strings; both l
   assert.equal(alert.metadata.effectiveMode, null, "unknown when the metadata read failed");
   assert.doesNotThrow(() => JSON.stringify(alert));
   const below = projectBudgetAlert({
-    evaluation: { budget: record, periodKey: "2026-11", usdSpent: 0.4, tokensSpent: 1n, usdExhausted: false, tokensExhausted: false, warn: false },
+    evaluation: { budget: record, periodKey: "2026-11", usdSpent: 0.4, tokensSpent: 1n, usdExhausted: false, tokensExhausted: false, warn: false, usdWarn: false, tokensWarn: false },
     enforcement: { configuredMode: "off", effectiveMode: "off" },
     detectedAt: "2026-11-07T00:00:00.000Z",
   });
   assert.equal(below, null);
+});
+
+// --- #2520: carried review minors (alert sweep) ---------------------------------------
+
+test("#2520 projectBudgetAlert uses the evaluator's warn decision; a missing limit is never passed to BigInt", () => {
+  const record = {
+    id: "b-x", scopeType: "lane", scopeId: "analyze", period: "month", limitUsd: 10,
+    warnPct: 80, enforce: "refuse", createdBy: "o", createdAt: "2026-11-01T00:00:00.000Z",
+  } as unknown as BudgetRecord; // limitTokens missing (not null)
+  const enforcement = { configuredMode: "off", effectiveMode: "off" } as const;
+  const detectedAt = "2026-11-07T00:00:00.000Z";
+  // The evaluator is the single decision: a projection that recomputed warn
+  // from usdSpent would open an alert here.
+  assert.equal(projectBudgetAlert({
+    evaluation: { budget: record, periodKey: "2026-11", usdSpent: 9, tokensSpent: 10n ** 18n, usdExhausted: false, tokensExhausted: false, warn: false, usdWarn: false, tokensWarn: false },
+    enforcement,
+    detectedAt,
+  }), null);
+  const warn = projectBudgetAlert({
+    evaluation: { budget: record, periodKey: "2026-11", usdSpent: 0, tokensSpent: 0n, usdExhausted: false, tokensExhausted: false, warn: true, usdWarn: true, tokensWarn: false },
+    enforcement,
+    detectedAt,
+  });
+  assert.equal(warn?.kind, "budget_warn");
+  assert.deepEqual(warn?.metadata.limits, ["usd"]);
+  assert.equal(warn?.metadata.limitTokens, null, "a missing limit projects as null");
+});
+
+test("#2520 evaluateBudgetUsage: a missing limit counts as cleared; usdWarn/tokensWarn are the parts of warn", async () => {
+  const { evaluateBudgetUsage } = await import("./dispatch/broker-task-admission.js");
+  const record = {
+    id: "b-x", scopeType: "lane", scopeId: "analyze", period: "month", limitUsd: 10,
+    warnPct: 80, enforce: "refuse", createdBy: "o", createdAt: "2026-11-01T00:00:00.000Z",
+  } as unknown as BudgetRecord;
+  const evaluation = evaluateBudgetUsage(record, { usdSpent: 8, tokensSpent: 10n ** 18n }, "2026-11");
+  assert.deepEqual(
+    { usdWarn: evaluation.usdWarn, tokensWarn: evaluation.tokensWarn, warn: evaluation.warn, tokensExhausted: evaluation.tokensExhausted },
+    { usdWarn: true, tokensWarn: false, warn: true, tokensExhausted: false },
+  );
+});
+
+test("#2520 a projection that throws loses no turn: the budget is queued again and counted, the others are evaluated", () => {
+  const h = harness("off");
+  try {
+    budget(h, { id: "b-1", scopeType: "lane", scopeId: "lane-1", limitTokens: 10 });
+    budget(h, { id: "b-2", scopeType: "lane", scopeId: "lane-2", limitTokens: 10 });
+    spend(h, { lane: "lane-1", inputTokens: 20 });
+    spend(h, { lane: "lane-2", inputTokens: 20 });
+    // The stored row of b-1 makes the projection throw (a bad enforce value
+    // read back would do the same): only b-1 fails, b-2 is still evaluated.
+    const evaluate = h.broker.evaluateBudget.bind(h.broker);
+    const throwing = mock.method(h.broker, "evaluateBudget", (record: BudgetRecord, periodKey?: string) => {
+      const evaluation = evaluate(record, periodKey);
+      if (record.id !== "b-1") return evaluation;
+      return Object.defineProperty({ ...evaluation }, "warn", { get() { throw new Error("projection failed"); } });
+    });
+    try {
+      assert.deepEqual(sweep(h), { evaluated: 1, failed: 1, changed: true });
+      assert.deepEqual(ids(h), [`budget_exhausted:b-2:${h.broker.budgetPeriodKey()}`]);
+      assert.equal(h.broker.getBudgetCheckFailures().count, 1, "counted in checkFailed");
+    } finally {
+      throwing.mock.restore();
+    }
+    // b-1 is still queued: a bound of 1 reaches it first.
+    const usage = mock.method(h.store, "readSpendScopeUsage");
+    try {
+      assert.equal(quiet(() => h.broker.evaluateBudgetAlerts({ limit: 1 }))?.evaluated, 1);
+      assert.deepEqual(usage.mock.calls.map((call) => (call.arguments[0] as { scopeId: string }).scopeId), ["lane-1"]);
+    } finally {
+      usage.mock.restore();
+    }
+    assert.equal(ids(h).length, 2);
+  } finally {
+    h.close();
+  }
+});
+
+test("#2520 a failed read re-queues a round-robin budget too (not only a dirty one)", () => {
+  const h = harness("off");
+  try {
+    for (let index = 0; index < 3; index += 1) budget(h, { id: `b-${index}`, scopeType: "lane", scopeId: `lane-${index}`, limitTokens: 10 });
+    sweep(h); // every budget evaluated: nothing is queued now
+    const failing = mock.method(h.store, "readSpendScopeUsage", (query: { scopeId: string }) => {
+      if (query.scopeId === "lane-0") throw new Error("disk I/O error");
+      return { usdSpent: 0, tokensSpent: 0n };
+    });
+    try {
+      assert.deepEqual(quiet(() => h.broker.evaluateBudgetAlerts({ limit: 1 })), { evaluated: 0, failed: 1, changed: false }, "round-robin reaches b-0");
+    } finally {
+      failing.mock.restore();
+    }
+    const usage = mock.method(h.store, "readSpendScopeUsage");
+    try {
+      quiet(() => h.broker.evaluateBudgetAlerts({ limit: 1 }));
+      assert.deepEqual(usage.mock.calls.map((call) => (call.arguments[0] as { scopeId: string }).scopeId), ["lane-0"], "retried first by the next sweep");
+    } finally {
+      usage.mock.restore();
+    }
+  } finally {
+    h.close();
+  }
+});
+
+test("#2520 review: budgets that always fail take at most the retry share; the others are still reached", () => {
+  const h = harness("off");
+  try {
+    for (let index = 0; index < 6; index += 1) budget(h, { id: `b-${index}`, scopeType: "lane", scopeId: `lane-${index}`, limitTokens: 10 });
+    sweep(h);
+    const failingLanes = new Set(["lane-0", "lane-1", "lane-2", "lane-3"]);
+    const perSweep: string[][] = [];
+    let current: string[] = [];
+    const failing = mock.method(h.store, "readSpendScopeUsage", (query: { scopeId: string }) => {
+      current.push(query.scopeId);
+      if (failingLanes.has(query.scopeId)) throw new Error("corrupt row");
+      return { usdSpent: 0, tokensSpent: 0n };
+    });
+    try {
+      for (let index = 0; index < 6; index += 1) {
+        current = [];
+        quiet(() => h.broker.evaluateBudgetAlerts({ limit: 4 }));
+        perSweep.push(current);
+      }
+    } finally {
+      failing.mock.restore();
+    }
+    const healthy = perSweep.flat().filter((lane) => !failingLanes.has(lane));
+    assert.ok(healthy.includes("lane-4") && healthy.includes("lane-5"), `the healthy budgets are reached: ${JSON.stringify(perSweep)}`);
+    // The round-robin goes on: no two sweeps in a row read only failing budgets
+    // (before #2520's retry share, every sweep read only the four failing ones).
+    for (let index = 1; index < perSweep.length; index += 1) {
+      const pair = [...perSweep[index - 1]!, ...perSweep[index]!];
+      assert.ok(pair.some((lane) => !failingLanes.has(lane)), `two sweeps in a row reach a healthy budget: ${JSON.stringify(perSweep)}`);
+    }
+    // Every failing budget is retried too (oldest failure first, one per sweep at limit 4).
+    for (const lane of failingLanes) assert.ok(perSweep.slice(1).flat().includes(lane), lane);
+  } finally {
+    h.close();
+  }
+});
+
+test("#2520 successes in the same sweep do not reset checkFailed.consecutive; a sweep without failures does", () => {
+  const h = harness("off");
+  try {
+    for (let index = 0; index < 3; index += 1) budget(h, { id: `b-${index}`, scopeType: "lane", scopeId: `lane-${index}`, limitTokens: 10 });
+    const original = h.store.readSpendScopeUsage.bind(h.store);
+    const failing = mock.method(h.store, "readSpendScopeUsage", (query: Parameters<typeof original>[0]) => {
+      if (query.scopeId === "lane-0") throw new Error("disk I/O error");
+      return original(query);
+    });
+    try {
+      assert.deepEqual(sweep(h), { evaluated: 2, failed: 1, changed: false });
+      assert.deepEqual(sweep(h), { evaluated: 2, failed: 1, changed: false });
+      assert.equal(h.broker.getBudgetCheckFailures().consecutive, 2, "a failure that recurs every sweep is not masked");
+    } finally {
+      failing.mock.restore();
+    }
+    sweep(h);
+    assert.equal(h.broker.getBudgetCheckFailures().consecutive, 0);
+  } finally {
+    h.close();
+  }
+});
+
+test("#2520 the startup pass is bounded; budgets past the bound are queued for the next sweeps", () => {
+  const h = harness("off");
+  try {
+    for (let index = 0; index < 4; index += 1) budget(h, { id: `b-${index}`, scopeType: "lane", scopeId: `lane-${index}`, limitTokens: 10 });
+    h.reopen();
+    // The constructor called evaluateBudgetAlerts with the startup bound
+    // (1000 here, more than 4): every budget has an entry.
+    const entries = h.broker["budgetAlertEntries"] as Map<string, unknown>;
+    const dirty = h.broker["budgetAlertDirty"] as Set<string>;
+    assert.equal(entries.size, 4);
+    assert.equal(dirty.size, 0);
+    // A smaller bound leaves the rest queued, by id, for the next sweeps.
+    entries.clear();
+    for (const id of ["b-0", "b-1", "b-2", "b-3"]) dirty.add(id);
+    assert.equal(quiet(() => h.broker.evaluateBudgetAlerts({ limit: 3 }))?.evaluated, 3);
+    assert.deepEqual([...dirty], ["b-3"]);
+    assert.equal(quiet(() => h.broker.evaluateBudgetAlerts({ limit: 1 }))?.evaluated, 1);
+    assert.deepEqual([...dirty], []);
+  } finally {
+    h.close();
+  }
+});
+
+test("#2520 a read failure during the startup pass: the budget is queued, the alert is absent at startup and opens on the next sweep", () => {
+  const h = harness("off");
+  try {
+    budget(h, { id: "b-1", scopeType: "lane", scopeId: "analyze", limitTokens: 10 });
+    spend(h, { inputTokens: 20 });
+    sweep(h);
+    assert.equal(ids(h).length, 1);
+    const prototype = SqliteBrokerStateStore.prototype;
+    const failing = mock.method(prototype, "readSpendScopeUsage", () => {
+      throw new Error("disk I/O error");
+    });
+    try {
+      h.reopen();
+    } finally {
+      failing.mock.restore();
+    }
+    assert.deepEqual(ids(h), [], "unknown at startup: not in the differ's initial set");
+    assert.equal(h.broker.getBudgetCheckFailures().count, 1, "counted (source alert)");
+    const restarted = new OperatorAlertDiffer(h.broker.getBudgetAlerts());
+    const usage = mock.method(h.store, "readSpendScopeUsage");
+    try {
+      quiet(() => h.broker.evaluateBudgetAlerts({ limit: 1 }));
+      assert.equal(usage.mock.callCount(), 1, "queued: evaluated by the next sweep");
+    } finally {
+      usage.mock.restore();
+    }
+    // Documented: the differ never saw it, so it is reported as opened again.
+    assert.deepEqual(restarted.apply(h.broker.getBudgetAlerts()).opened.map((alert) => alert.id), [`budget_exhausted:b-1:${h.broker.budgetPeriodKey()}`]);
+  } finally {
+    h.close();
+  }
+});
+
+test("#2520 detectedAt: kept while the alert stays open (also through a failed read); a re-opened alert gets the re-opening sweep's time", () => {
+  const h = harness("off");
+  try {
+    budget(h, { id: "b-1", scopeType: "lane", scopeId: "analyze", limitTokens: 10 });
+    spend(h, { inputTokens: 20 });
+    const times = ["2026-11-01T00:00:00.000Z", "2026-11-02T00:00:00.000Z", "2026-11-03T00:00:00.000Z", "2026-11-04T00:00:00.000Z", "2026-11-05T00:00:00.000Z"];
+    const at = (index: number) => {
+      const clock = mock.method(Date.prototype, "toISOString", () => times[index]!);
+      try {
+        sweep(h);
+      } finally {
+        clock.mock.restore();
+      }
+    };
+    at(0);
+    assert.equal(h.broker.getBudgetAlerts()[0]?.detectedAt, times[0]);
+    const failing = mock.method(h.store, "readSpendScopeUsage", () => {
+      throw new Error("disk I/O error");
+    });
+    try {
+      at(1);
+    } finally {
+      failing.mock.restore();
+    }
+    at(2);
+    assert.equal(h.broker.getBudgetAlerts()[0]?.detectedAt, times[0], "a failed read does not close it");
+    h.broker.updateBudget("b-1", { limitTokens: 1_000, actorId: "operator-1" });
+    at(3);
+    assert.deepEqual(ids(h), [], "resolved");
+    h.broker.updateBudget("b-1", { limitTokens: 10, actorId: "operator-1" });
+    at(4);
+    const [reopened] = h.broker.getBudgetAlerts();
+    assert.equal(reopened?.id, `budget_exhausted:b-1:${h.broker.budgetPeriodKey()}`, "same id");
+    assert.equal(reopened?.detectedAt, times[4], "re-opened: the re-opening sweep's time");
+  } finally {
+    h.close();
+  }
+});
+
+test("#2520 the budget revision changes when the alert sweep sees a budget become (or stop being) exhausted", () => {
+  const h = harness("on");
+  try {
+    budget(h, { id: "b-1", scopeType: "lane", scopeId: "analyze", limitTokens: 10 });
+    sweep(h);
+    const before = h.broker.getBudgetRevision();
+    spend(h, { inputTokens: 8 });
+    sweep(h);
+    assert.equal(h.broker.getBudgetRevision(), before, "warn only: unchanged");
+    spend(h, { inputTokens: 2 });
+    sweep(h);
+    const exhausted = h.broker.getBudgetRevision();
+    assert.notEqual(exhausted, before, "spend reached the limit");
+    sweep(h);
+    assert.equal(h.broker.getBudgetRevision(), exhausted, "still exhausted: unchanged");
+  } finally {
+    h.close();
+  }
 });
 
 test("GET /alerts and the operator SSE stream carry budget alerts; the sweep publishes opened and resolved", async () => {

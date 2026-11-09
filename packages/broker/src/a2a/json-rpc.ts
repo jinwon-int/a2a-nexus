@@ -977,7 +977,10 @@ export function executeSendMessage(
   // refused or counted here (the real create and claim count).
   // #2499 slice 4: the pre-check and the create share one request builder,
   // so they cannot diverge; only the exchange id (not created yet, and not
-  // a budget input) differs.
+  // a budget input) differs. #2520: both pre-checks take that request and
+  // the broker normalizes it as createTask does, so the claim pre-check's
+  // lane and goal are the created task's (a send never links a goal, so its
+  // goal scope is none, as for the created task).
   const buildTaskRequest = (exchangeId?: string): CreateTaskRequest => ({
     ...(exchangeId !== undefined ? { exchangeId } : {}),
     intent,
@@ -995,12 +998,7 @@ export function executeSendMessage(
     options.broker.assertCreateBudgetAllowed(buildTaskRequest());
   }
   if (convention && convention.kind !== "direct-message") {
-    const precheck = buildTaskRequest();
-    options.broker.assertClaimBudgetAllowed({
-      workerId: precheck.assignedWorkerId ?? assignedWorker.nodeId,
-      lane: precheck.intent,
-      goalId: precheck.goalId ?? null,
-    });
+    options.broker.assertClaimBudgetAllowed(buildTaskRequest());
   }
 
   const exchange = options.broker.startExchange({
@@ -1084,7 +1082,12 @@ export function executeSendMessage(
  * unchanged, as before. #2499 slice 4: a cancel that throws does not
  * replace the budget refusal: the send still fails with -32012 (naming the
  * task's current status), and one `broker.budget.convention_cancel_failed`
- * line (task id only) is logged.
+ * line is logged. #2520: neither can the status read after it (`unknown`
+ * when it throws too). The line carries the task id and that status. The
+ * task is then left queued and assigned to the default agent: its claim
+ * stays refused while the scope is exhausted, and it can run once the budget
+ * allows it, so the error data names it (`taskId`, `taskStatus`) for the
+ * caller or an operator to cancel it. No second cancel is attempted.
  */
 function claimConventionTask(broker: InMemoryA2ABroker, taskId: string, workerId: string, contextId: string): void {
   try {
@@ -1096,9 +1099,18 @@ function claimConventionTask(broker: InMemoryA2ABroker, taskId: string, workerId
         broker.cancelTask(taskId, { actor: { id: "broker", kind: "service", role: "hub" }, reason: "budget_exhausted" });
       } catch {
         canceled = false;
-        console.warn(JSON.stringify({ event: "broker.budget.convention_cancel_failed", taskId }));
       }
-      const taskStatus = canceled ? "canceled" : (broker.getTask(taskId)?.status ?? "unknown");
+      // #2520: the status read is guarded too, so nothing here can replace
+      // the budget refusal.
+      let taskStatus = "canceled";
+      if (!canceled) {
+        try {
+          taskStatus = broker.getTask(taskId)?.status ?? "unknown";
+        } catch {
+          taskStatus = "unknown";
+        }
+        console.warn(JSON.stringify({ event: "broker.budget.convention_cancel_failed", taskId, taskStatus }));
+      }
       throw new BrokerError(
         "policy_denied",
         `budget_exhausted: claim of task ${taskId} (context ${contextId}) refused by a monthly budget; `

@@ -503,18 +503,26 @@ export function assertTaskWorker(task: TaskRecord, workerId: string, action: str
 // queued-listing filter, create-time `pause` refusal and goal budget limits
 // apply the decisions.
 
-/** Limits reached by a scope's period spend. `warn` also holds once a limit is exhausted. */
+/**
+ * Limits reached by a scope's period spend. `warn` also holds once a limit is
+ * exhausted. #2520: a limit counts only when it is set (`!= null`: a record
+ * missing the field is treated like a cleared limit, never passed to
+ * BigInt); `usdWarn` / `tokensWarn` are the per-limit parts of `warn`, so the
+ * alert projection names the limits without recomputing them.
+ */
 export function evaluateBudgetUsage(
   budget: BudgetRecord,
   usage: { usdSpent: number; tokensSpent: bigint },
   periodKey: string,
 ): BudgetEvaluation {
-  const usdExhausted = budget.limitUsd !== null && usage.usdSpent >= budget.limitUsd;
-  const tokensExhausted = budget.limitTokens !== null && usage.tokensSpent >= BigInt(budget.limitTokens);
+  const limitUsd = budget.limitUsd ?? null;
+  const limitTokens = budget.limitTokens ?? null;
+  const usdExhausted = limitUsd !== null && usage.usdSpent >= limitUsd;
+  const tokensExhausted = limitTokens !== null && usage.tokensSpent >= BigInt(limitTokens);
   // Percent comparisons without division; tokens stay exact BigInt.
-  const usdWarn = budget.limitUsd !== null && usage.usdSpent * 100 >= budget.limitUsd * budget.warnPct;
-  const tokensWarn = budget.limitTokens !== null
-    && usage.tokensSpent * 100n >= BigInt(budget.limitTokens) * BigInt(budget.warnPct);
+  const usdWarn = limitUsd !== null && usage.usdSpent * 100 >= limitUsd * budget.warnPct;
+  const tokensWarn = limitTokens !== null
+    && usage.tokensSpent * 100n >= BigInt(limitTokens) * BigInt(budget.warnPct);
   return {
     budget,
     periodKey,
@@ -523,6 +531,8 @@ export function evaluateBudgetUsage(
     usdExhausted,
     tokensExhausted,
     warn: usdWarn || tokensWarn,
+    usdWarn,
+    tokensWarn,
   };
 }
 
