@@ -125,7 +125,8 @@ function parseArgs(argv) {
 }
 
 function collectSourceBundle(payload, env) {
-	return collectSharedSourceBundle(payload, env, { prefix: ENV_PREFIX });
+	// #2535: the shared source-bundle limits warn under the danso prefix too.
+	return collectSharedSourceBundle(payload, env, { prefix: ENV_PREFIX, source: ENV_WARNING_SOURCE.source });
 }
 
 /** Resolve and validate the danso run configuration from the worker env. */

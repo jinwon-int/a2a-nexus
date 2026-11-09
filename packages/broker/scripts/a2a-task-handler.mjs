@@ -18,7 +18,7 @@ import { sourceCarrierStats } from "./lib/source-carriers.mjs";
 import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
 import { normalizeAnalysisExecutionTelemetry } from "./lib/analysis-execution-telemetry.mjs";
 import { analysisHarnessPreflight } from "./lib/analysis-harness-fingerprint.mjs";
-import { normalizePromptViewTelemetry } from "./lib/analysis-source-bundle.mjs";
+import { ENV_WARNING_LINE_RE, normalizePromptViewTelemetry } from "./lib/analysis-source-bundle.mjs";
 import { evaluateDeclaredWriteSetGate } from "../dist/core/dispatch/runtime-safety-gates.js";
 import { runLiveOperationTask } from "./lib/live-operation-adapter.mjs";
 import { classifyTypedWithJev, resolveJevConfig } from "./lib/jev-classifier.mjs";
@@ -1500,13 +1500,14 @@ function boundedBridgeFailureCount(value) {
 // non-warning stderr, else stdout, else the exit text; the warning lines (in
 // their original order) are appended after it. Only the human-readable
 // message changes; the structured parsers (parseAnalysisBridgeFailure,
-// maxTurnFailureEvidence) still read the raw stderr.
-const BRIDGE_ENV_WARNING_LINE_RE = /^[\w.-]+: ignoring [A-Z0-9_]+ \(not a positive integer\)/;
+// maxTurnFailureEvidence) still read the raw stderr. #2535: the line shape is
+// the lib's ENV_WARNING_LINE_RE (the same contract positiveIntegerEnv and the
+// hermes bridge write), not a private copy.
 
 function bridgeFailureMessage(child) {
   const lines = (typeof child?.stderr === "string" ? child.stderr : "").split("\n");
-  const warnings = lines.filter((line) => BRIDGE_ENV_WARNING_LINE_RE.test(line));
-  const stderr = lines.filter((line) => !BRIDGE_ENV_WARNING_LINE_RE.test(line)).join("\n");
+  const warnings = lines.filter((line) => ENV_WARNING_LINE_RE.test(line));
+  const stderr = lines.filter((line) => !ENV_WARNING_LINE_RE.test(line)).join("\n");
   const base = safeText(stderr, safeText(child?.stdout, `openclaw exited with ${child?.status ?? "unknown"}`));
   return warnings.length > 0 ? `${base}\n${warnings.join("\n")}` : base;
 }
@@ -3207,6 +3208,7 @@ export const __test = Object.freeze({
   boundedBridgeFailureString,
   jsonForPrompt,
   bridgeFailureMessage,
+  maxTurnFailureEvidence,
   analysisHarnessPreflightError,
   normalizeAnalysisHarness,
   withUnmarkedCompletion,

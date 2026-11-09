@@ -24,25 +24,64 @@ export function safeText(value, fallback = "") {
 
 const warnedEnvNames = new Set();
 
+// #2535/#2536: the env-warning line contract, defined once. The task handler
+// imports ENV_WARNING_LINE_RE to move these lines after the real failure. The
+// source prefix and the env name are checked against the same character
+// classes the regex is built from, so every non-empty string
+// formatEnvWarningLine returns - and therefore every line positiveIntegerEnv
+// writes - is a single line matching ENV_WARNING_LINE_RE. The regex covers the
+// line up to "(not a positive integer)"; the fallback text after it is not
+// part of the match (it only has CR/LF replaced so it cannot start a new line).
+const ENV_WARNING_SOURCE_CHARS = String.raw`[\w.-]+`;
+const ENV_WARNING_NAME_CHARS = "A-Z0-9_";
+export const ENV_WARNING_DEFAULT_SOURCE = "a2a-analysis-source-bundle";
+export const ENV_WARNING_SOURCE_RE = new RegExp(`^${ENV_WARNING_SOURCE_CHARS}$`);
+export const ENV_WARNING_NAME_RE = new RegExp(`^[${ENV_WARNING_NAME_CHARS}]+$`);
+export const ENV_WARNING_LINE_RE = new RegExp(`^${ENV_WARNING_SOURCE_CHARS}: ignoring [${ENV_WARNING_NAME_CHARS}]+ \\(not a positive integer\\)`);
+// collectSourceBundle env-family prefixes (code constants such as
+// "A2A_DANSO_ANALYSIS"): every `${prefix}_${suffix}` name stays in the class.
+const ENV_PREFIX_RE = new RegExp(`^[A-Z][${ENV_WARNING_NAME_CHARS}]*$`);
+
+function envWarningSource(source) {
+	return typeof source === "string" && ENV_WARNING_SOURCE_RE.test(source) ? source : ENV_WARNING_DEFAULT_SOURCE;
+}
+
+/**
+ * One env-rejection warning line (no trailing newline). An empty, non-string
+ * or out-of-class `source` (e.g. "a b", "x:y") uses ENV_WARNING_DEFAULT_SOURCE
+ * instead of throwing. A `name` outside ENV_WARNING_NAME_RE (a caller bug:
+ * names are code constants) returns "" so no unrecognisable line is written.
+ * Only the name and the default are printed.
+ */
+export function formatEnvWarningLine(source, name, fallback) {
+	if (typeof name !== "string" || !ENV_WARNING_NAME_RE.test(name)) return "";
+	const fallbackText = String(fallback).replace(/[\r\n]+/g, " ");
+	return `${envWarningSource(source)}: ignoring ${name} (not a positive integer); falling back to the default ${fallbackText}`;
+}
+
 /**
  * Parse a positive-integer limit, falling back when the value does not floor
  * to >= 1. With the optional `name`, a non-blank rejected value is reported
  * once per name on stderr (#2531/#2533 D1) - the name and the default only,
  * never the value. An unset or blank value is not a rejection, and callers
  * that pass no name stay silent. The return value never depends on `name`.
- * `source` (default "a2a-analysis-source-bundle") prefixes the warning line
- * so it names the reporting bridge; the line keeps the
- * `<source>: ignoring <NAME> (not a positive integer)` shape the task handler
- * moves after the real failure.
+ * `options.source` (default ENV_WARNING_DEFAULT_SOURCE) prefixes the warning
+ * line so it names the reporting bridge; an invalid source falls back to the
+ * default and `options` may be null/undefined (#2535). The line is written by
+ * formatEnvWarningLine and matches ENV_WARNING_LINE_RE; a name outside
+ * ENV_WARNING_NAME_RE prints nothing (#2536).
  */
-export function positiveIntegerEnv(value, fallback, name, { source = "a2a-analysis-source-bundle" } = {}) {
+export function positiveIntegerEnv(value, fallback, name, options) {
 	// #2528 B7: a value that floors to 0 (e.g. "0.5") is not a positive
 	// integer; use the fallback instead of silently disabling a limit.
 	const parsed = Math.floor(Number(value));
 	if (Number.isFinite(parsed) && parsed >= 1) return parsed;
 	if (name && String(value ?? "").trim() !== "" && !warnedEnvNames.has(name)) {
-		warnedEnvNames.add(name);
-		process.stderr.write(`${source}: ignoring ${name} (not a positive integer); falling back to the default ${fallback}\n`);
+		const line = formatEnvWarningLine((options ?? {}).source, name, fallback);
+		if (line) {
+			warnedEnvNames.add(name);
+			process.stderr.write(`${line}\n`);
+		}
 	}
 	return fallback;
 }
@@ -346,10 +385,16 @@ function normalizeEmbeddedSourceFile(item, fallbackRepo, maxFileBytes, remaining
  * `prefix` names the bridge-specific env family, e.g. "A2A_DANSO_ANALYSIS" reads
  * A2A_DANSO_ANALYSIS_MAX_FILES; each limit falls back to the matching
  * A2A_HERMES_ANALYSIS_* value and then to the default, exactly as the piri
- * bridge does for A2A_PIRI_ANALYSIS_*.
+ * bridge does for A2A_PIRI_ANALYSIS_*. The optional `source` names the bridge
+ * in the limit env warnings (positiveIntegerEnv prefix, default
+ * ENV_WARNING_DEFAULT_SOURCE), so a bridge reports all of its env warnings
+ * under one prefix (#2535). `prefix` must match /^[A-Z][A-Z0-9_]*$/ so every
+ * env name it builds stays in the warning-line name class (#2536).
  */
-export function collectSourceBundle(payload, env, { prefix }) {
-	if (!prefix) throw new Error("collectSourceBundle requires an env prefix");
+export function collectSourceBundle(payload, env, { prefix, source } = {}) {
+	if (typeof prefix !== "string" || !ENV_PREFIX_RE.test(prefix)) {
+		throw new Error("collectSourceBundle requires an env prefix matching /^[A-Z][A-Z0-9_]*$/");
+	}
 	const repoMap = parseRepoMap(env, prefix);
 	const repos = collectRepos(payload);
 	if (repos.length === 0 && repoMap.has("__default__")) repos.push({ name: "__default__" });
@@ -359,7 +404,7 @@ export function collectSourceBundle(payload, env, { prefix }) {
 	const limit = (suffix, fallback) => {
 		const prefixedName = `${prefix}_${suffix}`;
 		const name = env[prefixedName] ? prefixedName : `A2A_HERMES_ANALYSIS_${suffix}`;
-		return positiveIntegerEnv(env[name], fallback, name);
+		return positiveIntegerEnv(env[name], fallback, name, { source });
 	};
 	const maxFiles = limit("MAX_FILES", DEFAULT_MAX_FILES);
 	const maxFileBytes = limit("MAX_FILE_BYTES", DEFAULT_MAX_FILE_BYTES);

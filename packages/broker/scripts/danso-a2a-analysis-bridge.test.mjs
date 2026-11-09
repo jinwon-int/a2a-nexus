@@ -495,3 +495,30 @@ test("danso maxTurns and prompt-bytes warnings use the danso prefix (#2533)", ()
 	assert.match(warnings[1], /^danso-a2a-analysis-bridge: ignoring A2A_DANSO_ANALYSIS_MAX_PROMPT_BYTES \(not a positive integer\); falling back to the default \d+$/);
 	assert.equal(captured.includes("junk-"), false);
 });
+
+// #2535 item 2: the source-bundle limits danso reads through the shared lib
+// (A2A_DANSO_ANALYSIS_MAX_FILES etc.) warn under the danso prefix as well, so
+// one bridge never reports its env warnings under two prefixes.
+test("danso source-bundle limit warnings use the danso prefix (#2535)", () => {
+	const original = process.stderr.write;
+	let captured = "";
+	process.stderr.write = (chunk, ...rest) => {
+		captured += String(chunk);
+		const callback = rest.find((arg) => typeof arg === "function");
+		if (callback) callback();
+		return true;
+	};
+	__resetEnvWarningsForTest();
+	try {
+		const bundle = __test.collectSourceBundle({}, { A2A_DANSO_ANALYSIS_MAX_FILES: "junk-files", A2A_HERMES_ANALYSIS_MAX_TREE_ENTRIES: "junk-tree" });
+		assert.equal(bundle.limits.maxFiles, 16, "the fallback is unchanged");
+	} finally {
+		process.stderr.write = original;
+	}
+	__resetEnvWarningsForTest();
+	assert.deepEqual(dansoEnvWarnings(captured), [
+		"danso-a2a-analysis-bridge: ignoring A2A_DANSO_ANALYSIS_MAX_FILES (not a positive integer); falling back to the default 16",
+		"danso-a2a-analysis-bridge: ignoring A2A_HERMES_ANALYSIS_MAX_TREE_ENTRIES (not a positive integer); falling back to the default 80",
+	]);
+	assert.equal(captured.includes("junk-"), false);
+});
