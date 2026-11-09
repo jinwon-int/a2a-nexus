@@ -108,7 +108,26 @@
     "state": {
       "type": "string",
       "enum": ["idle", "planning", "dispatching", "collecting_evidence", "awaiting_approval", "blocked", "completed", "cancelled"],
-      "description": "Current lifecycle state."
+      "description": "Current planner run state. This is not the goal's outcome status: that is the broker GoalStatus, linked through brokerGoal. See contracts/a2a/goal-mode-lifecycle.md section 2.5."
+    },
+    "brokerGoal": {
+      "type": "object",
+      "description": "Optional link to the broker goal this run pursues (GoalRecord in packages/broker/src/core/types.ts, served at GET /goals/:id). The broker record is the source of truth; status is a copy observed at observedAt. The planner dispatches only while status is pursuing.",
+      "required": ["goalId", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "goalId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "description": "Broker goal id (same pattern as POST /goals)."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pursuing", "paused", "achieved", "blocked", "unmet", "budget_limited", "cleared"],
+          "description": "Broker GoalStatus last observed. Must match GOAL_STATUS_VALUES in packages/broker/src/core/store-schemas.ts (guarded by a broker test)."
+        },
+        "observedAt": { "type": "string", "format": "date-time" }
+      }
     },
     "stateHistory": {
       "type": "array",

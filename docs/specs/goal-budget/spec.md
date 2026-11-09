@@ -43,8 +43,9 @@ draft's open question 1 from source, and lists the migration and state-machine i
   minutes"; there is no USD field.
 - `docs/specs/a2a-goal-mode/schema.json` uses a different model (`goalRunId`, states
   `idle…cancelled`, `budgetLimits` in slices/workers/runtime). It does not match
-  `GoalStatus`. This spec follows `types.ts`; reconciling `schema.json` is listed under
-  [Follow-ups](#follow-ups).
+  `GoalStatus`. This spec follows `types.ts`. #2517 settled this: the two are distinct
+  fields (planner run state vs. goal outcome status), and `schema.json` links a run to a
+  broker goal through `brokerGoal` (`contracts/a2a/goal-mode-lifecycle.md` §2.5).
 - The word `budget_limited` also appears in docker-runner as an artifact outcome
   (`packages/docker-runner/src/types.ts:1053`, chosen at `runner.ts:438`). That is a
   per-run turn/time/token stop, unrelated to goal budgets, and stays as is.
@@ -356,5 +357,5 @@ Proposed in the slice 4 PR and accepted when the owner approves its merge.
 
 ## Follow-ups
 
-- Reconcile or retire `docs/specs/a2a-goal-mode/schema.json` states against `GoalStatus`.
+- ~~Reconcile or retire `docs/specs/a2a-goal-mode/schema.json` states against `GoalStatus`.~~ Done in #2517: kept as distinct fields, linked through `brokerGoal`.
 - Implementation follows [`plan.md`](plan.md) and [`tasks.md`](tasks.md), in slices.
