@@ -2703,6 +2703,16 @@ export class InMemoryA2ABroker {
     }
     queued.then(dropOverlay, () => {
       dropOverlay();
+      // #2523 x #2520: a resume whose queued write failed leaves the goal
+      // budget_limited on disk, though the walk counted it as resumed and may
+      // have ended the orphan check. Re-arm it, so a sweep after the recovery
+      // save walks the budget_limited goals again (a failed limit needs
+      // nothing: the regular budget pass re-evaluates it).
+      if (to === "pursuing") {
+        this.goalBudgetOrphanCheck = true;
+        this.goalResumeCursor = undefined;
+        this.goalResumeWalkFailed = false;
+      }
       if (auditEventId) this.auditEvents.delete(auditEventId);
       this.warnRateLimited("broker.budget.goal_write_failed", { event: "broker.budget.goal_write_failed", goalId: goal.id });
     });
