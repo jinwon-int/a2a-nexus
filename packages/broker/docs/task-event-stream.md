@@ -126,7 +126,10 @@ Behavior:
 - Snapshot: the stream opens with `worker-assignment-snapshot`, a compact list of
   currently queued task ids for that worker. This reconciles tasks created before
   the connection or outside the retained replay window without exposing raw
-  prompts, payloads, results, logs, or local paths.
+  prompts, payloads, results, logs, or local paths. While budget enforcement
+  is `shadow` or `on`, a fresh snapshot can follow on the same connection when
+  the budget state changes; each one replaces the queued set (see
+  `a2a-protocol.md`, "Worker assignment stream").
 - Live/replay: `worker-assignment` events are emitted for queued `created`,
   `approved`, `reassigned`, and `requeued` transitions whose
   `metadata.assignedWorkerId` matches the worker. SSE ids are the broker-wide

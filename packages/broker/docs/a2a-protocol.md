@@ -373,13 +373,16 @@ Workers can subscribe at `GET /a2a/workers/:workerId/assignment-events`
 (SSE) instead of polling `GET /tasks?assignedWorkerId=&status=queued`.
 
 - `worker-assignment-snapshot`: the worker's queued set, sent at connect
-  time. It can arrive **more than once on one connection**. When monthly
-  spend budgets are enforced (#2499) and the stream has omitted a task
-  whose claim would be refused, the broker sends a fresh snapshot when the
+  time. It can arrive **more than once on one connection**, at any point
+  after the first. While the budget enforcement mode is `shadow` or `on`
+  (#2499), the broker sends a fresh snapshot on every stream when the
   budget state changes: a budget is created or its limit changed, the
-  period rolls, or the mode changes at a restart. Each snapshot
-  **replaces** the worker's queued set. It is not merged with the earlier
-  snapshot or with live events.
+  period rolls, or a budget becomes exhausted or stops being exhausted (as
+  seen by the broker's periodic budget sweep). Each snapshot **replaces**
+  the worker's queued set: tasks it does not list are no longer offered,
+  even when an earlier snapshot or a live event announced them. It is not
+  merged with the earlier snapshot or with live events. In mode `off`
+  only the connect-time snapshot is sent.
 - `worker-assignment`: a live assignment event. Under an enforced budget,
   an event can still name a task whose claim is then refused (403
   `budget_exhausted`); the next snapshot hides it.

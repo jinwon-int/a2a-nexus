@@ -345,6 +345,17 @@ Proposed in the slice 4 PR and accepted when the owner approves its merge.
     - **Restart:** all budgets are evaluated once at startup, before the alert differ is seeded, so a restart does not re-open an alert that still holds.
     - **No alert for `checkFailed` itself:** it is visible in status.
 
+### Carried review minors (#2520, 2026-11-09)
+
+Corrections from the #2514 / #2515 reviews, proposed in the #2520 PR and accepted when the owner approves its merge. Where they differ, they replace the text of 18 and 19 above.
+
+20. **Corrections.**
+    - **Goal resume in `off`:** the last sentence of 18 ("Mode `off` does not resume goals limited while the mode was `on`") does not describe slice 3b-2, which resumes every goal a budget limited whenever the effective mode is not `on`, also in `off` after a restart. A goal whose goal budget left memory (a write that did not land) is resumed too, also in `on`.
+    - **Listing filter:** live `worker-assignment` events and their replay use the same filter as the snapshot (slice 3b-2). Every SSE stream sends a fresh, filtered snapshot when the budget revision changes (a budget write, the period roll, or the alert sweep seeing a budget become or stop being exhausted), after the write commits. `listing.omittedTotal` stays a per-listing count.
+    - **Alert failures:** a budget whose evaluation fails is queued again for the next sweep; only a sweep without failures resets `checkFailed.consecutive`.
+    - **Restart:** the startup alert pass is bounded to 1 000 budgets; the rest are evaluated first by the next sweeps, and an alert among them that still holds re-opens after the restart.
+    - **`detectedAt`:** kept while an alert stays open; an alert that resolved and opens again gets the re-opening sweep's time.
+
 ## Out of scope
 
 - Dashboard UI and spend charts.

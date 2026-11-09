@@ -130,7 +130,7 @@ curl -sS "${AUTH[@]}" -H 'content-type: application/json' -X PATCH "$BROKER_URL/
 ```
 
 A raise takes effect immediately for claims, creates and the worker poll; a
-held long poll is released. Worker SSE streams that hid tasks send a fresh
+held long poll is released. Worker SSE streams send a fresh
 `worker-assignment-snapshot`. A goal limited by the budget resumes on the next
 stale-reaper sweep, and the budget alert resolves on the next sweep (see §6).
 An empty body (`{}`) is 400.
@@ -185,10 +185,10 @@ From `GET /budgets/status`:
 | `ledger.missingSpendRows` | terminal tasks without a spend row (the reconciliation repairs them each sweep); `null` when unreadable |
 | `ledger.periodComplete` | whether the requested period is fully covered (decides `on` vs `shadow`) |
 | `claims` | `refusedTotal`, `wouldRefuseTotal`, `lastAt` |
-| `listing` | `omittedTotal`, `lastOmittedAt`, `lastOmittedCount`, `wouldOmitTotal` (counted per listing, so they grow with poll frequency) |
+| `listing` | `omittedTotal`, `lastOmittedAt`, `lastOmittedCount`, `wouldOmitTotal` (counted per listing evaluation, so they grow with poll frequency; a held long poll re-evaluates at least every 250 ms. `lastOmittedCount` is the number hidden by the latest listing) |
 | `creates` | `refusedTotal`, `wouldRefuseTotal`, `lastAt` (`pause` budgets) |
 | `goals` | `limitedTotal`, `resumedTotal`, `wouldLimitTotal` (once per goal per period), `lastAt` |
-| `checkFailed` | `count`, `lastAt`, `consecutive`: failed budget reads (fail-open) |
+| `checkFailed` | `count`, `lastAt`, `consecutive`: failed budget reads (fail-open). `consecutive` is reset by a fully successful claim evaluation or alert sweep, so a budget that fails on every sweep keeps it growing |
 
 Counters are in memory since the last start. Usage is worker-reported and
 unsigned: budgets are a cost guardrail between trusted workers, not a security
@@ -230,7 +230,8 @@ budgets first), in every mode.
 The stale-reaper sweep also runs the spend reconciliation, late-metering
 repair and goal `budget_limited` / resume. If stale reaping is disabled
 (`STALE_REAPER_ENABLED=0`; default `1`, interval `STALE_REAPER_INTERVAL_SEC`),
-none of these run: budget alerts are computed only once at startup, goals are
+none of these run: budget alerts are computed only once at startup (for up to
+1 000 budgets), goals are
 never limited or resumed by budget, and rolling back to mode `off` does not
 resume limited goals until stale reaping is on again. Check it before
 switching the mode.
@@ -255,11 +256,12 @@ What to do:
 - The worker poll `GET /tasks?assignedWorkerId=worker-a&status=queued` and the
   SSE `worker-assignment-snapshot` **hide** those tasks; the poll adds
   `budgetOmitted` and `budgetScanCapped`. So a polling worker stops getting
-  403s after its next poll. A worker on the SSE stream can still receive live
-  `worker-assignment` events, one per task, for tasks in a scope that ran out
-  after its last snapshot. It gets a 403 on each such claim. The broker sends
-  a fresh `worker-assignment-snapshot` once the stream has omitted a task and
-  the budget state changes; the snapshot replaces the worker's queued set.
+  403s after its next poll. A worker on the SSE stream can get a 403 for a
+  task announced before its scope ran out. The broker sends every stream a
+  fresh `worker-assignment-snapshot` when the budget state changes (a write,
+  the period roll, or the sweep seeing a budget become exhausted or stop
+  being exhausted); the snapshot replaces the worker's queued set, so those
+  tasks drop out of it.
 - A create in an exhausted `pause` scope answers **403** `policy_denied` with
   `details.reason: "budget_paused"`.
 - A USD limit refuses only workers that reported a cost this period; token
@@ -281,8 +283,9 @@ curl -sS "${AUTH[@]}" "$BROKER_URL/goals?status=budget_limited" | jq '.goals[] |
 It returns to `pursuing` by itself on the next sweep after the limit is raised
 or the period rolls (history reason `operator_requested`, note
 `budget_available`), and after a switch away from `on` (note
-`budget_enforcement_not_on`). Goals limited for another reason are never
-touched.
+`budget_enforcement_not_on`; this also holds after a restart in `off`). A goal
+whose goal budget is no longer in memory (a write that did not land) resumes
+the same way. Goals limited for another reason are never touched.
 
 ## 9. Roll back
 
