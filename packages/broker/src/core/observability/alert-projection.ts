@@ -359,10 +359,12 @@ export function projectBudgetAlert(input: {
   const exhausted: BudgetAlertLimit[] = [];
   if (evaluation.usdExhausted) exhausted.push("usd");
   if (evaluation.tokensExhausted) exhausted.push("tokens");
+  // #2520: the evaluator's warn decision (evaluateBudgetUsage), not a
+  // recomputation; `usdWarn` / `tokensWarn` name the limits that crossed.
   const atWarn: BudgetAlertLimit[] = [];
-  if (budget.limitUsd !== null && evaluation.usdSpent * 100 >= budget.limitUsd * budget.warnPct) atWarn.push("usd");
-  if (budget.limitTokens !== null && evaluation.tokensSpent * 100n >= BigInt(budget.limitTokens) * BigInt(budget.warnPct)) {
-    atWarn.push("tokens");
+  if (evaluation.warn) {
+    if (evaluation.usdWarn) atWarn.push("usd");
+    if (evaluation.tokensWarn) atWarn.push("tokens");
   }
   const kind: AlertKind | null = exhausted.length > 0 ? "budget_exhausted" : atWarn.length > 0 ? "budget_warn" : null;
   if (kind === null) return null;
@@ -385,9 +387,9 @@ export function projectBudgetAlert(input: {
       periodKey: evaluation.periodKey,
       limits,
       usdSpent: evaluation.usdSpent,
-      limitUsd: budget.limitUsd,
+      limitUsd: budget.limitUsd ?? null,
       tokensSpent: jsonSafeSpendInteger(evaluation.tokensSpent),
-      limitTokens: budget.limitTokens,
+      limitTokens: budget.limitTokens ?? null,
       warnPct: budget.warnPct,
       enforce: budget.enforce,
       configuredMode: input.enforcement.configuredMode,
