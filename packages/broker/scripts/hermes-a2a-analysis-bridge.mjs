@@ -1045,10 +1045,14 @@ function positiveIntegerEnv(value, fallback, name) {
   // #2528 A2: say so once per env name. Only the name is printed, never the
   // rejected value; an unset or blank value is not a rejection.
   if (name && String(value ?? "").trim() !== "" && !warnedEnvNames.has(name)) {
-    warnedEnvNames.add(name);
     // #2535: the shared line shape (lib formatEnvWarningLine), plus the
     // hermes-specific tail; the task handler matches it with ENV_WARNING_LINE_RE.
-    process.stderr.write(`${formatEnvWarningLine("hermes-a2a-analysis-bridge", name, fallback)} before any other caps\n`);
+    // #2536: an out-of-class name formats to "" and prints nothing.
+    const line = formatEnvWarningLine("hermes-a2a-analysis-bridge", name, fallback);
+    if (line) {
+      warnedEnvNames.add(name);
+      process.stderr.write(`${line} before any other caps\n`);
+    }
   }
   return fallback;
 }

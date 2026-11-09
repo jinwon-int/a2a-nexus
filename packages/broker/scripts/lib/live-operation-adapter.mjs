@@ -293,15 +293,21 @@ function verifyTaskAgainstBroker(task, operation, receipt, nodeId, env, spawnSyn
 
 /**
  * `dependencies` is set by code only (the task handler passes none):
- * - spawnSync: process runner (default node:child_process spawnSync).
+ * - spawnSync: process runner (default node:child_process spawnSync). When
+ *   provided (own property, even undefined) it must be a function, otherwise
+ *   the task fails closed before anything runs (#2536).
  * - trustedOwnerUid (#2535): the uid the runbook manifest and runbook command
  *   must be owned by; default 0 (root). It must be a non-negative safe
  *   integer, otherwise the task fails closed before anything runs. It is never
  *   read from env or the task, and /usr/bin/curl is always checked against 0.
+ * Both are read as own properties only, so a polluted Object.prototype can
+ * supply neither.
  */
 export function runLiveOperationTask(task, env = process.env, dependencies = {}) {
-  const spawnSync = dependencies.spawnSync ?? nodeSpawnSync;
-  // Own property only, so a polluted Object.prototype cannot supply it.
+  const spawnSync = Object.hasOwn(dependencies, "spawnSync") ? dependencies.spawnSync : nodeSpawnSync;
+  if (typeof spawnSync !== "function") {
+    return fail("invalid_live_operation", "spawnSync must be a function");
+  }
   const trustedOwnerUid = Object.hasOwn(dependencies, "trustedOwnerUid") && dependencies.trustedOwnerUid !== undefined
     ? dependencies.trustedOwnerUid
     : 0;

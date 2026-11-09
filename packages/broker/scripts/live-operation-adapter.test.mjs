@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, chmodSync, rmSync, symlinkSync } from "node:fs";
+import { mkdtempSync, writeFileSync, chmodSync, chownSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -281,21 +281,112 @@ test("a trustedOwnerUid that is not the fixture owner rejects the runbook manife
   }
 });
 
-test("without the dependency the default owner uid 0 is enforced even when env and task carry an owner uid (#2535)", {
-  skip: IS_ROOT ? "running as root: the temp fixture is owned by uid 0, so the default cannot be told apart here (the non-root CI run covers it)" : false,
-}, () => {
+// A uid other than root that owns the fixture in the default-uid tests: the
+// test uid when not root; as root the fixture is chowned to 65534.
+const NON_ROOT_OWNER_UID = IS_ROOT ? 65534 : OWNER_UID;
+
+// #2536 review: as root, chown the fixture to a non-root uid so the default
+// (uid 0) is exercised under both root and non-root runs. process.getuid /
+// geteuid are pinned to that uid during the call, so a default derived from
+// the running uid (instead of the constant 0) is caught as root too.
+function withNonRootOwnedFixture(fn) {
   const fx = fixture();
+  const { getuid, geteuid } = process;
   try {
+    if (IS_ROOT) {
+      chownSync(fx.manifestPath, NON_ROOT_OWNER_UID, NON_ROOT_OWNER_UID);
+      chownSync(fx.commandPath, NON_ROOT_OWNER_UID, NON_ROOT_OWNER_UID);
+      chmodSync(fx.manifestPath, 0o600);
+      chmodSync(fx.commandPath, 0o700);
+    }
+    process.getuid = () => NON_ROOT_OWNER_UID;
+    process.geteuid = () => NON_ROOT_OWNER_UID;
+    return fn(fx);
+  } finally {
+    process.getuid = getuid;
+    process.geteuid = geteuid;
+    fx.cleanup();
+  }
+}
+
+test("without the dependency the default owner uid 0 is enforced even when env and task carry an owner uid (#2535)", () => {
+  withNonRootOwnedFixture((fx) => {
     const calls = [];
-    const carrier = task({ trustedOwnerUid: OWNER_UID });
-    carrier.payload.trustedOwnerUid = OWNER_UID;
-    const carrierEnv = { ...env(fx.manifestPath), trustedOwnerUid: String(OWNER_UID), A2A_TRUSTED_OWNER_UID: String(OWNER_UID) };
+    const carrier = task({ trustedOwnerUid: NON_ROOT_OWNER_UID });
+    carrier.payload.trustedOwnerUid = NON_ROOT_OWNER_UID;
+    const carrierEnv = { ...env(fx.manifestPath), trustedOwnerUid: String(NON_ROOT_OWNER_UID), A2A_TRUSTED_OWNER_UID: String(NON_ROOT_OWNER_UID) };
     for (const dependencies of [{ spawnSync: successfulSpawn(calls, carrier) }, { spawnSync: successfulSpawn(calls, carrier), trustedOwnerUid: undefined }]) {
       const outcome = runLiveOperationTask(carrier, carrierEnv, dependencies);
       assert.equal(outcome.error?.code, "invalid_live_operation", JSON.stringify(outcome));
       assert.match(outcome.error.message, /^live runbook manifest must be root-owned and not group\/other writable$/);
     }
     assert.ok(calls.every((call) => call.command === "/usr/bin/curl"), "no runbook phase runs");
+  });
+});
+
+// #2536 review: trustedOwnerUid is read as an own property only, so a polluted
+// Object.prototype can neither relax (non-root) nor tighten (root) the default.
+test("a polluted Object.prototype.trustedOwnerUid is ignored; the default owner uid 0 still applies (#2536)", () => {
+  const fx = fixture();
+  assert.equal(Object.hasOwn(Object.prototype, "trustedOwnerUid"), false, "precondition: not polluted yet");
+  try {
+    // Root: the fixture is uid 0, so a polluted 1 must not make it fail.
+    // Non-root: the fixture is the test uid, so a polluted test uid must not make it pass.
+    Object.prototype.trustedOwnerUid = IS_ROOT ? 1 : OWNER_UID;
+    const calls = [];
+    const outcome = runLiveOperationTask(task(), env(fx.manifestPath), { spawnSync: successfulSpawn(calls) });
+    if (IS_ROOT) {
+      assert.equal(outcome.error, undefined, JSON.stringify(outcome.error));
+      assert.equal(outcome.result.verification.done, true);
+    } else {
+      assert.equal(outcome.error?.code, "invalid_live_operation", JSON.stringify(outcome));
+      assert.match(outcome.error.message, /^live runbook manifest must be root-owned and not group\/other writable$/);
+      assert.deepEqual(calls.map((call) => call.command), ["/usr/bin/curl"]);
+    }
+  } finally {
+    delete Object.prototype.trustedOwnerUid;
+    fx.cleanup();
+  }
+});
+
+// #2536 review: spawnSync is read as an own property only. No real process is
+// started here: every case ends at an early rejection before the first spawn
+// (missing live capability). A polluted function is never called; a polluted
+// non-function would fail the spawnSync check if it were read, so the outcome
+// shows whether the prototype was consulted.
+test("a polluted Object.prototype.spawnSync is never read or called (#2536)", () => {
+  const fx = fixture();
+  const sentinelCalls = [];
+  assert.equal(Object.hasOwn(Object.prototype, "spawnSync"), false, "precondition: not polluted yet");
+  try {
+    for (const polluted of [
+      (...args) => {
+        sentinelCalls.push(args);
+        return { status: 1, signal: null, stdout: "", stderr: "sentinel" };
+      },
+      "not-a-function",
+    ]) {
+      Object.prototype.spawnSync = polluted;
+      const outcome = runLiveOperationTask(task(), env(fx.manifestPath, { canPromoteLive: false }), { trustedOwnerUid: OWNER_UID });
+      assert.equal(outcome.error?.code, "live_capability_required", `polluted ${typeof polluted}: ${JSON.stringify(outcome)}`);
+    }
+    assert.equal(sentinelCalls.length, 0, "the polluted spawnSync was never called");
+  } finally {
+    delete Object.prototype.spawnSync;
+    fx.cleanup();
+  }
+});
+
+test("a provided spawnSync that is not a function fails closed before anything runs (#2536)", () => {
+  const fx = fixture();
+  try {
+    for (const spawnSync of [undefined, null, "spawnSync", 1, {}, [() => undefined]]) {
+      // canPromoteLive=false: even code that ignored this check would stop at
+      // the capability gate before any spawn, so nothing real can run.
+      const outcome = runLiveOperationTask(task(), env(fx.manifestPath, { canPromoteLive: false }), { spawnSync, trustedOwnerUid: OWNER_UID });
+      assert.equal(outcome.error?.code, "invalid_live_operation", `spawnSync ${String(spawnSync)}`);
+      assert.match(outcome.error.message, /spawnSync/);
+    }
   } finally {
     fx.cleanup();
   }

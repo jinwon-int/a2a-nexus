@@ -479,3 +479,61 @@ test("collectSourceBundle names the given { source } in its limit warnings, defa
 	assert.equal(invalid, "a2a-analysis-source-bundle: ignoring A2A_DANSO_ANALYSIS_MAX_FILES (not a positive integer); falling back to the default 16\n");
 	resetEnvWarnings();
 });
+
+// #2536 review: the env NAME is part of the line contract too. A prefix that
+// would build names outside the class is a caller bug and throws; a malformed
+// name passed straight to positiveIntegerEnv prints nothing rather than a line
+// the task handler would not recognise.
+test("collectSourceBundle rejects an env prefix outside /^[A-Z][A-Z0-9_]*$/ (#2536)", () => {
+	for (const prefix of ["a2a_danso_analysis", "A2A-DANSO-ANALYSIS", "A2A DANSO", "_A2A", "9A2A", "A2A_danso", "", 42, null, undefined]) {
+		assert.throws(() => collectSourceBundle({}, {}, { prefix }), /collectSourceBundle requires an env prefix/, `prefix ${JSON.stringify(prefix)}`);
+	}
+	assert.doesNotThrow(() => collectSourceBundle({}, {}, { prefix: "A2A_DANSO_ANALYSIS" }));
+	assert.doesNotThrow(() => collectSourceBundle({}, {}, { prefix: "X9" }));
+});
+
+test("positiveIntegerEnv prints nothing for a name outside the env-name class (#2536)", () => {
+	assert.ok(sourceBundleModule.ENV_WARNING_NAME_RE instanceof RegExp, "the env-name pattern is exported");
+	resetEnvWarnings();
+	const out = captureStderr(() => {
+		for (const name of ["a2a_lower", "A2A-DASHED", "A2A SPACE", "A2A_X\nB", "A2A_X:Y", "Ä2A"]) {
+			assert.equal(positiveIntegerEnv("junk", 4, name, { source: "danso-a2a-analysis-bridge" }), 4, `fallback unchanged for ${JSON.stringify(name)}`);
+		}
+	});
+	assert.equal(out, "");
+	for (const name of ["a2a_lower", "A2A-DASHED"]) {
+		assert.equal(sourceBundleModule.formatEnvWarningLine("danso-a2a-analysis-bridge", name, 4), "", `formatter refuses ${name}`);
+	}
+	resetEnvWarnings();
+});
+
+test("every line the lib can print for an env warning matches the shared regex (#2536)", () => {
+	const ENV_WARNING_LINE_RE = sharedEnvWarningLineRe();
+	const sources = ["a2a-analysis-source-bundle", "danso-a2a-analysis-bridge", "x.y_z-9", "a b", "x:y", "", "line\nbreak", 42, null, undefined, {}];
+	const names = ["A2A_OK", "A", "_", "9", "a2a_lower", "A2A-DASHED", "A2A SPACE", "A2A_X\nB", "", "A2A_X:Y"];
+	const fallbacks = [0, 7, 24576, "1\nforged-line", "2\r\nx"];
+	let index = 0;
+	let printed = 0;
+	resetEnvWarnings();
+	for (const source of sources) {
+		for (const name of names) {
+			for (const fallback of fallbacks) {
+				const formatted = sourceBundleModule.formatEnvWarningLine(source, name, fallback);
+				assert.equal(/[\r\n]/.test(formatted), false, "the formatter returns a single line");
+				if (formatted) assert.match(formatted, ENV_WARNING_LINE_RE);
+				// Re-armed after every call so the warn-once set never hides a case.
+				const out = captureStderr(() => positiveIntegerEnv("junk", fallback, name, { source }));
+				resetEnvWarnings();
+				index += 1;
+				if (!out) continue;
+				printed += 1;
+				assert.ok(out.endsWith("\n"), "one newline-terminated line");
+				const lines = out.slice(0, -1).split("\n");
+				assert.equal(lines.length, 1, `exactly one line: ${JSON.stringify(out)}`);
+				assert.match(lines[0], ENV_WARNING_LINE_RE, JSON.stringify(out));
+			}
+		}
+	}
+	assert.ok(index > 0 && printed > 0, "the corpus exercises printing cases");
+	resetEnvWarnings();
+});
