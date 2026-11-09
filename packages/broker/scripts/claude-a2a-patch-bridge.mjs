@@ -40,7 +40,7 @@ import {
   attachClaudeModelTelemetry,
   claudeInvocationModelTelemetry,
 } from "./lib/claude-model-telemetry.mjs";
-import { truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
+import { truncateUtf16Safe, truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
 
 // ---------------------------------------------------------------------------
 // Process-tree timeout / session-isolation hardening (issue #1129)
@@ -146,8 +146,8 @@ function childOutputExcerpt(child, perStreamLimit = 2000) {
   const parts = [];
   const stderrText = safeText(child.stderr).trim();
   const stdoutText = safeText(child.stdout).trim();
-  if (stderrText) parts.push(`stderr: ${stderrText.slice(0, perStreamLimit)}`);
-  if (stdoutText) parts.push(`stdout: ${stdoutText.slice(0, perStreamLimit)}`);
+  if (stderrText) parts.push(`stderr: ${truncateUtf16Safe(stderrText, perStreamLimit)}`);
+  if (stdoutText) parts.push(`stdout: ${truncateUtf16Safe(stdoutText, perStreamLimit)}`);
   return parts.join("\n") || "no output captured";
 }
 
@@ -641,9 +641,11 @@ function looksJsonLikeText(value) {
 }
 
 function firstSentence(text, max = 240) {
+  // #2533 review: a non-finite or < 1 max falls back to the default.
+  const limit = Number.isFinite(max) && max >= 1 ? max : 240;
   const compact = safeText(text).replace(/\s+/g, " ").trim();
-  if (compact.length <= max) return compact;
-  return `${compact.slice(0, max - 1).trim()}…`;
+  if (compact.length <= limit) return compact;
+  return `${truncateUtf16Safe(compact, limit - 1).trim()}…`;
 }
 
 function isProbablyClaudeErrorText(text) {
@@ -1812,7 +1814,7 @@ function extractDiffFromRawText(text, allowUnescapeRetry = true) {
       // silently replaced by whatever a later envelope field happens to carry.
       truncated: true,
       body: `diff extraction stopped at line ${endIdx - startIdx + 1} of the patch but another file`
-        + ` section follows at output line ${i + 1} (${lines[i].slice(0, 120)}); refusing a partial patch.`
+        + ` section follows at output line ${i + 1} (${truncateUtf16Safe(lines[i], 120)}); refusing a partial patch.`
         + " Re-emit the whole diff as one block, with no prose between file sections.",
     };
   }
@@ -2209,7 +2211,7 @@ function toolError(tool, label, result) {
     return new Error(`${tool} ${label} spawn failed: ${result.error.message}`);
   }
   const signal = result.signal ? ` signal=${result.signal}` : "";
-  const detail = safeText(result.stderr, result.stdout).slice(0, 4000);
+  const detail = truncateUtf16Safe(safeText(result.stderr, result.stdout), 4000);
   return new Error(`${tool} ${label} exited with ${result.status ?? "?"}${signal}: ${detail}`);
 }
 
@@ -2223,7 +2225,7 @@ async function checkDiff(workspace, diffPath, env) {
     maxBufferBytes: 4 * 1024 * 1024,
   });
   if (res.status === 0) return { ok: true };
-  return { ok: false, error: safeText(res.stderr, res.stdout).slice(0, 4000) };
+  return { ok: false, error: truncateUtf16Safe(safeText(res.stderr, res.stdout), 4000) };
 }
 
 // Actually applies the diff (after --check passed).
@@ -2236,7 +2238,7 @@ async function applyDiff(workspace, diffPath, env) {
     maxBufferBytes: 4 * 1024 * 1024,
   });
   if (res.status === 0) return { ok: true };
-  return { ok: false, error: safeText(res.stderr, res.stdout).slice(0, 4000) };
+  return { ok: false, error: truncateUtf16Safe(safeText(res.stderr, res.stdout), 4000) };
 }
 
 // Captures the list of modified/new files (post-apply) so the bootstrap-leak guard
@@ -2423,7 +2425,7 @@ async function cloneTargetRepo({ repo, cloneDir, branch, env }) {
       maxBufferBytes: 16 * 1024 * 1024,
     });
     if (res.status === 0) return { ok: true };
-    failures.push(`${attempt.bin} ${attempt.args.join(" ")}: ${safeText(res.stderr, res.stdout).slice(0, 1000)}`);
+    failures.push(`${attempt.bin} ${attempt.args.join(" ")}: ${truncateUtf16Safe(safeText(res.stderr, res.stdout), 1000)}`);
   }
   return { ok: false, error: `clone failed for ${repo}: ${failures.join(" | ")}` };
 }
@@ -2512,7 +2514,7 @@ async function callClaudeCorrective(prompt, previousError, flags, env, cwd) {
     "Produce a SINGLE corrected unified diff in a ```diff ... ``` fenced code block that applies cleanly.",
     "Do not include prose, JSON, or any output outside the fenced block.",
     "Previous error:",
-    redactSecrets(safeText(previousError, "<no error captured>")).slice(0, 2000),
+    truncateUtf16Safe(redactSecrets(safeText(previousError, "<no error captured>")), 2000),
     "",
     "Original task:",
     safeText(prompt),
@@ -2559,7 +2561,7 @@ async function callClaudeCorrective(prompt, previousError, flags, env, cwd) {
   if (child.status !== 0) {
     const signal = child.signal ? ` signal=${child.signal}` : "";
     throw new ClaudeInvocationError(
-      `Claude Code corrective exited with ${child.status}${signal}: ${safeText(child.stderr, child.stdout).slice(0, 4000)}`,
+      `Claude Code corrective exited with ${child.status}${signal}: ${truncateUtf16Safe(safeText(child.stderr, child.stdout), 4000)}`,
       { turnBudget: asFailureTurnBudgetDiagnostic(diagnostic, "claude_error") },
     );
   }
@@ -2621,7 +2623,7 @@ async function runSingleShotPatchMode(message, flags) {
     let claudeCalls = 1;
 
     if (extracted.kind === "no_diff") {
-      throw new Error(`claude returned no diff: ${redactSecrets(safeText(extracted.body, "<empty>")).slice(0, 1000)}`);
+      throw new Error(`claude returned no diff: ${truncateUtf16Safe(redactSecrets(safeText(extracted.body, "<empty>")), 1000)}`);
     }
 
     // Write the diff to a file inside the workspace and try `git apply --check`.
@@ -2665,7 +2667,7 @@ async function runSingleShotPatchMode(message, flags) {
       outputInvocation = correctiveRun.invocation;
       extracted = extractUnifiedDiff(correctiveRun.stdout);
       if (extracted.kind === "no_diff") {
-        throw new Error(`claude corrective retry returned no diff: ${redactSecrets(safeText(extracted.body, "<empty>")).slice(0, 1000)}`);
+        throw new Error(`claude corrective retry returned no diff: ${truncateUtf16Safe(redactSecrets(safeText(extracted.body, "<empty>")), 1000)}`);
       }
       writeDiff(extracted.body);
       checked = await checkDiff(cloneDir, diffPath, env);
@@ -2676,7 +2678,7 @@ async function runSingleShotPatchMode(message, flags) {
         // line N" is meaningless without the line it refers to.
         const retryHint = describeHunkHeaderMismatches(extracted.body);
         throw new Error(
-          `git apply --check failed after corrective retry: ${redactSecrets(safeText(checked.error, "<empty>")).slice(0, 1000)}`
+          `git apply --check failed after corrective retry: ${truncateUtf16Safe(redactSecrets(safeText(checked.error, "<empty>")), 1000)}`
           + (retryHint ? `\n${retryHint}` : "")
           + `\n${describeRejectedDiff(extracted.body)}`,
         );
@@ -2686,7 +2688,7 @@ async function runSingleShotPatchMode(message, flags) {
     // Apply the validated diff. `git apply` only mutates the working tree; commit comes next.
     const applied = await applyDiff(cloneDir, diffPath, env);
     if (!applied.ok) {
-      throw new Error(`git apply failed: ${redactSecrets(safeText(applied.error, "<empty>")).slice(0, 1000)}`);
+      throw new Error(`git apply failed: ${truncateUtf16Safe(redactSecrets(safeText(applied.error, "<empty>")), 1000)}`);
     }
 
     // Bootstrap-leak guard: refuse to commit any diff that touches agent-context files.
@@ -2927,6 +2929,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 // side-effect-free (main() only runs when invoked as the entrypoint above), so
 // these can be exercised directly instead of only through a spawned process.
 export const __test = Object.freeze({
+  childOutputExcerpt,
+  toolError,
+  firstSentence,
+  checkDiff,
+  applyDiff,
   extractUnifiedDiff,
   describeRejectedDiff,
   extractSubagentReportFromSessionTranscripts,

@@ -662,7 +662,7 @@ function extractJsonFromLooseText(text) {
   for (const candidate of collectLooseJsonCandidates(trimmed)) {
     const parsed = parseJsonCandidate(candidate);
     if (parsed !== null) return parsed;
-    lastError = `candidate was not valid JSON: ${candidate.slice(0, 120)}`;
+    lastError = `candidate was not valid JSON: ${truncateUtf16Safe(candidate, 120)}`;
   }
   throw new Error(lastError || "response did not contain valid JSON");
 }
@@ -1051,6 +1051,10 @@ function positiveIntegerEnv(value, fallback, name) {
   return fallback;
 }
 
+// No test-only reset for warnedEnvNames (#2533 D3): importing this module
+// runs main(), so tests always spawn the bridge, and each spawned bridge
+// process starts with a fresh, empty warn-once set.
+
 // Read env[name] and parse it, so the name that is read and the name that is
 // warned about can never drift apart (#2531 review).
 function envPositiveInteger(env, name, fallback) {
@@ -1119,7 +1123,7 @@ function runHermes(prompt, flags, env) {
     if (attempt < maxAttempts && isRecoverableHermesNoJsonAbort(child)) continue;
     break;
   }
-  const output = safeText(lastChild?.stderr, lastChild?.stdout).slice(0, 4000);
+  const output = truncateUtf16Safe(safeText(lastChild?.stderr, lastChild?.stdout), 4000);
   const signal = lastChild?.signal ? ` signal=${lastChild.signal}` : "";
   throw new Error(`Hermes exited with ${lastChild?.status}${signal}: ${output}`);
 }

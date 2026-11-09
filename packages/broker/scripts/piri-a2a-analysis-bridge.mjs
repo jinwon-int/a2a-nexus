@@ -37,7 +37,7 @@ import { fileURLToPath } from "node:url";
 import { analysisCompletionMarker, buildAnalysisHarness } from "./lib/analysis-harness-fingerprint.mjs";
 import { piriExecutionTelemetry } from "./lib/analysis-execution-telemetry.mjs";
 import { sourceCarrierStatsFromEnv } from "./lib/source-carriers.mjs";
-import { sliceUtf8AtBoundary, truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
+import { sliceUtf8AtBoundary, truncateUtf16Safe, truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
 
 const BRIDGE_FILE = fileURLToPath(import.meta.url);
 
@@ -603,7 +603,7 @@ function bridgeError({ code, stage, failureShape, message, elapsedMs, context })
 	// provider. Undefined context fields drop off the wire.
 	const bounded = Object.fromEntries(Object.entries(detail).filter(([, value]) => value !== undefined));
 	console.error(`A2A_BRIDGE_ERROR=${JSON.stringify(bounded)}`);
-	if (message) console.error(String(message).slice(0, 2000));
+	if (message) console.error(truncateUtf16Safe(String(message), 2000));
 	process.exit(1);
 }
 

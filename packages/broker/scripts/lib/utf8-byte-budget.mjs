@@ -112,21 +112,58 @@ export function truncateUtf8ToBytesSafe(text, maxBytes) {
 }
 
 /**
+ * Whole-number UTF-16 unit limit for the truncateUtf16Safe* helpers, or null
+ * for "no limit" (#2533): a null/undefined limit, or one whose Number() is
+ * not finite (NaN, Infinity, a non-numeric string), keeps the text uncut.
+ * Diagnostic call sites pass computed limits; a missing or garbage limit must
+ * not silently erase the text it was meant to bound. Finite limits are
+ * floored, and a negative limit means 0.
+ */
+function utf16UnitLimit(maxUnits) {
+	if (maxUnits === null || maxUnits === undefined) return null;
+	const value = Number(maxUnits);
+	if (!Number.isFinite(value)) return null;
+	return Math.max(0, Math.floor(value));
+}
+
+const isHighSurrogate = (unit) => unit >= 0xd800 && unit <= 0xdbff;
+const isLowSurrogate = (unit) => unit >= 0xdc00 && unit <= 0xdfff;
+
+/**
  * Cut a string to at most maxUnits UTF-16 code units without splitting a
  * surrogate pair (#2528 A4). Diagnostics are capped with `.slice(0, n)`; a
  * cut right after a high surrogate leaves a lone surrogate, which becomes
- * U+FFFD (or an escaped "\ud83d" in JSON) once the text is written out.
+ * U+FFFD (or an escaped "\ud83d" in JSON) once the text is written out, so
+ * such a cut backs off one unit.
+ *
+ * `maxUnits` null/undefined or non-finite (NaN, Infinity, "abc") returns the
+ * whole `String(text ?? "")` uncut (#2533). Otherwise it is floored; 0 or a
+ * negative limit returns "".
  */
 export function truncateUtf16Safe(text, maxUnits) {
 	const value = String(text ?? "");
-	const limit = byteBudget(maxUnits); // whole-number normalization, units here
-	if (value.length <= limit) return value;
+	const limit = utf16UnitLimit(maxUnits);
+	if (limit === null || value.length <= limit) return value;
 	let end = limit;
-	if (end > 0) {
-		const before = value.charCodeAt(end - 1);
-		if (before >= 0xd800 && before <= 0xdbff) end -= 1;
-	}
+	if (end > 0 && isHighSurrogate(value.charCodeAt(end - 1))) end -= 1;
 	return value.slice(0, end);
+}
+
+/**
+ * Keep at most the last maxUnits UTF-16 code units (the safe form of
+ * `text.slice(-n)`, #2533) without starting on the low half of a split
+ * surrogate pair: when the first kept unit is a low surrogate (0xDC00-0xDFFF)
+ * it is dropped too. Same limit contract as truncateUtf16Safe: null/undefined
+ * or non-finite keeps the text uncut, 0 or negative returns "".
+ */
+export function truncateUtf16SafeTail(text, maxUnits) {
+	const value = String(text ?? "");
+	const limit = utf16UnitLimit(maxUnits);
+	if (limit === null || value.length <= limit) return value;
+	if (limit === 0) return "";
+	let start = value.length - limit;
+	if (isLowSurrogate(value.charCodeAt(start))) start += 1;
+	return value.slice(start);
 }
 
 const READ_CHUNK_BYTES = 64 * 1024;
@@ -138,6 +175,11 @@ const READ_CHUNK_BYTES = 64 * 1024;
  * read, never from a fstat size, which can be stale (the file was rewritten
  * between stat and read) or wrong (procfs reports 0). `bytes` is the file
  * size: exact when not truncated, otherwise at least what was seen.
+ *
+ * A non-truncated read returns the whole file decoded as-is: a trailing
+ * incomplete UTF-8 sequence is NOT dropped (it decodes to U+FFFD). That is
+ * intentional (#2533): dropping it would silently alter a file that really
+ * ends in malformed bytes. Only a truncating cut backs off to a boundary.
  */
 export function readUtf8FilePrefix(path, maxBytes) {
 	const budget = byteBudget(maxBytes);

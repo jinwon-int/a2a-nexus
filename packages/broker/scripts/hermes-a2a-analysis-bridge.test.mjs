@@ -1314,6 +1314,67 @@ test("Hermes A2A analysis bridge rejects generic JSON from failed Hermes", () =>
   }
 });
 
+// #2533: the Hermes failure output is cut to 4000 UTF-16 units; the cut must
+// not split a surrogate pair (a lone half reaches stderr as U+FFFD).
+test("#2533 Hermes failure output cut never splits a surrogate pair", () => {
+  const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-utf16-cut-"));
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+  try {
+    writeFileSync(fakeHermesPath, [
+      "#!/usr/bin/env node",
+      // index 3999 is the high half of the emoji
+      `process.stderr.write(${JSON.stringify(`${"E".repeat(3999)}😀z`)});`,
+      "process.exitCode = 1;",
+      "",
+    ].join("\n"));
+    chmodSync(fakeHermesPath, 0o755);
+    const message = "Payload JSON:\n" + JSON.stringify({ mode: "analysis-only", noLive: true, sourceOnly: true });
+    const result = spawnSync(process.execPath, openClawArgs(message), {
+      encoding: "utf8",
+      env: { ...process.env, HERMES_BIN: fakeHermesPath },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Hermes exited with 1/);
+    assert.equal(result.stderr.includes("\uFFFD"), false, "no replacement character from a split pair");
+    assert.equal(LONE_SURROGATE.test(result.stderr), false);
+    const line = result.stderr.split("\n").find((entry) => entry.startsWith("Hermes exited with 1"));
+    assert.equal(line, `Hermes exited with 1: ${"E".repeat(3999)}`, "backs off exactly the split pair");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+// #2533 review item 6: the "candidate was not valid JSON" detail quotes the
+// candidate cut to 120 units; the cut must not split a surrogate pair.
+test("#2533 Hermes invalid-JSON candidate quote never splits a surrogate pair", () => {
+  const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-utf16-candidate-"));
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+  // "{x" + 117 units puts the emoji's high half at index 119 (cut at 120).
+  const candidate = `{x${"a ".repeat(60).slice(0, 117)}😀 }`;
+  try {
+    writeFileSync(fakeHermesPath, [
+      "#!/usr/bin/env node",
+      `process.stdout.write(${JSON.stringify(candidate)});`,
+      "",
+    ].join("\n"));
+    chmodSync(fakeHermesPath, 0o755);
+    const message = "Payload JSON:\n" + JSON.stringify({ mode: "analysis-only", noLive: true, sourceOnly: true });
+    const result = spawnSync(process.execPath, openClawArgs(message), {
+      encoding: "utf8",
+      env: { ...process.env, HERMES_BIN: fakeHermesPath },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /candidate was not valid JSON: /);
+    assert.equal(result.stderr.includes("\uFFFD"), false, "no replacement character from a split pair");
+    assert.equal(LONE_SURROGATE.test(result.stderr), false);
+    assert.ok(result.stderr.includes(`candidate was not valid JSON: ${candidate.slice(0, 119)}\n`), "backs off exactly the split pair");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("Hermes A2A analysis bridge fetches GitHub PR diff and metadata into the read-only source bundle", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-pr-source-"));
   const fakeHermesPath = join(tempDir, "fake-hermes.mjs");

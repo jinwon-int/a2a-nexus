@@ -1857,3 +1857,64 @@ test("#2496 a stale slot is reported and skipped, never reclaimed; a symlinked s
     h.cleanup();
   }
 });
+
+// #2533 review item 6: the analysis bridge's failure excerpt (both streams,
+// 2000 units each) and prose-recovery summary (firstSentence, 239 units + "…")
+// never split a surrogate pair. Space-separated filler keeps the redaction
+// rule for long token-shaped runs out of the way.
+const ANALYSIS_LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+test("#2533 analysis failure excerpt never splits a surrogate pair in either stream", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-utf16-excerpt-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const stderrHead = "ab ".repeat(700).slice(0, 1999); // ends on a non-space
+  const stdoutHead = "cd ".repeat(700).slice(0, 1999);
+  try {
+    writeFileSync(fakeClaudePath, [
+      "#!/usr/bin/env node",
+      `process.stderr.write(${JSON.stringify(`${stderrHead}😀z`)});`,
+      `process.stdout.write(${JSON.stringify(`${stdoutHead}😀z`)});`,
+      "process.exit(1);",
+      "",
+    ].join("\n"));
+    chmodSync(fakeClaudePath, 0o755);
+    const result = spawnSync(bridgePath, bridgeArgs("failure excerpt utf16 fixture"), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /exited with 1/);
+    assert.equal(result.stderr.includes("�"), false, "no replacement character from a split pair");
+    assert.equal(ANALYSIS_LONE_SURROGATE.test(result.stderr), false);
+    assert.ok(result.stderr.includes(`stderr: ${stderrHead}\nstdout: ${stdoutHead}\n`), "each stream backs off exactly the split pair");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("#2533 prose-recovery summary never splits a surrogate pair", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-utf16-summary-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const head = "가나 ".repeat(100).slice(0, 238); // index 238 will be the emoji's high half
+  const prose = `${head}😀 ${"나머지 분석 내용입니다 ".repeat(20).trim()}`;
+  try {
+    writeFileSync(fakeClaudePath, [
+      "#!/usr/bin/env node",
+      `console.log(JSON.stringify({ type: 'result', subtype: 'success', result: ${JSON.stringify(prose)} }));`,
+      "",
+    ].join("\n"));
+    chmodSync(fakeClaudePath, 0o755);
+    const message = "Payload JSON:\n" + JSON.stringify({ mode: "analysis-only", noLive: true, sourceOnly: true });
+    const result = spawnSync(bridgePath, bridgeArgs(message), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0]?.text);
+    assert.equal(payload.recoverySource, "claude_result_text");
+    assert.equal(payload.summary, `${head.trim()}…`, "backs off exactly the split pair");
+    assert.equal(ANALYSIS_LONE_SURROGATE.test(payload.summary), false);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});

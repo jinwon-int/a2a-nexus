@@ -13,6 +13,8 @@ import {
 	truncateUtf8ToBytesSafe,
 	utf8BoundaryEnd,
 } from "./utf8-byte-budget.mjs";
+// Namespace view so a helper that does not exist yet fails its own test only.
+import * as budgetModule from "./utf8-byte-budget.mjs";
 
 const REPLACEMENT = "\uFFFD";
 
@@ -265,6 +267,48 @@ test("truncateUtf16Safe never leaves a lone high surrogate at the cut (#2528)", 
 	assert.equal(truncateUtf16Safe("abc", 10), "abc");
 	assert.equal(truncateUtf16Safe("abc", 1.9), "a");
 	assert.equal(truncateUtf16Safe(null, 5), "");
+});
+
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+// #2533 A: an absent or non-finite limit means "no limit", never "cut to 0".
+test("truncateUtf16Safe: null/undefined/non-finite limits keep the text uncut; 0 and negatives cut to empty (#2533)", () => {
+	const text = `ab😀가c`;
+	for (const limit of [undefined, null, Number.NaN, Number.POSITIVE_INFINITY, "abc", {}]) {
+		assert.equal(truncateUtf16Safe(text, limit), text, `limit ${String(limit)} keeps the text`);
+	}
+	assert.equal(truncateUtf16Safe(text), text, "omitted limit keeps the text");
+	assert.equal(truncateUtf16Safe(null, undefined), "");
+	assert.equal(truncateUtf16Safe(text, 0), "");
+	assert.equal(truncateUtf16Safe(text, -1), "");
+	assert.equal(truncateUtf16Safe(text, ""), "", "Number(\"\") is 0, a finite limit");
+	assert.equal(truncateUtf16Safe(text, "3"), "ab", "numeric strings still count; the pair is not split");
+	assert.equal(truncateUtf16Safe(text, 4), "ab😀");
+});
+
+// #2533 B: tail cuts (`text.slice(-n)`) can start on the low half of a pair.
+test("truncateUtf16SafeTail keeps the last <= n units and never starts on a lone low surrogate (#2533)", () => {
+	const tail = budgetModule.truncateUtf16SafeTail;
+	assert.equal(typeof tail, "function", "truncateUtf16SafeTail is exported");
+	const text = `${"😀".repeat(10)}x`; // low surrogates sit at odd indices
+	for (let limit = 0; limit <= text.length + 1; limit++) {
+		const out = tail(text, limit);
+		assert.ok(out.length <= limit, `limit ${limit}`);
+		assert.ok(!LONE_SURROGATE.test(out), `limit ${limit}: no lone surrogate`);
+		assert.ok(text.endsWith(out), `limit ${limit}: a suffix of the input`);
+		assert.ok(out.length >= Math.min(limit, text.length) - 1, `limit ${limit}: drops at most one unit`);
+	}
+	assert.equal(tail(text, 2), "x", "drops the low half that would start the tail");
+	assert.equal(tail(text, 3), "😀x");
+	assert.equal(tail("abc", 2), "bc");
+	assert.equal(tail("abc", 10), "abc");
+	assert.equal(tail("abc", 1.9), "c");
+	assert.equal(tail("abc", 0), "");
+	assert.equal(tail("abc", -1), "");
+	assert.equal(tail(null, 5), "");
+	for (const limit of [undefined, null, Number.NaN, Number.POSITIVE_INFINITY, "abc"]) {
+		assert.equal(tail(text, limit), text, `limit ${String(limit)} keeps the text`);
+	}
 });
 
 // #2528 B5: the bounded read decides truncation from the bytes it actually

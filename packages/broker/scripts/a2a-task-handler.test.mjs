@@ -4289,7 +4289,7 @@ test("#2393 claim preflight: a pin cannot be verified against a bare bridge comm
 // #2528 B8: the GitHub comment body is published text; the 60000-unit cut
 // must not leave a lone surrogate.
 test("trimGithubCommentBody never splits a surrogate pair (#2528)", () => {
-  const body = `x${"😀".repeat(40000)}`; // > 64000 bytes; index 59999 is a high surrogate
+  const body = `x${"😀".repeat(40000)}`; // 80001 units > 64000; index 59999 is a high surrogate
   const out = __test.trimGithubCommentBody(body);
   const kept = out.split("\n\n---\n\n")[0];
   // Index 59999 is a high surrogate, so exactly one unit is backed off.
@@ -4298,4 +4298,222 @@ test("trimGithubCommentBody never splits a surrogate pair (#2528)", () => {
   assert.equal(Buffer.from(kept, "utf8").toString("utf8"), kept, "lossless as UTF-8");
   assert.match(out, /truncated by a2a-task-handler/);
   assert.equal(__test.trimGithubCommentBody("짧은 본문"), "짧은 본문");
+});
+
+const HANDLER_LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+// #2533 C (review round): GitHub documents the comment limit in characters
+// (65536), so judge AND cut in UTF-16 units. A byte judge cut Korean/CJK
+// bodies to ~20000 characters.
+test("trimGithubCommentBody judges and cuts by UTF-16 units, matching GitHub's character limit (#2533)", () => {
+  const korean = "가".repeat(25000); // 25000 units, 75000 bytes
+  assert.equal(__test.trimGithubCommentBody(korean), korean, "a multibyte body under the unit limit is unchanged, no notice");
+  const atLimit = "가".repeat(64000);
+  assert.equal(__test.trimGithubCommentBody(atLimit), atLimit, "a body of <= 64000 units is unchanged");
+  // 70000 units with a surrogate pair straddling the 60000-unit cut.
+  const body = `${"a".repeat(59999)}😀${"b".repeat(70000 - 60001)}`;
+  assert.equal(body.length, 70000);
+  const out = __test.trimGithubCommentBody(body);
+  assert.match(out, /truncated by a2a-task-handler/);
+  const kept = out.split("\n\n---\n\n")[0];
+  assert.equal(kept, "a".repeat(59999), "backs off exactly the split pair");
+  assert.equal(HANDLER_LONE_SURROGATE.test(out), false);
+});
+
+// #2533 B: bridge-supplied failure strings are cut by UTF-16 units; the cut
+// must not leave a lone surrogate.
+test("boundedBridgeFailureString never splits a surrogate pair (#2533)", () => {
+  assert.equal(typeof __test.boundedBridgeFailureString, "function");
+  const out = __test.boundedBridgeFailureString(`${"a".repeat(63)}😀b`, 64);
+  assert.equal(out, "a".repeat(63));
+  assert.equal(HANDLER_LONE_SURROGATE.test(out), false);
+  assert.equal(__test.boundedBridgeFailureString("", 64), undefined);
+  assert.equal(__test.boundedBridgeFailureString("short", 64), "short");
+});
+
+test("jsonForPrompt never splits a surrogate pair and reports the units it actually dropped (#2533)", () => {
+  assert.equal(typeof __test.jsonForPrompt, "function");
+  const value = `${"a".repeat(58)}${"😀".repeat(30)}`;
+  const text = JSON.stringify(value, null, 2); // index 59 = first emoji's high half
+  const out = __test.jsonForPrompt(value, 100); // keeps limit - 40 = 60 units
+  const [kept, rest] = out.split("\n...\n");
+  assert.equal(kept, text.slice(0, 59), "backs off exactly the split pair");
+  assert.ok(kept.length <= 60);
+  assert.equal(HANDLER_LONE_SURROGATE.test(out), false);
+  assert.equal(rest, `[truncated ${text.length - kept.length} chars]`);
+  assert.equal(__test.jsonForPrompt({ a: 1 }, 100), JSON.stringify({ a: 1 }, null, 2));
+});
+
+// #2533 review: a non-finite limit falls back to the 24000 default (it used
+// to mean "no cut" with a "[truncated 0 chars]" tail), and a limit below 40
+// keeps nothing instead of a negative cut.
+test("jsonForPrompt guards non-finite and tiny limits (#2533)", () => {
+  const big = "x".repeat(30000);
+  const text = JSON.stringify(big, null, 2);
+  for (const limit of [Number.NaN, Number.POSITIVE_INFINITY, "abc", null]) {
+    const out = __test.jsonForPrompt(big, limit);
+    const [kept, rest] = out.split("\n...\n");
+    assert.equal(kept.length, 24000 - 40, `limit ${String(limit)} uses the 24000 default`);
+    assert.equal(rest, `[truncated ${text.length - kept.length} chars]`);
+  }
+  assert.equal(__test.jsonForPrompt({ a: 1 }, Number.NaN), JSON.stringify({ a: 1 }, null, 2));
+  const tiny = __test.jsonForPrompt(big, 10);
+  assert.equal(tiny, `\n...\n[truncated ${text.length} chars]`, "limit - 40 < 0 keeps nothing");
+});
+
+const ENV_WARN_A = "a2a-analysis-source-bundle: ignoring A2A_DANSO_ANALYSIS_MAX_FILES (not a positive integer); falling back to the default 16";
+const ENV_WARN_B = "hermes-a2a-analysis-bridge: ignoring A2A_HERMES_ANALYSIS_MAX_FILE_BYTES (not a positive integer); falling back to the default 24576 before any other caps";
+
+// #2531/#2533 D4: bridge env-rejection warnings are written before the bridge
+// starts work. The message is built from the non-warning stderr, else stdout,
+// else the exit text, with the warnings appended after it.
+test("bridgeFailureMessage leads with the real failure and appends env warnings (#2533)", () => {
+  const message = __test.bridgeFailureMessage;
+  assert.equal(typeof message, "function");
+  assert.equal(
+    message({ stderr: `${ENV_WARN_A}\nreal failure\n${ENV_WARN_B}\nsecond line\n`, stdout: "ignored stdout", status: 1 }),
+    `real failure\nsecond line\n${ENV_WARN_A}\n${ENV_WARN_B}`,
+  );
+  assert.equal(message({ stderr: "real failure\nsecond line\n", stdout: "", status: 1 }), "real failure\nsecond line", "no warnings: unchanged");
+  assert.equal(message({ stderr: "", stdout: "  real stdout  ", status: 1 }), "real stdout", "stdout fallback as before");
+  assert.equal(message({ stderr: "", stdout: "", status: 2 }), "openclaw exited with 2");
+  assert.equal(message({ stderr: undefined, stdout: undefined, status: null }), "openclaw exited with unknown");
+  // Warnings-only stderr no longer hides the stdout fallback or the exit text.
+  const viaStdout = message({ stderr: `${ENV_WARN_A}\n`, stdout: "real stdout failure\n", status: 1 });
+  assert.ok(viaStdout.startsWith("real stdout failure"), viaStdout);
+  assert.ok(viaStdout.endsWith(ENV_WARN_A), viaStdout);
+  const viaExit = message({ stderr: `${ENV_WARN_A}\n${ENV_WARN_B}\n`, stdout: "", status: 3 });
+  assert.equal(viaExit, `openclaw exited with 3\n${ENV_WARN_A}\n${ENV_WARN_B}`);
+  assert.equal(
+    message({ stderr: "note: ignoring lowercase (not a positive integer)\nx", stdout: "", status: 1 }),
+    "note: ignoring lowercase (not a positive integer)\nx",
+    "non-matching lines stay in place",
+  );
+});
+
+function runFailingAnalysisBridge(script) {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-analysis-env-warning-order-"));
+  const bin = join(dir, "failing-bridge.mjs");
+  writeFileSync(bin, `#!/usr/bin/env node\n${script}\nprocess.exit(1);\n`);
+  chmodSync(bin, 0o755);
+  try {
+    return handleTask({
+      id: "task-env-warning-order",
+      intent: "analyze",
+      assignedWorkerId: "workerzeta",
+      message: "Analyze #2533 read-only evidence",
+      payload: {
+        mode: "github-read-only-validation",
+        repo: "jinwon-int/a2a-nexus",
+        issue: "#2533",
+        sourceOnly: true,
+        readOnlyValidation: true,
+        noLive: true,
+        noGitHubWrites: true,
+      },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_OPENCLAW_ANALYSIS_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_OPENCLAW_ANALYSIS_TIMEOUT_SEC: "5",
+      A2A_NODE_ID: "workerzeta",
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("analysis bridge failure message leads with the real failure, not env warnings (#2533)", () => {
+  const result = runFailingAnalysisBridge([
+    `process.stderr.write(${JSON.stringify(`${ENV_WARN_A}\n`)});`,
+    `process.stderr.write('A2A_BRIDGE_ERROR={"code":"analysis_bridge_invalid_json","stage":"extract"}\\n');`,
+    "process.stderr.write('real failure\\n');",
+  ].join("\n"));
+  assert.equal(result.error?.code, "openclaw_analysis_failed");
+  const message = String(result.error?.message ?? "");
+  assert.ok(message.startsWith("A2A_BRIDGE_ERROR="), `the real failure leads: ${JSON.stringify(message.slice(0, 80))}`);
+  assert.ok(message.indexOf("real failure") < message.indexOf("ignoring A2A_DANSO_ANALYSIS_MAX_FILES"), "warning moved after the failure");
+  assert.equal(result.error?.details?.bridgeFailure?.code, "analysis_bridge_invalid_json", "bridge failure parsing is unchanged");
+});
+
+test("warnings-only bridge stderr does not hide the stdout fallback or the exit text (#2533)", () => {
+  const viaStdout = runFailingAnalysisBridge([
+    `process.stderr.write(${JSON.stringify(`${ENV_WARN_A}\n`)});`,
+    "process.stdout.write('real stdout failure\\n');",
+  ].join("\n"));
+  assert.equal(viaStdout.error?.code, "openclaw_analysis_failed");
+  const stdoutMessage = String(viaStdout.error?.message ?? "");
+  assert.ok(stdoutMessage.startsWith("real stdout failure"), JSON.stringify(stdoutMessage));
+  assert.ok(stdoutMessage.endsWith(ENV_WARN_A), "the warning is still reported, after the failure");
+  const viaExit = runFailingAnalysisBridge(`process.stderr.write(${JSON.stringify(`${ENV_WARN_A}\n`)});`);
+  const exitMessage = String(viaExit.error?.message ?? "");
+  assert.ok(exitMessage.startsWith("openclaw exited with 1"), JSON.stringify(exitMessage));
+  assert.ok(exitMessage.endsWith(ENV_WARN_A));
+});
+
+// #2533 review item 7: a danso env warning naming ..._MAX_TURNS is not a
+// max-turn exhaustion; only the bridge's terminal_reason marker classifies.
+test("a danso MAX_TURNS env warning in patch-bridge stderr is not classified as max_turns (#2533)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-patch-bridge-max-turn-warning-"));
+  const bin = join(dir, "patch-bridge.mjs");
+  const warning = "danso-a2a-analysis-bridge: ignoring A2A_DANSO_ANALYSIS_MAX_TURNS (not a positive integer); falling back to the default 80";
+  try {
+    const run = (extraLine) => {
+      writeFileSync(bin, [
+        "#!/usr/bin/env node",
+        `process.stderr.write(${JSON.stringify(`${warning}\n`)});`,
+        "process.stderr.write('patch bridge failed: git apply rejected the diff\\n');",
+        extraLine,
+        "process.exit(1);",
+        "",
+      ].join("\n"));
+      chmodSync(bin, 0o755);
+      return handleTask(patchTask({ id: "task-max-turn-warning" }), {
+        PATH: process.env.PATH,
+        A2A_EXECUTOR_MODE: "auto",
+        OPENCLAW_BIN: bin,
+        A2A_OPENCLAW_TIMEOUT_SEC: "5",
+        A2A_NODE_ID: "workerzeta",
+      });
+    };
+    const result = run("");
+    assert.equal(result.error?.code, "openclaw_bridge_failed", JSON.stringify(result.error?.code));
+    assert.equal(result.error?.details?.terminalReason, undefined);
+    assert.ok(String(result.error?.message).startsWith("patch bridge failed"), "the real failure leads");
+    // Positive control: the real marker still classifies through the same path.
+    const control = run("process.stderr.write('terminal_reason=max_turns\\n');");
+    assert.equal(control.error?.code, "openclaw_bridge_max_turns");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// #2533 review item 6: bridge-pin preflight failures, harness settingSources
+// and the unmarked-completion reason are cut without splitting a pair.
+test("harness preflight failure fields never split a surrogate pair (#2533)", () => {
+  assert.equal(typeof __test.analysisHarnessPreflightError, "function");
+  const result = __test.analysisHarnessPreflightError("bridge.mjs", null, [{
+    check: `${"c".repeat(63)}😀`,
+    expected: `${"e".repeat(63)}😀`,
+    actual: `${"a".repeat(63)}😀`,
+    remedy: `${"r".repeat(239)}😀`,
+  }]);
+  const [failure] = result.error.details.failures;
+  assert.deepEqual(failure, { check: "c".repeat(63), expected: "e".repeat(63), actual: "a".repeat(63), remedy: "r".repeat(239) });
+  assert.equal(HANDLER_LONE_SURROGATE.test(result.error.message), false);
+  // End to end through the bare-command pin path (operator env, not validated as hex there).
+  const viaEnv = __test.analysisBridgeArtifactPreflight("bridge", { A2A_BRIDGE_PIN_SHA256: `${"p".repeat(63)}😀` });
+  assert.equal(viaEnv.error.details.failures[0].expected, "p".repeat(63));
+  assert.equal(HANDLER_LONE_SURROGATE.test(JSON.stringify(viaEnv.error.details.failures)), false);
+});
+
+test("normalizeAnalysisHarness settingSources and the unmarked completion reason never split a surrogate pair (#2533)", () => {
+  assert.equal(typeof __test.normalizeAnalysisHarness, "function");
+  const harness = __test.normalizeAnalysisHarness({ harnessFingerprint: "f".repeat(64), settingSources: `${"s".repeat(63)}😀` });
+  assert.equal(harness.settingSources, "s".repeat(63));
+  assert.equal(typeof __test.withUnmarkedCompletion, "function");
+  const unmarked = __test.withUnmarkedCompletion({ error: { code: `${"k".repeat(63)}😀`, message: "m" } });
+  assert.equal(unmarked.error.details.completion.reason, "k".repeat(63));
+  assert.equal(unmarked.error.details.completion.marked, false);
 });

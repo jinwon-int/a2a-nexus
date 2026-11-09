@@ -21,6 +21,9 @@ import {
 	promptViewTelemetry,
 	sourceCarrierBytes,
 } from "./analysis-source-bundle.mjs";
+// Namespace view so a test-only export that does not exist yet fails only
+// the tests that need it.
+import * as sourceBundleModule from "./analysis-source-bundle.mjs";
 
 function withRepo(fn) {
 	const dir = mkdtempSync(join(tmpdir(), "analysis-source-bundle-"));
@@ -287,4 +290,101 @@ test("positiveIntegerEnv falls back unless the value floors to >= 1 (#2528)", ()
 	assert.equal(positiveIntegerEnv(3, 7), 3);
 	// A caller that passes 0 as the fallback (danso) still gets 0 for junk.
 	assert.equal(positiveIntegerEnv("0.5", 0), 0);
+});
+
+function captureStderr(fn) {
+	const original = process.stderr.write;
+	let captured = "";
+	process.stderr.write = (chunk, ...rest) => {
+		captured += String(chunk);
+		const callback = rest.find((arg) => typeof arg === "function");
+		if (callback) callback();
+		return true;
+	};
+	try {
+		fn();
+	} finally {
+		process.stderr.write = original;
+	}
+	return captured;
+}
+
+function resetEnvWarnings() {
+	assert.equal(typeof sourceBundleModule.__resetEnvWarningsForTest, "function", "test-only warn-once reset is exported");
+	sourceBundleModule.__resetEnvWarningsForTest();
+}
+
+// #2531/#2533 D1: a rejected, named value is reported once per name on stderr
+// (name and default only, never the value); return values are unchanged.
+test("positiveIntegerEnv warns once per name for a rejected named value, never printing the value (#2533)", () => {
+	resetEnvWarnings();
+	const out = captureStderr(() => {
+		assert.equal(positiveIntegerEnv("0.5-secretish", 7, "A2A_TEST_LIMIT_A"), 7);
+		assert.equal(positiveIntegerEnv("-3", 7, "A2A_TEST_LIMIT_A"), 7, "same name again: still the fallback");
+		assert.equal(positiveIntegerEnv("abc", 9, "A2A_TEST_LIMIT_B"), 9);
+		assert.equal(positiveIntegerEnv("5", 9, "A2A_TEST_LIMIT_C"), 5, "accepted values are silent");
+	});
+	const lines = out.split("\n").filter(Boolean);
+	assert.deepEqual(lines, [
+		"a2a-analysis-source-bundle: ignoring A2A_TEST_LIMIT_A (not a positive integer); falling back to the default 7",
+		"a2a-analysis-source-bundle: ignoring A2A_TEST_LIMIT_B (not a positive integer); falling back to the default 9",
+	]);
+	for (const value of ["0.5-secretish", "-3", "abc"]) assert.equal(out.includes(value), false, `value ${value} never printed`);
+	resetEnvWarnings();
+	const again = captureStderr(() => positiveIntegerEnv("0", 7, "A2A_TEST_LIMIT_A"));
+	assert.match(again, /ignoring A2A_TEST_LIMIT_A /, "the reset re-arms the warning");
+	resetEnvWarnings();
+});
+
+test("positiveIntegerEnv stays silent for blank/unset values and when no name is given (#2533)", () => {
+	resetEnvWarnings();
+	const out = captureStderr(() => {
+		for (const value of ["", "   ", undefined, null]) {
+			assert.equal(positiveIntegerEnv(value, 7, "A2A_TEST_LIMIT_BLANK"), 7);
+		}
+		assert.equal(positiveIntegerEnv("abc", 7), 7, "no name: silent");
+		assert.equal(positiveIntegerEnv("0.5", 0), 0, "no name, fallback 0: silent");
+	});
+	assert.equal(out, "");
+	resetEnvWarnings();
+});
+
+// #2533 review item 3: the warning prefix names the reporting bridge. The
+// line must keep the shape the task handler moves after the real failure.
+test("positiveIntegerEnv uses the { source } prefix for its warning, default a2a-analysis-source-bundle (#2533)", () => {
+	const HANDLER_ENV_WARNING_LINE_RE = /^[\w.-]+: ignoring [A-Z0-9_]+ \(not a positive integer\)/;
+	resetEnvWarnings();
+	const out = captureStderr(() => {
+		assert.equal(positiveIntegerEnv("junk", 30, "A2A_TEST_SOURCE_A", { source: "danso-a2a-analysis-bridge" }), 30);
+		assert.equal(positiveIntegerEnv("junk", 31, "A2A_TEST_SOURCE_B", {}), 31);
+		assert.equal(positiveIntegerEnv("junk", 32, "A2A_TEST_SOURCE_C"), 32);
+		assert.equal(positiveIntegerEnv("12", 33, "A2A_TEST_SOURCE_D", { source: "danso-a2a-analysis-bridge" }), 12);
+	});
+	const lines = out.split("\n").filter(Boolean);
+	assert.deepEqual(lines, [
+		"danso-a2a-analysis-bridge: ignoring A2A_TEST_SOURCE_A (not a positive integer); falling back to the default 30",
+		"a2a-analysis-source-bundle: ignoring A2A_TEST_SOURCE_B (not a positive integer); falling back to the default 31",
+		"a2a-analysis-source-bundle: ignoring A2A_TEST_SOURCE_C (not a positive integer); falling back to the default 32",
+	]);
+	for (const line of lines) assert.match(line, HANDLER_ENV_WARNING_LINE_RE);
+	resetEnvWarnings();
+});
+
+// #2533 D2: collectSourceBundle names the variable it actually read.
+test("collectSourceBundle warns with the prefixed name when set, else the A2A_HERMES_ANALYSIS_ name (#2533)", () => {
+	resetEnvWarnings();
+	const prefixed = captureStderr(() => {
+		const bundle = collectSourceBundle({}, { A2A_DANSO_ANALYSIS_MAX_FILES: "zero", A2A_HERMES_ANALYSIS_MAX_FILES: "3" }, { prefix: "A2A_DANSO_ANALYSIS" });
+		assert.equal(bundle.limits.maxFiles, 16, "a rejected prefixed value falls back to the default, as before");
+	});
+	assert.equal(prefixed, "a2a-analysis-source-bundle: ignoring A2A_DANSO_ANALYSIS_MAX_FILES (not a positive integer); falling back to the default 16\n");
+	const hermesOnly = captureStderr(() => {
+		const bundle = collectSourceBundle({}, { A2A_HERMES_ANALYSIS_MAX_TREE_ENTRIES: "0.5" }, { prefix: "A2A_DANSO_ANALYSIS" });
+		assert.equal(bundle.limits.maxTreeEntries, 80);
+	});
+	assert.equal(hermesOnly, "a2a-analysis-source-bundle: ignoring A2A_HERMES_ANALYSIS_MAX_TREE_ENTRIES (not a positive integer); falling back to the default 80\n");
+	assert.equal(hermesOnly.includes("0.5"), false);
+	const silent = captureStderr(() => collectSourceBundle({}, { A2A_DANSO_ANALYSIS_MAX_FILES: "4" }, { prefix: "A2A_DANSO_ANALYSIS" }));
+	assert.equal(silent, "");
+	resetEnvWarnings();
 });

@@ -20,6 +20,7 @@
 //   A2A_SKILLS_TREE_SHA256_PIN  expected skills digest (preflight)
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { truncateUtf16Safe } from "./utf8-byte-budget.mjs";
 
 // v2 (#2426): the fingerprint also covers the Claude lane isolation mode
 // (#2422/#2424 `--setting-sources`, `--strict-mcp-config`) and whether the lane
@@ -86,7 +87,7 @@ export function normalizeHarnessIsolation(isolation) {
   const rawSources = Array.isArray(isolation.settingSources)
     ? isolation.settingSources.map((part) => text(part)).filter(Boolean).join(",")
     : isolation.settingSources;
-  const settingSources = typeof rawSources === "string" ? rawSources.trim().slice(0, FIELD_MAX) : null;
+  const settingSources = typeof rawSources === "string" ? truncateUtf16Safe(rawSources.trim(), FIELD_MAX) : null;
   const strictMcpConfig = typeof isolation.strictMcpConfig === "boolean" ? isolation.strictMcpConfig : null;
   const laneSkill = LANE_SKILL_STATES.includes(isolation.laneSkill) ? isolation.laneSkill : null;
   return { settingSources, strictMcpConfig, laneSkill };
@@ -116,8 +117,8 @@ export function buildAnalysisHarness({ bridgeFile, runtime, model, isolation, en
   const skills = skillsTreeSha256FromRegistry(env.A2A_SKILLS_REGISTRY_PATH);
   const fields = {
     bridgeFileSha256,
-    runtime: text(runtime).slice(0, FIELD_MAX),
-    model: text(model).slice(0, FIELD_MAX) || null,
+    runtime: truncateUtf16Safe(text(runtime), FIELD_MAX),
+    model: truncateUtf16Safe(text(model), FIELD_MAX) || null,
     skillsTreeSha256: skills.sha256,
     ...normalizeHarnessIsolation(isolation),
   };
@@ -162,7 +163,8 @@ export function analysisHarnessPreflight({ bridgeFile, env = process.env }) {
     if (!SHA256_RE.test(bridgePin)) {
       failures.push({
         check: "bridge_pin",
-        expected: bridgePin.slice(0, 64),
+        // Not a valid sha256 here, so free text: cut surrogate-safely (#2533).
+        expected: truncateUtf16Safe(bridgePin, 64),
         actual,
         remedy: "A2A_BRIDGE_PIN_SHA256 must be a 64-char lower-case sha256; fix the worker env.",
       });
@@ -181,7 +183,7 @@ export function analysisHarnessPreflight({ bridgeFile, env = process.env }) {
     if (skills.sha256 !== skillsPin) {
       failures.push({
         check: "skills_tree_pin",
-        expected: skillsPin.slice(0, 64),
+        expected: truncateUtf16Safe(skillsPin, 64),
         actual: skills.sha256,
         remedy: skills.sha256
           ? "Installed skills registry digest differs from A2A_SKILLS_TREE_SHA256_PIN; resync skills or update the pin after review."
