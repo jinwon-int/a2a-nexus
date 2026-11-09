@@ -48,6 +48,16 @@
 - [ ] Add goal event log for auditing.
 - [ ] Validate with dry-run before any live automation.
 
+## Reconciliation with the broker goal model (#2517)
+
+- [x] Planner `state` and broker `GoalStatus` documented as distinct fields, with the
+  consistent pairs and the "broker status gates dispatch" rule
+  (`contracts/a2a/goal-mode-lifecycle.md` §2.5).
+- [x] Optional `brokerGoal { goalId, status, observedAt? }` added to `schema.json`; the
+  fixture's example run is linked to a broker goal.
+- [x] Broker test `goal-mode-schema-goal-status.test.ts` keeps the schema's
+  `brokerGoal.status` enum equal to `GOAL_STATUS_VALUES`.
+
 ## Final closeout checklist
 
 - [ ] Exactly one finalizer made the closeout decision.

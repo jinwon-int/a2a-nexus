@@ -97,6 +97,15 @@ existing bounded task workflows into persistent objective execution.
 - [ ] Acceptance checklist is included.
 - [ ] No runtime automation is enabled by this PR.
 
+## Relation to the broker goal model (#2517)
+
+The broker ships its own goal record (`GoalRecord` / `GoalStatus`, `GET /goals`, #2499).
+This design does not replace it. The goal object's `state` is the planner's run state;
+the broker's `GoalStatus` is the goal's outcome status and stays the source of truth. A
+run links to a broker goal through the optional `brokerGoal` field, and the planner
+dispatches only while that goal is `pursuing`. The mapping is in
+[`goal-mode-lifecycle.md` §2.5](../../../contracts/a2a/goal-mode-lifecycle.md#25-planner-state-vs-broker-goalstatus-2517).
+
 ## Safety and approval boundaries
 
 ### Secrets and private data

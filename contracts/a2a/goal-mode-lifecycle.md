@@ -27,7 +27,7 @@ of the event log and safe snapshot-based resume.
 | `goalRunId` | `string` | yes | Stable unique identifier. Format: `a2a-goal-<descriptor>-<utc-timestamp>`. |
 | `schemaVersion` | `string` | yes | Schema version identifier. Must be `a2a.goal-mode.v1`. |
 | `objective` | `object` | yes | Immutable objective descriptor (see §1.2). |
-| `state` | `string` | yes | Current lifecycle state. One of the values in §2. |
+| `state` | `string` | yes | Current planner run state. One of the values in §2. This is not the goal's outcome status; see §2.5. |
 | `stateHistory` | `StateEntry[]` | yes | Ordered append-only list of state transitions. |
 | `eventLog` | `EventEntry[]` | yes | Append-only ordered event log. |
 | `planner` | `object` | yes | Planner loop state (see §4). |
@@ -37,6 +37,7 @@ of the event log and safe snapshot-based resume.
 | `createdAt` | `string` (ISO-8601) | yes | Goal creation timestamp. |
 | `updatedAt` | `string` (ISO-8601) | yes | Last mutation timestamp. |
 | `completedAt` | `string` (ISO-8601) | no | Terminal state timestamp. |
+| `brokerGoal` | `object` | no | Link to the broker goal this run pursues: `goalId`, the broker `GoalStatus` last observed as `status`, and optional `observedAt`. See §2.5. |
 
 ### 1.2 Objective descriptor (`objective`)
 
@@ -192,6 +193,50 @@ The goal object must never contain:
 A goal that remains in `planning` or `dispatching` beyond `staleDetectionSeconds`
 without any progress logged in `eventLog` should be flagged as potentially stale.
 The operator is notified but the state is not automatically advanced.
+
+### 2.5 Planner state vs. broker `GoalStatus` (#2517)
+
+There are two goal vocabularies. They describe different things, and both stay:
+
+- **`state` (this contract)** is the planner's *run* state: what the Goal Mode planner
+  is doing right now (planning, dispatching, waiting for an approval). It belongs to
+  this design and is not implemented.
+- **`GoalStatus` (broker)** is the goal's *outcome* status, on the broker's shipped
+  `GoalRecord` (`packages/broker/src/core/types.ts`, persisted in `broker_goals` since
+  schema v14, served at `GET /goals` and `GET /goals/:id`). Its values are `pursuing`,
+  `paused`, `achieved`, `blocked`, `unmet`, `budget_limited` and `cleared`. See
+  `packages/broker/docs/goal-objective-lifecycle.md`.
+
+A goal run that pursues a broker goal records the link in the optional `brokerGoal`
+field: `{ goalId, status, observedAt? }`. `status` is a copy of the broker's
+`GoalStatus` at `observedAt`. It is never the source of truth: the broker's record is.
+
+**Rule: the broker status gates the planner.** The planner may dispatch slices only
+while the linked broker goal is `pursuing`. Any other broker status stops dispatch,
+whatever the planner state says. The planner re-reads the broker goal before each
+dispatch.
+
+Consistent pairs while a run is linked:
+
+| Planner `state` | Broker `GoalStatus` | Notes |
+| --- | --- | --- |
+| `idle`, `planning`, `dispatching`, `collecting_evidence` | `pursuing` | Normal work. |
+| `awaiting_approval` | `pursuing` | An approval gate stops the planner, not the goal. Child tasks already running continue. An operator who wants the goal itself held sets the broker goal to `paused`. |
+| `blocked` | `blocked` | Both mean "cannot progress, may be resolved". An operator force-reset of the run (`blocked` → `idle`) goes with the broker goal returning to `pursuing`. |
+| `completed` | `achieved` | The planner's completion decision is written to the broker as `objective_satisfied`. |
+| `cancelled` | `unmet` (reason `operator_requested`), later `cleared` | Cancelling abandons the objective without meeting it. Retention may later clear the broker goal. |
+
+Broker statuses with no planner counterpart:
+
+| Broker `GoalStatus` | What the planner does |
+| --- | --- |
+| `paused` | Holds in its current state and dispatches nothing until the goal is `pursuing` again. |
+| `budget_limited` | Same as `paused`. A goal limited by a monthly spend budget returns to `pursuing` by itself when the budget is no longer exhausted (#2499 slice 3b-2); the planner then resumes. |
+| `unmet`, `cleared` (set outside the planner) | Ends the run as `cancelled`, recording the broker status in the `eventLog`. |
+
+The `budgetLimits` in §1.4 (slices, concurrency, runtime) are planner limits. They
+are separate from the broker's USD and token spend budgets (`GET /budgets`), which
+apply to the linked broker goal and its tasks.
 
 ---
 

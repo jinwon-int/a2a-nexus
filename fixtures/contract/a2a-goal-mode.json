@@ -7,6 +7,10 @@
   "failClosed": true,
   "runtimeAutomationEnabled": false,
   "defaultDecision": "NO_GO",
+  "brokerGoalStatuses": [
+    "pursuing", "paused", "achieved", "blocked",
+    "unmet", "budget_limited", "cleared"
+  ],
   "lifecycleStates": [
     "idle", "planning", "dispatching", "collecting_evidence",
     "awaiting_approval", "blocked", "completed", "cancelled"
@@ -216,7 +220,12 @@
     "idempotencyKey": "a2a-goal-mode:create:broker-alpha:add-public-quickstart-guide:20260525T120000Z",
     "createdAt": "2026-05-25T12:00:00Z",
     "updatedAt": "2026-05-25T13:00:05Z",
-    "completedAt": "2026-05-25T13:00:05Z"
+    "completedAt": "2026-05-25T13:00:05Z",
+    "brokerGoal": {
+      "goalId": "quickstart-guide",
+      "status": "achieved",
+      "observedAt": "2026-05-25T13:00:05Z"
+    }
   },
   "approvalGateExample": {
     "gateType": "deploy",
