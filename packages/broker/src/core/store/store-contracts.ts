@@ -134,6 +134,15 @@ export interface BrokerStateStore {
    * before their own mutation, so an earlier call's write is never theirs.
    */
   latestQueuedWrite?(): Promise<unknown> | undefined;
+  /**
+   * #2523 (queued stores): drop the writes that have already settled from
+   * the set awaitDurablePersistenceAck reports on. The broker calls it when
+   * a queued recovery save acks and clears its degraded state: the queue is
+   * FIFO, so every write queued before the recovery save has settled, and the
+   * recovery save rewrote disk from memory, so their failures are superseded
+   * and must not fail the next, unrelated ACK.
+   */
+  supersedeSettledWrites?(): void;
   getPersistenceInfo?(): BrokerPersistenceInfo;
   /** Atomically record first use of a live-approval scope key. Returns false on replay. */
   consumeLiveApprovalKey?(key: string, consumedAt: string): boolean;

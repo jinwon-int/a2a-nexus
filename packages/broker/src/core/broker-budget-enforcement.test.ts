@@ -1962,6 +1962,13 @@ for (const wiring of WIRINGS) {
              WHEN OLD.task_id IN ('t-retry', 't-abandon') BEGIN SELECT RAISE(ABORT, 'metering write failed'); END`);
       for (const id of ["t-retry", "t-abandon"]) {
         assert.throws(() => quiet(() => h.broker.completeTask(id, "worker-a", { summary: "late", output: TELEMETRY })), /metering write failed/);
+        // #2523: the failed save now keeps its metering in the pending buffer
+        // and degrades persistence. This test is about the restage pass that
+        // repairs a metering lost before #2523, so simulate that loss: drop
+        // the kept rows and let a recovery save (it writes no metering) clear
+        // the state.
+        (h.broker["pendingHot"] as PendingHotStateBuffer).clear();
+        assert.equal(h.broker.retryDegradedPersistence(), "ok");
       }
       const settled = h.broker["lateMeteringSettled"] as Set<string>;
       const attempts = h.broker["lateMeteringAttempts"] as Map<string, number>;
@@ -2651,8 +2658,14 @@ test("#2520 (worker-thread): a budget insert that races another writer's row for
     });
     console.error = () => {};
     await assert.rejects(() => proxy.awaitDurablePersistenceAck(), /UNIQUE/);
-    console.error = originalError;
     await new Promise((resolve) => setImmediate(resolve));
+    // #2523: the rejected queued write degraded persistence; goal transitions
+    // are refused until the queued recovery save acks.
+    assert.equal(broker.getDurableWriteHealth().state, "degraded");
+    assert.equal(quiet(() => broker.retryDegradedPersistence()), "degraded", "the recovery save is queued");
+    await proxy.awaitDurablePersistenceAck();
+    assert.equal(broker.getDurableWriteHealth().state, "ok", "the recovery save acked");
+    console.error = originalError;
     exec("UPDATE broker_metadata SET value = '2000-01' WHERE key = 'spend_ledger_first_period'");
     // Until the route resyncs, the in-memory budget limits the goal.
     assert.deepEqual(quiet(() => broker.applyGoalBudgetLimits())?.limited, ["goal-1"]);
@@ -2660,6 +2673,24 @@ test("#2520 (worker-thread): a budget insert that races another writer's row for
     broker.reloadBudgetFromStore("b-goal", generation);
     assert.equal(broker.getBudget("b-goal"), undefined, "the write did not land: dropped from memory");
     assert.deepEqual(broker.listAuditEvents({ action: "budget.created" }), [], "and its audit event");
+    // #2523 x #2520: the resume's queued write fails too. The goal stays
+    // budget_limited on disk (the overlay is dropped), persistence degrades,
+    // and the orphan check is re-armed so a sweep after recovery resumes it.
+    exec(`CREATE TRIGGER resume_fail BEFORE UPDATE ON broker_goals
+          WHEN NEW.status = 'pursuing' BEGIN SELECT RAISE(ABORT, 'resume write failed'); END`);
+    assert.deepEqual(quiet(() => broker.applyGoalBudgetLimits())?.resumed, ["goal-1"], "the resume is attempted");
+    console.error = () => {};
+    await assert.rejects(() => proxy.awaitDurablePersistenceAck(), /resume write failed/);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(broker.getGoal("goal-1")?.status, "budget_limited", "the failed resume did not land");
+    assert.equal(broker.getDurableWriteHealth().state, "degraded");
+    // While degraded the stale-reaper sweep skips the goal limits (server.ts);
+    // nothing here clears the re-armed orphan check.
+    exec("DROP TRIGGER resume_fail");
+    assert.equal(quiet(() => broker.retryDegradedPersistence()), "degraded");
+    await proxy.awaitDurablePersistenceAck();
+    assert.equal(broker.getDurableWriteHealth().state, "ok");
+    console.error = originalError;
     assert.deepEqual(quiet(() => broker.applyGoalBudgetLimits())?.resumed, ["goal-1"], "the goal it limited is not left budget_limited");
     await proxy.awaitDurablePersistenceAck();
     assert.equal(broker.getGoal("goal-1")?.status, "pursuing");

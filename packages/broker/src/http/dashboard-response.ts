@@ -290,5 +290,7 @@ export function buildAlertScan(input: {
     hotTableGrowth: input.hotTableGrowth,
     // #2499 slice 4: the budget alert set cached by the stale-reaper sweep.
     budgetAlerts: input.broker.getBudgetAlerts(),
+    // #2523: open while a failed durable write keeps the broker refusing mutations.
+    persistenceAlerts: input.broker.getPersistenceAlerts(),
   });
 }

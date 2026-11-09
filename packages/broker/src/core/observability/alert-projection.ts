@@ -40,7 +40,9 @@ export type AlertKind =
   | "hot_table_growth"
   // #2499 slice 4: a monthly spend budget at its warn threshold / exhausted.
   | "budget_warn"
-  | "budget_exhausted";
+  | "budget_exhausted"
+  // #2523: a durable write failed; the broker refuses mutations until a recovery save succeeds.
+  | "persistence_degraded";
 
 /** #2499 slice 4: `budget` subjects are `${budgetId}:${periodKey}` (one alert per budget and period). */
 export type AlertSubjectKind = "task" | "worker" | "gateway" | "storage" | "budget";
@@ -114,6 +116,8 @@ export interface AlertProjectionOptions {
    * projection reads no store.
    */
   budgetAlerts?: Alert[];
+  /** #2523: the broker's persistence alert (InMemoryA2ABroker.getPersistenceAlerts), taken as given. */
+  persistenceAlerts?: Alert[];
   /** Current time override (for testing). */
   nowMs?: number;
 }
@@ -186,6 +190,7 @@ export function projectAlerts(
 
   // #2499 slice 4: budget alerts come precomputed (no store read here).
   alerts.push(...(options?.budgetAlerts ?? []));
+  alerts.push(...(options?.persistenceAlerts ?? []));
 
   for (const worker of options?.workers ?? []) {
     const lastSeenMs = Date.parse(worker.lastSeenAt);
@@ -394,6 +399,48 @@ export function projectBudgetAlert(input: {
       enforce: budget.enforce,
       configuredMode: input.enforcement.configuredMode,
       effectiveMode: input.enforcement.effectiveMode,
+    },
+  };
+}
+
+/**
+ * #2523: the fields of the broker's durable-write health the alert reads (a
+ * narrow port, so observability does not depend on the store domain).
+ */
+export interface PersistenceDegradedAlertInput {
+  state: "ok" | "degraded";
+  degradedSince: string | null;
+  lastFailure: { at: string; topology: string; errorClass: string; message: string } | null;
+  failuresTotal: number;
+  recoveryProbe: { consecutiveFailures: number; nextAt: string | null };
+}
+
+/**
+ * #2523: the critical alert while broker persistence is degraded (a durable
+ * write failed, so mutations are refused with 503 `state_unavailable`), else
+ * null. One subject per broker, so the operator differ opens it when the
+ * state opens and resolves it when a recovery save clears it. Pure.
+ */
+export function projectPersistenceDegradedAlert(health: PersistenceDegradedAlertInput): Alert | null {
+  if (health.state !== "degraded") return null;
+  return {
+    id: "persistence_degraded:broker-persistence",
+    kind: "persistence_degraded",
+    severity: "critical",
+    subject: { kind: "storage", id: "broker-persistence" },
+    summary: `Broker persistence degraded (${health.lastFailure?.errorClass ?? "unknown error"}, `
+      + `${health.recoveryProbe.consecutiveFailures} failed recovery save(s)): mutations are refused with 503 until a recovery save succeeds`,
+    detectedAt: health.degradedSince ?? health.lastFailure?.at ?? new Date(0).toISOString(),
+    metadata: {
+      degradedSince: health.degradedSince,
+      lastFailureAt: health.lastFailure?.at ?? null,
+      lastFailureTopology: health.lastFailure?.topology ?? null,
+      lastFailureErrorClass: health.lastFailure?.errorClass ?? null,
+      lastFailureMessage: health.lastFailure?.message ?? null,
+      failuresTotal: health.failuresTotal,
+      consecutiveRecoveryFailures: health.recoveryProbe.consecutiveFailures,
+      nextRecoveryAt: health.recoveryProbe.nextAt,
+      operatorAction: "see packages/broker/docs/persistence-durability.md (Runbook: persistence degraded)",
     },
   };
 }

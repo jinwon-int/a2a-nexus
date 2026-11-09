@@ -17,6 +17,7 @@ import { optionalString } from "../request-parsers.js";
 import { cleanupPlanOptionsFromUrl, cleanupPlanOptionsFromBody } from "./request-params.js";
 import { readJson } from "./body.js";
 import { sendJson } from "./response.js";
+import { assertDurableWritesAvailable } from "./error-mapping.js";
 
 export interface OperatorCleanupRouteContext {
   method: string | undefined;
@@ -68,6 +69,9 @@ export async function handleOperatorCleanupExecuteRequest(ctx: OperatorCleanupRo
     }, { "cache-control": "no-store" });
     return;
   }
+  // #2523: this route deletes store rows directly; refuse (503) while a
+  // failed durable write keeps persistence degraded.
+  assertDurableWritesAvailable(ctx.stateStore);
   const result = executeBrokerCleanupPlan(ctx.stateStore, plan, executionOptions);
   sendJson(ctx.res, 200, { ok: true, plan, result }, { "cache-control": "no-store" });
 }

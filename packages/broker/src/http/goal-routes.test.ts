@@ -24,7 +24,7 @@ import test from "node:test";
 import { BrokerError, InMemoryA2ABroker } from "../core/broker.js";
 import { SqliteBrokerStateStore, type BrokerStateStore } from "../core/store/store.js";
 import type { RequesterIdentity } from "../core/transport/request-security.js";
-import { jsonHeaders, registerTestWorker, startTestServer, withEnv } from "../server-test-helpers.js";
+import { jsonHeaders, registerTestWorker, startTestServer, waitFor, withEnv } from "../server-test-helpers.js";
 import { handleGoalRoutesIfMatched } from "./goal-routes.js";
 
 class CapturingResponse extends EventEmitter {
@@ -1268,6 +1268,13 @@ test("7f (worker-thread): a budget write whose queued save fails is answered wit
         "the failed write's in-memory audit event is gone",
       );
       exec("DROP TRIGGER budget_fail");
+      // #2523: the failed write degraded persistence. The first retry is
+      // refused while its recovery save is queued; once that acks, the retry
+      // goes through.
+      const refused = await post();
+      assert.equal(refused.status, 503, "refused until the queued recovery save acks");
+      assert.equal(((await refused.json()) as { error: { code: string } }).error.code, "state_unavailable");
+      await waitFor(() => server.runtime.broker.getDurableWriteHealth().state === "ok", 5_000);
       assert.equal((await post()).status, 201, "a retry is not a false 409");
     } finally {
       console.error = originalError;

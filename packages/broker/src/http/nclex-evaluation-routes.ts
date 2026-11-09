@@ -33,6 +33,8 @@ export interface NclexEvaluationRouteContext {
   requesterIdentity: RequesterIdentity | null;
   /** Called after a NEW receipt is stored — wires durable persistence (#1724). */
   persistReceipts?: () => void;
+  /** #2523: the broker's fail-closed gate (503 while persistence is degraded). */
+  assertDurableWritesAvailable?: () => void;
 }
 
 function truthyParam(value: string | null, fallback: boolean): boolean {
@@ -59,6 +61,9 @@ export async function handleNclexEvaluationRoutesIfMatched(
     if (!verification.ok) {
       throw new BrokerError("bad_request", `receipt rejected: ${verification.reason}`);
     }
+    // #2523: refuse before the receipt enters memory (a duplicate would
+    // otherwise answer 200 with nothing persisted).
+    ctx.assertDurableWritesAvailable?.();
     const countBefore = ctx.store.count();
     const record = ctx.store.add(verification.receipt);
     if (ctx.store.count() > countBefore) {

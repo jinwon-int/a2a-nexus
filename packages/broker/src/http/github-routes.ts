@@ -21,6 +21,8 @@ export interface GitHubRouteContext {
   githubIngestion: GitHubIngestionService;
   githubWebhookSecret: string | undefined;
   boundedPoller: BoundedPoller | undefined;
+  /** #2523: the broker's fail-closed gate (503 while persistence is degraded). */
+  assertDurableWritesAvailable?: () => void;
 }
 
 /** POST /github/webhook — verify, parse, and ingest a GitHub webhook delivery. */
@@ -57,6 +59,9 @@ export async function handleGitHubWebhookRequest(ctx: GitHubRouteContext): Promi
     throw new BrokerError("bad_request", "unsupported or malformed webhook payload");
   }
 
+  // #2523: refuse before ingestion (a deduped delivery would otherwise
+  // answer 200 with nothing persisted).
+  ctx.assertDurableWritesAvailable?.();
   const result = ctx.githubIngestion.ingest(parsed.event, parsed.ctx);
   sendJson(res, result.deduped ? 200 : 201, result);
 }

@@ -177,6 +177,12 @@ export interface InMemoryA2ABrokerOptions {
    */
   workerHeartbeatPersistIntervalMs?: number;
   /**
+   * #2523: while persistence is degraded (a durable write failed), the
+   * minimum interval between recovery saves. The first recovery save after a
+   * failure runs on the next mutation regardless. Default: 1000 ms.
+   */
+  persistenceRecoveryProbeIntervalMs?: number;
+  /**
    * Stable broker identity for ownership-guarded tasks. When a task carries
    * brokerOfRecord metadata, lifecycle mutation is accepted only by a broker
    * configured with the same id.

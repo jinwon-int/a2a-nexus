@@ -26,7 +26,33 @@ export function sendError(res: ServerResponse<IncomingMessage>, error: unknown):
   });
 }
 
+/**
+ * #2523: a fail-closed check run at the ACK boundary of every mutating route,
+ * keyed by the store the routes acknowledge against. server.ts registers the
+ * broker's (InMemoryA2ABroker.assertDurableWritesAvailable): while a failed
+ * durable write keeps persistence degraded it throws 503 `state_unavailable`
+ * unless a recovery save just succeeded. This covers the replies that change
+ * nothing because memory already holds the transition (an idempotent
+ * `complete` retry): without it such a retry answered 200 for a transition
+ * disk never got.
+ */
+const durableAckGates = new WeakMap<BrokerStateStore, () => void>();
+
+export function registerDurableAckGate(stateStore: BrokerStateStore, gate: () => void): void {
+  durableAckGates.set(stateStore, gate);
+}
+
+/**
+ * #2523: run the registered fail-closed gate alone, for a route that writes
+ * the store directly instead of acknowledging a broker mutation (it refuses
+ * before the write).
+ */
+export function assertDurableWritesAvailable(stateStore: BrokerStateStore): void {
+  durableAckGates.get(stateStore)?.();
+}
+
 export async function awaitDurablePersistenceAck(stateStore: BrokerStateStore): Promise<void> {
+  assertDurableWritesAvailable(stateStore);
   const awaitAck = stateStore.awaitDurablePersistenceAck;
   if (!awaitAck) {
     return;

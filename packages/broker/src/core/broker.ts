@@ -13,7 +13,13 @@ import {
   type TaskAttemptHistoryPreflightResponseV1,
 } from "../task-attempt/views.js";
 import { HeartbeatPersistThrottle } from "./claim/heartbeat-persist-throttle.js";
-import { PendingHotStateBuffer } from "./store/pending-hot-state-buffer.js";
+import {
+  DurableWriteHealth,
+  PendingHotStateBuffer,
+  withoutHotTableHints,
+  type DurableWriteHealthSnapshot,
+  type DurableWriteTopology,
+} from "./store/pending-hot-state-buffer.js";
 import { computeRetainedRecordIds } from "./store/broker-retention-reachability.js";
 import {
   countStateSaveHints,
@@ -85,7 +91,7 @@ import {
   uniqueIds,
 } from "./broker-helpers.js";
 import { buildBrokerDashboard } from "./observability/broker-dashboard.js";
-import { projectBudgetAlert, type Alert } from "./observability/alert-projection.js";
+import { projectBudgetAlert, projectPersistenceDegradedAlert, type Alert } from "./observability/alert-projection.js";
 import {
   addBrokerExchangeMessage,
   listBrokerExchangeMessages,
@@ -176,6 +182,7 @@ import type { ProposalWriteContext } from "./broker-proposal-write.js";
 import {
   CURRENT_BROKER_STATE_VERSION,
   type BrokerSnapshot,
+  type BrokerStateSaveHints,
   type BrokerStateStore,
 } from "./store/store.js";
 import {
@@ -436,6 +443,14 @@ export type {
 } from "./broker-contracts.js";
 
 const HOT_PERSIST_FULL_RETENTION_INTERVAL_MS = 5 * 60_000;
+/** #2523: minimum interval between recovery saves while persistence is degraded. */
+const DEFAULT_PERSISTENCE_RECOVERY_PROBE_INTERVAL_MS = 1_000;
+/**
+ * #2523: categories a failed queued write does not put back. Their owners
+ * resync memory from the store when that write fails (reloadBudgetFromStore,
+ * the goal overlay drop), so a restored row would reach disk without memory.
+ */
+const QUEUED_RESTORE_EXCEPT = ["budgets", "goals"] as const;
 /** Default bound for goal listings on stores without a goal table (matches the SQLite hot-read default). */
 const DEFAULT_GOAL_LIST_LIMIT = 1_000;
 /** Ids per spend reconciliation page and rows per repair write (#2499 slice 3a). */
@@ -612,6 +627,15 @@ export class InMemoryA2ABroker {
   private readonly goals = new Map<string, GoalRecord>();
   private readonly taskEvents: TaskEventDispatcher;
   private readonly pendingHot = new PendingHotStateBuffer();
+  /** #2523: fail-closed persistence state (see commitMutation / persistState). */
+  private readonly durableWrites: DurableWriteHealth;
+  /**
+   * #2523: the outermost commitMutation in progress (undefined outside one):
+   * the hints persistState drained in it and whether persistState ran. A
+   * throw out of a rolled-back batch puts the hints back (the transaction
+   * that would have committed them is gone).
+   */
+  private mutationBatch: { drained: BrokerStateSaveHints[]; persisted: boolean } | undefined;
   private readonly workerHeartbeatPersist = new HeartbeatPersistThrottle();
   private readonly workerChurn = new WorkerIdentityChurnTracker();
   private readonly taskHeartbeatAuditPersist = new HeartbeatPersistThrottle();
@@ -808,6 +832,9 @@ export class InMemoryA2ABroker {
     options: InMemoryA2ABrokerOptions = {},
   ) {
     this.resourceAwareOnboardingMode = options.resourceAwareOnboardingMode ?? "warn";
+    this.durableWrites = new DurableWriteHealth(
+      Math.max(0, options.persistenceRecoveryProbeIntervalMs ?? DEFAULT_PERSISTENCE_RECOVERY_PROBE_INTERVAL_MS),
+    );
     this.taskRepository = options.taskRepository;
     this.auditRepository = options.auditRepository;
     this.tombstoneRepository = options.tombstoneRepository;
@@ -2676,6 +2703,16 @@ export class InMemoryA2ABroker {
     }
     queued.then(dropOverlay, () => {
       dropOverlay();
+      // #2523 x #2520: a resume whose queued write failed leaves the goal
+      // budget_limited on disk, though the walk counted it as resumed and may
+      // have ended the orphan check. Re-arm it, so a sweep after the recovery
+      // save walks the budget_limited goals again (a failed limit needs
+      // nothing: the regular budget pass re-evaluates it).
+      if (to === "pursuing") {
+        this.goalBudgetOrphanCheck = true;
+        this.goalResumeCursor = undefined;
+        this.goalResumeWalkFailed = false;
+      }
       if (auditEventId) this.auditEvents.delete(auditEventId);
       this.warnRateLimited("broker.budget.goal_write_failed", { event: "broker.budget.goal_write_failed", goalId: goal.id });
     });
@@ -5666,6 +5703,16 @@ export class InMemoryA2ABroker {
         ...flags,
       });
     };
+    if (this.mutationBatch) this.mutationBatch.persisted = true;
+    // #2523: while persistence is degraded every write is a recovery save.
+    // commitMutation refuses before its mutation runs, so only a mutation
+    // outside one gets here: its memory change is made and its rows are
+    // staged, and the recovery save carries them, or the caller gets 503.
+    if (this.durableWrites.degraded) {
+      if (this.runRecoverySave() === "refused") throw this.persistenceDegradedError();
+      finish("full", { retentionApplied: true, snapshotExported: true, saveHints: undefined });
+      return;
+    }
     if (
       !options?.forceFull &&
       hotSave &&
@@ -5674,7 +5721,7 @@ export class InMemoryA2ABroker {
     ) {
       const hints = this.pendingHot.consumeAll();
       if (hints) {
-        hotSave.call(this.stateStore, hints);
+        this.writeDurably(hints, () => hotSave.call(this.stateStore, hints));
         finish("hot", { retentionApplied: false, snapshotExported: false, saveHints: countStateSaveHints(hints) });
         return;
       }
@@ -5698,12 +5745,190 @@ export class InMemoryA2ABroker {
     this.lastFullRetentionPersistAtMs = startedAtMs;
     const snapshot = this.exportSnapshot();
     const hints = this.pendingHot.consumeRetained(snapshot);
-    this.stateStore?.save(snapshot, hints);
+    this.writeDurably(hints, () => this.stateStore?.save(snapshot, hints));
     finish("full", {
       retentionApplied: true,
       snapshotExported: true,
       saveHints: hints ? countStateSaveHints(hints) : undefined,
     });
+  }
+
+  /**
+   * #2523: run one store write that carries drained `hints`, so a failure
+   * never loses them. Inside a commitMutation the hints are recorded on the
+   * batch and a throw propagates (commitMutation puts them back and opens the
+   * degraded state). Outside one, a synchronous failure is handled here. A
+   * queued (worker-thread) write that fails later puts its hints back, except
+   * budgets and goals (their owners resync from the store), and opens the
+   * degraded state when its rejection arrives.
+   */
+  private writeDurably(hints: BrokerStateSaveHints | undefined, write: () => void): void {
+    const store = this.stateStore;
+    if (!store) return;
+    const before = store.latestQueuedWrite?.();
+    if (hints) this.mutationBatch?.drained.push(hints);
+    if (this.mutationBatch) {
+      write();
+    } else {
+      try {
+        write();
+      } catch (error) {
+        if (hints) this.pendingHot.restore(hints);
+        this.recordDurableWriteFailure(error, "in_process");
+        throw error;
+      }
+    }
+    this.queuedWriteSince(before)?.then(undefined, (error: unknown) => {
+      if (hints) this.pendingHot.restore(hints, { except: QUEUED_RESTORE_EXCEPT });
+      this.recordDurableWriteFailure(error, "queued");
+    });
+  }
+
+  /**
+   * #2523: one recovery save, the only write a degraded broker issues:
+   * retention, a snapshot of memory, and every pending spend, metering,
+   * budget and goal row. The hot-table hints are left out on purpose, so the
+   * store takes its full-write path and rewrites every hot table from the
+   * snapshot: a hot row whose write rolled back (a repository write included,
+   * which leaves no hint) is written again, and a stale restored hint can
+   * never overwrite a newer row. "cleared" when an in-process save
+   * succeeded; "queued" when a queued save was issued (the state clears when
+   * it acks, if no other write failed meanwhile); "refused" when no probe may
+   * run yet or the save failed.
+   */
+  private runRecoverySave(): "cleared" | "queued" | "refused" {
+    const store = this.stateStore;
+    if (!store) return "cleared";
+    const token = this.durableWrites.beginProbe({ queued: typeof store.latestQueuedWrite === "function" });
+    if (token === undefined) return "refused";
+    let hints: BrokerStateSaveHints | undefined;
+    let queued: Promise<unknown> | undefined;
+    try {
+      this.applyRetentionPolicy();
+      this.lastFullRetentionPersistAtMs = Date.now();
+      const snapshot = this.exportSnapshot();
+      hints = this.pendingHot.consumeRetained(snapshot);
+      const before = store.latestQueuedWrite?.();
+      store.save(snapshot, withoutHotTableHints(hints));
+      queued = this.queuedWriteSince(before);
+    } catch (error) {
+      if (hints) this.pendingHot.restore(hints);
+      this.recordDurableWriteFailure(error, "in_process", token);
+      return "refused";
+    }
+    if (!queued) return this.settleRecoverySave(token, true) ? "cleared" : "refused";
+    queued.then(
+      () => {
+        if (this.settleRecoverySave(token, true)) store.supersedeSettledWrites?.();
+      },
+      (error: unknown) => {
+        if (hints) this.pendingHot.restore(hints, { except: QUEUED_RESTORE_EXCEPT });
+        this.recordDurableWriteFailure(error, "queued", token);
+      },
+    );
+    return "queued";
+  }
+
+  private settleRecoverySave(token: number, ok: boolean): boolean {
+    const before = this.durableWrites.snapshot();
+    if (!this.durableWrites.probeSettled(token, ok)) return false;
+    console.warn(JSON.stringify({
+      event: "broker.persistence.recovered",
+      degradedSince: before.degradedSince,
+      failuresTotal: before.failuresTotal,
+      failedRecoverySaves: before.recoveryProbe.consecutiveFailures,
+    }));
+    this.announceDurableWriteStateChange();
+    return true;
+  }
+
+  /**
+   * Record one failed durable write; `probeToken` when it was a recovery
+   * save (settled here, so the log carries the updated failure streak).
+   */
+  private recordDurableWriteFailure(error: unknown, topology: DurableWriteTopology, probeToken?: number): void {
+    const opened = this.durableWrites.markFailed(error, topology);
+    if (probeToken !== undefined) this.durableWrites.probeSettled(probeToken, false);
+    const health = this.durableWrites.snapshot();
+    const line = {
+      topology,
+      degradedSince: health.degradedSince,
+      errorClass: health.lastFailure?.errorClass,
+      error: health.lastFailure?.message,
+      failuresTotal: health.failuresTotal,
+      failedRecoverySaves: health.recoveryProbe.consecutiveFailures,
+      nextRecoveryAt: health.recoveryProbe.nextAt,
+    };
+    if (opened) {
+      console.error(JSON.stringify({
+        event: "broker.persistence.degraded",
+        ...line,
+        effect: "mutations refused with 503 state_unavailable until a recovery save succeeds or the broker restarts",
+      }));
+      this.announceDurableWriteStateChange();
+      return;
+    }
+    this.warnRateLimited("broker.persistence.write_failed", { event: "broker.persistence.write_failed", ...line });
+  }
+
+  /**
+   * #2523: announce a degraded/recovered transition as a state change, so
+   * the operator snapshot (and its `persistence_degraded` alert) publishes
+   * now. Deferred to a microtask: listeners may mutate (the default agent),
+   * and must not run inside the commitMutation that is failing.
+   */
+  private announceDurableWriteStateChange(): void {
+    queueMicrotask(() => this.listeners.emitStateChange({ kind: "state.persisted" }));
+  }
+
+  private persistenceDegradedError(): BrokerError {
+    const health = this.durableWrites.snapshot();
+    return new BrokerError(
+      "state_unavailable",
+      "broker_persistence_degraded: a durable write failed; mutations are refused until a recovery save succeeds",
+      {
+        reasonCode: "persistence_degraded",
+        degradedSince: health.degradedSince,
+        nextRecoveryAt: health.recoveryProbe.nextAt,
+      },
+    );
+  }
+
+  /**
+   * #2523: refuse a mutation while persistence is degraded. A recovery save
+   * runs first when one may; only an in-process save that succeeded lets the
+   * mutation through (a queued one clears the state when it acks, so the
+   * caller's retry passes). Runs at the start of every outermost
+   * commitMutation, and server.ts registers it at the ACK boundary of every
+   * mutating route (registerDurableAckGate), which also covers replies that
+   * change nothing because memory already holds the transition.
+   */
+  assertDurableWritesAvailable(): void {
+    if (!this.durableWrites.degraded) return;
+    if (this.runRecoverySave() === "cleared") return;
+    throw this.persistenceDegradedError();
+  }
+
+  /** #2523: the fail-closed persistence state (`/health` `persistenceWrites`). */
+  getDurableWriteHealth(): DurableWriteHealthSnapshot {
+    return this.durableWrites.snapshot();
+  }
+
+  /**
+   * #2523: retry a recovery save when degraded and the probe interval allows
+   * (the stale-reaper sweep calls this, so an idle broker recovers too).
+   * Never throws; returns the state after the attempt (a queued save is still
+   * "degraded" until it acks).
+   */
+  retryDegradedPersistence(): DurableWriteHealthSnapshot["state"] {
+    if (this.durableWrites.degraded) this.runRecoverySave();
+    return this.durableWrites.snapshot().state;
+  }
+
+  /** #2523: the open `persistence_degraded` alert, if any (operator alert path). */
+  getPersistenceAlerts(): Alert[] {
+    const alert = projectPersistenceDegradedAlert(this.durableWrites.snapshot());
+    return alert ? [alert] : [];
   }
 
   /**
@@ -5722,10 +5947,42 @@ export class InMemoryA2ABroker {
    * (SSE writes) and a throwing subscriber must not roll back a completed
    * mutation. Stores without transactions (the JSON-file store) leave runBatch
    * undefined and the callback simply runs inline.
+   *
+   * #2523 fail closed: memory changes before the store write, so a failed
+   * durable write would leave memory ahead of disk. The outermost call
+   * therefore (1) refuses with 503 `state_unavailable` while persistence is
+   * degraded (assertDurableWritesAvailable), and (2) on a throw out of a
+   * synchronous store's batch puts back the hints persistState drained and,
+   * when the failure is a durable-write failure, opens the degraded state.
+   * A durable-write failure is any non-BrokerError, or any error after
+   * persistState ran inside a transactional batch (the rollback undid writes
+   * memory already reflects). A BrokerError before persistState is a
+   * rejection and leaves the state alone. On a queued (worker-thread) store
+   * nothing rolls back synchronously; its failed writes are handled where
+   * they settle (writeDurably).
    */
   private commitMutation<T>(fn: () => T): T {
     const store = this.stateStore;
-    return store?.runBatch ? store.runBatch(fn) : fn();
+    if (!store) return fn();
+    const runInStoreBatch = (): T => (store.runBatch ? store.runBatch(fn) : fn());
+    if (this.mutationBatch) return runInStoreBatch();
+    this.assertDurableWritesAvailable();
+    const batch = { drained: [] as BrokerStateSaveHints[], persisted: false };
+    this.mutationBatch = batch;
+    try {
+      return runInStoreBatch();
+    } catch (error) {
+      if (typeof store.latestQueuedWrite !== "function") {
+        for (const hints of batch.drained) this.pendingHot.restore(hints);
+        const rolledBackAfterPersist = batch.persisted && typeof store.runBatch === "function";
+        if (!(error instanceof BrokerError) || rolledBackAfterPersist) {
+          this.recordDurableWriteFailure(error, "in_process");
+        }
+      }
+      throw error;
+    } finally {
+      this.mutationBatch = undefined;
+    }
   }
 
   private setTaskRecord(task: TaskRecord): void {

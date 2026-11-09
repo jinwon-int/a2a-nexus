@@ -225,7 +225,7 @@ import { GitHubIngestionService } from "./github/ingestion.js";
 import { BoundedPoller, type BoundedPollerOptions } from "./github/bounded-poller.js";
 import { readRawBody } from "./http/body.js";
 import { sendJson, truncateMessage } from "./http/response.js";
-import { sendError } from "./http/error-mapping.js";
+import { registerDurableAckGate, sendError } from "./http/error-mapping.js";
 import {
   createA2AJsonRpcRouteEntries,
   createComplexityOrchestrationRouteEntries,
@@ -962,6 +962,9 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   if (startupPrunedPushConfigTaskCount > 0 && !options.broker) {
     persistPushNotificationConfigs?.();
   }
+  // #2523: every mutating route's ACK boundary refuses (503) while a failed
+  // durable write keeps the broker's persistence degraded.
+  registerDurableAckGate(stateStore, () => broker.assertDurableWritesAvailable());
   const unsignedAgentCard =
     options.agentCard ??
     createBrokerAgentCard({
@@ -1061,13 +1064,29 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
   const staleReaperStatus = new StaleReaperStatusTracker();
   let suppressOperatorStateBroadcast = false;
 
+  // #2523: the persistence state last seen by the sweep, so a change (degraded
+  // or recovered) publishes the operator alert even when nothing else moved.
+  let lastSweepPersistenceState = broker.getDurableWriteHealth().state;
   const runStaleReaperSweep = (): number => {
     suppressOperatorStateBroadcast = true;
     try {
-      const { requeued, deadLettered } = broker.requeueStaleTasksDetailed(
-        staleReaperOlderThanSec * 1000,
-        { workerOfflineAfterMs: workerOfflineAfterSec * 1000 },
-      );
+      // #2523: a degraded broker retries its recovery save here too (bounded
+      // by the probe interval), so it recovers without waiting for a mutation.
+      const persistenceState = broker.retryDegradedPersistence();
+      const persistenceChanged = persistenceState !== lastSweepPersistenceState;
+      lastSweepPersistenceState = persistenceState;
+      if (persistenceChanged) publishOperatorEvents();
+      // #2523: while degraded the mutating steps (requeue/dead-letter, the
+      // wave-stall audit, goal budget limits) would only be refused with 503;
+      // skip them for this tick instead of failing the whole sweep. The
+      // ledger repair passes and the budget alert evaluation still run.
+      const persistenceDegraded = persistenceState === "degraded";
+      const { requeued, deadLettered } = persistenceDegraded
+        ? { requeued: [], deadLettered: [] }
+        : broker.requeueStaleTasksDetailed(
+            staleReaperOlderThanSec * 1000,
+            { workerOfflineAfterMs: workerOfflineAfterSec * 1000 },
+          );
       staleReaperStatus.recordSweep(requeued.length, deadLettered.length);
       if (deadLettered.length > 0) {
         // Operators want to see this without trawling audit logs. Keep it a single, greppable
@@ -1080,7 +1099,9 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
       // Stale wave-plan sweep rides the same interval: warn-only wave.stalled
       // audit events for live waves idle past the threshold (never auto-abort).
-      const stalledWaves = waveStaleAfterSec > 0 ? broker.sweepStalledWavePlans(waveStaleAfterSec * 1000) : [];
+      const stalledWaves = waveStaleAfterSec > 0 && !persistenceDegraded
+        ? broker.sweepStalledWavePlans(waveStaleAfterSec * 1000)
+        : [];
       if (stalledWaves.length > 0) {
         console.warn(
           `[a2a-broker] wave reaper flagged ${stalledWaves.length} stalled wave plan(s): ${stalledWaves
@@ -1100,7 +1121,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       // (in a mode other than `on` budget-limited goals are only resumed,
       // without spend reads). Both are bounded per sweep and never throw.
       broker.restageLostLateMeterings();
-      broker.applyGoalBudgetLimits();
+      if (!persistenceDegraded) broker.applyGoalBudgetLimits();
       // #2499 slice 4: budget alerts are evaluated here (bounded per sweep,
       // in every enforcement mode, never throws) and cached on the broker;
       // the alert projection only reads that cache. A changed alert set
@@ -1524,6 +1545,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           store: nclexEvaluationStore,
           keyring: nclexEvaluationKeyring,
           persistReceipts: () => stateStore.save(broker.exportSnapshot()),
+          assertDurableWritesAvailable: () => broker.assertDurableWritesAvailable(),
         })
       : []),
     ...createA2ATaskStreamRouteEntries({
@@ -1637,6 +1659,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     }),
     ...createAuditReadRouteEntries({ broker, stateStore }),
     ...createGitHubRouteEntries({
+      assertDurableWritesAvailable: () => broker.assertDurableWritesAvailable(),
       githubIngestion,
       githubWebhookSecret,
       // `boundedPoller` is mutable during startup — read it per request.
@@ -1916,6 +1939,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
             : 0;
         const eventLoopDelayMs = readEventLoopDelayMs();
         const persistenceQueue = readPersistenceQueueDiagnostics(persistenceQueueDiagnosticsProvider);
+        const persistenceWrites = broker.getDurableWriteHealth();
 
         const body: Record<string, unknown> = {
           ok: true,
@@ -1932,6 +1956,8 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           },
           persistence,
           persistenceQueue,
+          // #2523: fail-closed state after a failed durable write.
+          persistenceWrites,
           // #2051 item 2: snapshot-record quarantine (#2044) kept the broker
           // bootable but dropped the offending rows from live state, and the
           // next save removes them from the file too. Surface the counters so
@@ -2008,6 +2034,16 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           const existing = body.warning ? `${body.warning}; ` : "";
           const warns = hotTableGrowth.warnings.filter((w) => w.startsWith("WARNING"));
           body.warning = `${existing}hot-table growth warning: ${truncateMessage(warns.join("; "), 500) || "growth approaching stability limits"}`;
+        }
+
+        // #2523: a failed durable write keeps the broker refusing mutations
+        // (503 state_unavailable) until a recovery save succeeds: not ok.
+        if (persistenceWrites.state === "degraded") {
+          body.ok = false;
+          const existing = typeof body.error === "string" ? `${body.error}; ` : "";
+          body.error =
+            `${existing}persistence degraded since ${persistenceWrites.degradedSince}: a durable write failed; ` +
+            "mutations are refused with 503 state_unavailable until a recovery save succeeds";
         }
 
         if (workerHeartbeatPersistence.warning) {
