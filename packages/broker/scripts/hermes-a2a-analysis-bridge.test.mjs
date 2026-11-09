@@ -1799,3 +1799,177 @@ test("Hermes A2A analysis bridge keeps gh failure diagnostics surrogate-safe and
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// #2518: usage telemetry from Hermes state.db. The fixture `sessions` table
+// mirrors the usage columns of hermes-agent's hermes_state.py schema
+// (input_tokens = uncached input, cache_read/cache_write separate,
+// estimated/actual cost with cost_status actual|estimated|included|unknown).
+// ---------------------------------------------------------------------------
+const HERMES_ANALYSIS = { status: "done", summary: "hermes usage", findings: ["f"], risks: [], recommendations: [], evidenceRefs: ["embedded:hermes-usage"] };
+
+function createHermesSessionsDb(stateDbPath, rows) {
+  const db = new DatabaseSync(stateDbPath);
+  db.exec([
+    "CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT NOT NULL, parent_session_id TEXT, started_at REAL NOT NULL,",
+    "tool_call_count INTEGER DEFAULT 0, input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0,",
+    "cache_read_tokens INTEGER DEFAULT 0, cache_write_tokens INTEGER DEFAULT 0, reasoning_tokens INTEGER DEFAULT 0,",
+    "estimated_cost_usd REAL, actual_cost_usd REAL, cost_status TEXT, cost_source TEXT, api_call_count INTEGER DEFAULT 0)",
+  ].join(" "));
+  db.exec("CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL)");
+  const insert = db.prepare([
+    "INSERT INTO sessions (id, source, parent_session_id, started_at, tool_call_count, input_tokens, output_tokens,",
+    "cache_read_tokens, cache_write_tokens, estimated_cost_usd, actual_cost_usd, cost_status, api_call_count)",
+    "VALUES (?, 'a2a-hermes-analysis-bridge', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  ].join(" "));
+  for (const row of rows) {
+    insert.run(
+      row.id, row.parent ?? null, row.startedAt ?? Date.now() / 1000, row.tools ?? 0, row.input ?? 0, row.output ?? 0,
+      row.cacheRead ?? 0, row.cacheWrite ?? 0, row.estimated ?? null, row.actual ?? null, row.status ?? null, row.calls ?? 0,
+    );
+  }
+  db.close();
+}
+
+function runHermesUsageBridge(tempDir, fakeLines, rows, extraEnv = {}) {
+  const hermesHome = join(tempDir, ".hermes");
+  mkdirSync(hermesHome, { recursive: true });
+  const fakeHermesPath = join(tempDir, "fake-hermes.mjs");
+  writeFileSync(fakeHermesPath, ["#!/usr/bin/env node", ...fakeLines, ""].join("\n"));
+  chmodSync(fakeHermesPath, 0o755);
+  // Rows are written after the bridge starts would be more realistic, but the
+  // bridge only counts rows whose started_at is within its own run window, so
+  // "now" timestamps written just before the spawn are inside it.
+  createHermesSessionsDb(join(hermesHome, "state.db"), rows);
+  const message = "Payload JSON:\n" + JSON.stringify({ mode: "analysis-only", noLive: true, sourceOnly: true });
+  return spawnSync(process.execPath, openClawArgs(message), {
+    encoding: "utf8",
+    env: { ...process.env, HERMES_BIN: fakeHermesPath, HERMES_HOME: hermesHome, ...extraEnv },
+  });
+}
+
+function hermesBridgeErrorRecords(stderr) {
+  return stderr.split("\n").filter((line) => line.startsWith("A2A_BRIDGE_ERROR=")).map((line) => JSON.parse(line.slice("A2A_BRIDGE_ERROR=".length)));
+}
+
+test("#2518 hermesExecutionTelemetry sums session rows; cost only when every row is actual/estimated", async () => {
+  const { hermesExecutionTelemetry } = await import("./lib/analysis-execution-telemetry.mjs");
+  const rows = [
+    { input_tokens: 100, output_tokens: 20, cache_read_tokens: 1000, cache_write_tokens: 50, api_call_count: 2, tool_call_count: 1, estimated_cost_usd: 0.01, cost_status: "estimated" },
+    { input_tokens: 10, output_tokens: 5, cache_read_tokens: 0, cache_write_tokens: 0, api_call_count: 1, tool_call_count: 0, estimated_cost_usd: 0.002, actual_cost_usd: 0.003, cost_status: "actual" },
+  ];
+  const { costUsd, ...counts } = hermesExecutionTelemetry(rows, 42);
+  assert.deepEqual(counts, {
+    schemaVersion: "a2a.analysis-execution-telemetry.v1",
+    source: "hermes_state_db",
+    elapsedMs: 42,
+    modelRequests: 3,
+    inputTokens: 110,
+    outputTokens: 25,
+    cacheReadInputTokens: 1000,
+    cacheCreationInputTokens: 50,
+    toolCalls: 1,
+  });
+  assert.ok(Math.abs(costUsd - 0.013) < 1e-12, "estimated row + actual row (actual wins over its estimate)");
+  // A subscription-included or unknown-priced row makes the lane cost unknown, never free.
+  for (const status of ["included", "unknown", null]) {
+    const telemetry = hermesExecutionTelemetry([...rows, { input_tokens: 1, output_tokens: 1, estimated_cost_usd: null, cost_status: status }], 1);
+    assert.equal(telemetry.costUsd, undefined, String(status));
+    assert.equal(telemetry.inputTokens, 111);
+  }
+  // An older Hermes without usage columns reports no tokens and no cost.
+  assert.deepEqual(hermesExecutionTelemetry([{ id: "s" }], 3), { schemaVersion: "a2a.analysis-execution-telemetry.v1", source: "hermes_state_db", elapsedMs: 3 });
+});
+
+test("#2518 Hermes bridge success reads the session usage (and its compression parent) from state.db", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-usage-"));
+  try {
+    const result = runHermesUsageBridge(tempDir, [
+      `console.log(${JSON.stringify(JSON.stringify(HERMES_ANALYSIS))});`,
+      "console.error('\\nsession_id: sess-cont');",
+    ], [
+      { id: "sess-old", startedAt: 1_000_000, input: 9_999_999, output: 9_999_999, estimated: 99, status: "estimated" },
+      { id: "sess-root", parent: "sess-old", input: 300, output: 40, cacheRead: 5_000, cacheWrite: 200, calls: 2, tools: 3, estimated: 0.02, status: "estimated" },
+      { id: "sess-cont", parent: "sess-root", input: 100, output: 60, cacheRead: 1_000, calls: 1, estimated: 0.01, status: "estimated" },
+      { id: "sess-other", input: 777, output: 777, status: "estimated", estimated: 7 },
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
+    const telemetry = payload.executionTelemetry;
+    assert.equal(telemetry.source, "hermes_state_db");
+    assert.equal(telemetry.inputTokens, 400, "continuation + root, never the pre-run ancestor or an unrelated session");
+    assert.equal(telemetry.outputTokens, 100);
+    assert.equal(telemetry.cacheReadInputTokens, 6_000);
+    assert.equal(telemetry.cacheCreationInputTokens, 200);
+    assert.equal(telemetry.modelRequests, 3);
+    assert.equal(telemetry.toolCalls, 3);
+    assert.ok(Math.abs(telemetry.costUsd - 0.03) < 1e-9);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("#2518 Hermes bridge counts every retry attempt's session on the recovered path", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-usage-retry-"));
+  const attemptsPath = join(tempDir, "attempts.txt");
+  try {
+    const result = runHermesUsageBridge(tempDir, [
+      "import { existsSync, readFileSync, writeFileSync } from 'node:fs';",
+      "const attemptsPath = process.env.FAKE_HERMES_ATTEMPTS_PATH;",
+      "const attempts = existsSync(attemptsPath) ? Number(readFileSync(attemptsPath, 'utf8')) : 0;",
+      "writeFileSync(attemptsPath, String(attempts + 1));",
+      "if (attempts === 0) { console.error('session_id: sess-a1'); process.kill(process.pid, 'SIGABRT'); }",
+      `console.log(${JSON.stringify(JSON.stringify(HERMES_ANALYSIS))});`,
+      "console.error('session_id: sess-a2');",
+    ], [
+      { id: "sess-a1", input: 50, output: 0, calls: 1, status: "included" },
+      { id: "sess-a2", input: 70, output: 30, calls: 1, status: "estimated", estimated: 0.004 },
+    ], { FAKE_HERMES_ATTEMPTS_PATH: attemptsPath });
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
+    assert.equal(payload.recoverySource, "retry_stdout");
+    assert.equal(payload.executionTelemetry.inputTokens, 120);
+    assert.equal(payload.executionTelemetry.modelRequests, 2);
+    assert.equal(payload.executionTelemetry.costUsd, undefined, "the subscription-included attempt has no price");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("#2518 Hermes bridge failure carries the session usage on a structured A2A_BRIDGE_ERROR line", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-usage-fail-"));
+  try {
+    const result = runHermesUsageBridge(tempDir, [
+      "console.error('Error: provider returned 429');",
+      "console.error('session_id: sess-fail');",
+      "process.exit(1);",
+    ], [
+      { id: "sess-fail", input: 900, output: 0, calls: 3, status: "estimated", estimated: 0.005 },
+    ]);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Hermes exited with 1/);
+    const records = hermesBridgeErrorRecords(result.stderr);
+    assert.equal(records.length, 1, result.stderr);
+    assert.equal(records[0].code, "analysis_bridge_provider_failure");
+    assert.equal(records[0].adapterClass, "hermes");
+    assert.equal(records[0].executionTelemetry.inputTokens, 900);
+    assert.equal(records[0].executionTelemetry.costUsd, 0.005);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("#2518 Hermes bridge without a state.db usage row keeps the pre-#2518 failure shape", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "hermes-a2a-bridge-usage-none-"));
+  try {
+    const result = runHermesUsageBridge(tempDir, [
+      "console.log('not json');",
+      "console.error('session_id: sess-missing');",
+    ], []);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /valid JSON/i);
+    assert.equal(hermesBridgeErrorRecords(result.stderr).length, 0);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});

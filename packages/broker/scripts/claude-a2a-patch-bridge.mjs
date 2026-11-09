@@ -41,6 +41,11 @@ import {
   claudeInvocationModelTelemetry,
 } from "./lib/claude-model-telemetry.mjs";
 import { truncateUtf16Safe, truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
+import {
+  claudeExecutionTelemetry,
+  EXECUTION_TELEMETRY_STDERR_PREFIX,
+  sumExecutionTelemetry,
+} from "./lib/analysis-execution-telemetry.mjs";
 
 // ---------------------------------------------------------------------------
 // Process-tree timeout / session-isolation hardening (issue #1129)
@@ -493,7 +498,46 @@ function safeArtifactBoundaryFile(name) {
   }
 }
 
+// #2518: usage telemetry for patch lanes. Every Claude CLI invocation of this
+// bridge run (agentic patch, analysis, single-shot + corrective retry) adds
+// its --output-format json envelope's usage/cost; the lane total is written
+// next to the turn-budget diagnostic as artifacts/execution-telemetry.json
+// (read by the docker runner into the artifact manifest) and as one
+// `a2a_execution_telemetry=` stderr line (host patch path, and the runner's
+// fallback when the artifact boundary is unavailable). An invocation without
+// a parseable envelope (timeout kill) counts as unknown, so the lane cost is
+// then unknown; a binary that never started (ENOENT) spent nothing.
+const EXECUTION_TELEMETRY_ARTIFACT = "execution-telemetry.json";
+const claudeInvocationTelemetry = [];
+
+function recordClaudeInvocationTelemetry(child) {
+  if (child?.error?.code === "ENOENT") return;
+  claudeInvocationTelemetry.push(claudeExecutionTelemetry(parseClaudeCliResult(child?.stdout)) ?? null);
+}
+
+function laneExecutionTelemetry() {
+  return sumExecutionTelemetry(claudeInvocationTelemetry, "claude_cli_envelope");
+}
+
+function emitExecutionTelemetry() {
+  const telemetry = laneExecutionTelemetry();
+  if (!telemetry) return;
+  const artifactPath = safeArtifactBoundaryFile(EXECUTION_TELEMETRY_ARTIFACT);
+  if (artifactPath) {
+    try {
+      writeFileSync(artifactPath, `${JSON.stringify(telemetry, null, 2)}\n`, { mode: 0o600 });
+      chmodSync(artifactPath, 0o600);
+    } catch {
+      // The stderr line below still carries the telemetry.
+    }
+  }
+  process.stderr.write(`${EXECUTION_TELEMETRY_STDERR_PREFIX}${JSON.stringify(telemetry)}\n`);
+}
+
 function emitTurnBudgetDiagnostic(diagnostic) {
+  // #2518: every terminal path of the bridge emits the turn-budget diagnostic
+  // exactly once, so the lane's usage telemetry rides along here.
+  emitExecutionTelemetry();
   if (!diagnostic) return;
   const serialized = `${JSON.stringify(diagnostic, null, 2)}\n`;
   const artifactPath = safeArtifactBoundaryFile(CLAUDE_TURN_BUDGET_ARTIFACT);
@@ -816,6 +860,7 @@ async function runClaudeAnalysis(prompt, flags, env = process.env) {
       timeout: timeoutSec * 1000,
       input: promptTransport.input,
     });
+    recordClaudeInvocationTelemetry(child);
     const diagnostic = buildTurnBudgetDiagnostic(turnBudget, {
       outcome: "success",
       stdout: child.stdout,
@@ -871,6 +916,7 @@ async function runAnalysisMode(message, flags) {
       {
         ...normalizeAnalysisResponse(extractAnalysisJsonFromClaudeOutput(claudeRun.stdout)),
         turnBudget: claudeRun.turnBudget,
+        executionTelemetry: laneExecutionTelemetry(),
       },
       {
         bridgeContractVersion: PATCH_BRIDGE_CONTRACT_VERSION,
@@ -1029,6 +1075,7 @@ async function runClaudePatch(prompt, flags, env, cwd, opts = {}) {
     timeout: timeoutSec * 1000,
     input: promptTransport.input,
   });
+  recordClaudeInvocationTelemetry(child);
   const diagnostic = buildTurnBudgetDiagnostic(turnBudget, {
     outcome: "success",
     stdout: child.stdout,
@@ -2474,6 +2521,7 @@ async function callClaudeOnce(prompt, flags, env, cwd) {
     timeout: timeoutSec * 1000,
     input: promptTransport.input,
   });
+  recordClaudeInvocationTelemetry(child);
   const diagnostic = buildTurnBudgetDiagnostic(turnBudget, {
     outcome: "success",
     stdout: child.stdout,
@@ -2542,6 +2590,7 @@ async function callClaudeCorrective(prompt, previousError, flags, env, cwd) {
     timeout: timeoutSec * 1000,
     input: promptTransport.input,
   });
+  recordClaudeInvocationTelemetry(child);
   const diagnostic = buildTurnBudgetDiagnostic(turnBudget, {
     outcome: "success",
     stdout: child.stdout,

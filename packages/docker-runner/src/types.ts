@@ -185,6 +185,29 @@ export interface RunnerClaudeTurnBudgetDiagnostic extends RunnerClaudeTurnBudget
   checkpointRef?: "artifacts/claude-max-turn-checkpoint.json";
 }
 
+/**
+ * #2518: usage the contained bridge reported for this run, in the broker's
+ * `a2a.analysis-execution-telemetry.v1` shape (see
+ * packages/broker/scripts/lib/analysis-execution-telemetry.mjs). Read from
+ * artifacts/execution-telemetry.json (or the bridge's
+ * `a2a_execution_telemetry=` stderr line) and projected onto this closed,
+ * numeric field set. Worker-reported and unsigned: a cost signal, not proof.
+ */
+export interface RunnerExecutionTelemetry {
+  schemaVersion: "a2a.analysis-execution-telemetry.v1";
+  source: string;
+  elapsedMs?: number;
+  modelRequests?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
+  /** Present only when the runtime reported a price; absent means unknown, not free. */
+  costUsd?: number;
+  toolCalls?: number;
+  truncated?: true;
+}
+
 export interface RunnerCodexProfileConfig {
   configDir: string;
 }
@@ -1295,6 +1318,8 @@ export interface ArtifactManifest {
   budget?: RunnerBudgetEvidence;
   /** Effective Claude max-turn telemetry from the contained bridge. */
   claudeTurnBudget?: RunnerClaudeTurnBudgetDiagnostic;
+  /** #2518: usage (tokens, cost when known) reported by the contained bridge. */
+  executionTelemetry?: RunnerExecutionTelemetry;
   /** Safe local-only recovery checkpoint reference for max-turn failures. */
   checkpointRef?: "artifacts/claude-max-turn-checkpoint.json";
   /** Optional sanitized notification/receipt correlation metadata for receipt-gap reports. */
@@ -1334,6 +1359,8 @@ export interface ResultSummary {
   artifactCount: number;
   /** Effective Claude max-turn telemetry from the contained bridge. */
   claudeTurnBudget?: RunnerClaudeTurnBudgetDiagnostic;
+  /** #2518: usage (tokens, cost when known) reported by the contained bridge. */
+  executionTelemetry?: RunnerExecutionTelemetry;
   /** Stable max-turn stop reason; never marks the task successful. */
   terminalReason?: "max_turns";
   /** Safe local-only recovery checkpoint reference. */
@@ -1409,6 +1436,8 @@ export interface RunnerResult {
   error?: string;
   /** Effective Claude max-turn telemetry from the contained bridge. */
   claudeTurnBudget?: RunnerClaudeTurnBudgetDiagnostic;
+  /** #2518: usage (tokens, cost when known) reported by the contained bridge. */
+  executionTelemetry?: RunnerExecutionTelemetry;
   /** Stable failure classification for max-turn exhaustion. */
   terminalReason?: "max_turns";
   /** Safe local-only recovery checkpoint reference. */

@@ -18,6 +18,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { analysisCompletionMarker, buildAnalysisHarness } from "./lib/analysis-harness-fingerprint.mjs";
+import { codexExecutionTelemetry, normalizeAnalysisExecutionTelemetry } from "./lib/analysis-execution-telemetry.mjs";
 import { truncateUtf16Safe, truncateUtf16SafeTail } from "./lib/utf8-byte-budget.mjs";
 
 const BRIDGE_FILE = fileURLToPath(import.meta.url);
@@ -33,6 +34,12 @@ const TERMUX_CHILD_ENV_KEYS = [
   "TERMUX_VERSION",
 ];
 const MAX_AUTH_BYTES = 1024 * 1024;
+// #2518: the adapter runs two processes below the wrapper (wrapper -> shared
+// Claude bridge core -> adapter -> codex), so the usage it parses from the
+// codex JSONL travels back through a wrapper-owned temp file, not stdout.
+const TELEMETRY_PATH_ENV = "A2A_CODEX_TELEMETRY_PATH";
+const MAX_TELEMETRY_BYTES = 64 * 1024;
+const ANALYSIS_BRIDGE_ERROR_PREFIX = "A2A_BRIDGE_ERROR=";
 const REFRESHABLE_TOKEN_FIELDS = new Set(["access_token", "id_token", "refresh_token"]);
 
 function safeText(value, fallback = "") {
@@ -285,6 +292,7 @@ function runCodexAdapter() {
   let codexHome;
   try {
     codexHome = buildCodexHome(configDir);
+    const startedAt = Date.now();
     const child = spawnSync(codexBin, [
       "exec",
       "--skip-git-repo-check",
@@ -312,6 +320,9 @@ function runCodexAdapter() {
       timeout: timeoutSec * 1000,
       killSignal: "SIGKILL",
     });
+    // #2518: written before any exit decision, so success, failure and
+    // timeout (spawnSync keeps the partial stdout) all report what was spent.
+    writeAdapterTelemetry(codexExecutionTelemetry(child.stdout, Date.now() - startedAt));
     if (child.error) throw new Error(`Codex spawn failed: ${child.error.message}`);
     if (child.status !== 0) {
       throw new Error(`Codex exited with ${child.status}: ${redactSecrets(childOutputExcerpt(child))}`);
@@ -329,7 +340,74 @@ function runCodexAdapter() {
   }
 }
 
-function transformEnvelope(stdout, flags) {
+function writeAdapterTelemetry(telemetry) {
+  const path = safeText(process.env[TELEMETRY_PATH_ENV], "");
+  if (!path || !telemetry) return;
+  try {
+    writeFileSync(path, JSON.stringify(telemetry), { mode: 0o600 });
+  } catch {
+    // Telemetry is best-effort: a lane without it is recorded unmetered.
+  }
+}
+
+function readAdapterTelemetry(path) {
+  try {
+    const info = lstatSync(path);
+    if (!info.isFile() || info.isSymbolicLink() || info.size > MAX_TELEMETRY_BYTES) return undefined;
+    return normalizeAnalysisExecutionTelemetry(JSON.parse(readFileSync(path, "utf8")));
+  } catch {
+    return undefined;
+  }
+}
+
+function lastBridgeErrorRecord(stderr) {
+  const lines = safeText(stderr).split("\n");
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index].trim();
+    if (!line.startsWith(ANALYSIS_BRIDGE_ERROR_PREFIX)) continue;
+    try {
+      const parsed = JSON.parse(line.slice(ANALYSIS_BRIDGE_ERROR_PREFIX.length));
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && typeof parsed.code === "string") return parsed;
+    } catch {
+      // keep scanning older lines
+    }
+  }
+  return null;
+}
+
+// #2518: on a failed lane the usage still reaches the broker through the
+// #1725 structured failure line (error.details.bridgeFailure). An inner
+// record (e.g. the shared core's invalid-JSON record) keeps its
+// classification and gains the telemetry; otherwise the wrapper names the
+// runtime failure itself. Emitted only when the adapter reported telemetry,
+// and as the only record line, so the handler (which reads the last one)
+// sees the merged record.
+function emitFailureTelemetryRecord(child, flags, telemetry) {
+  const inner = lastBridgeErrorRecord(child.stderr);
+  const record = inner
+    ? { ...inner, executionTelemetry: telemetry }
+    : {
+        code: "analysis_bridge_provider_failure",
+        stage: "invoke",
+        failureShape: "provider_or_model_failure",
+        adapterClass: "codex",
+        bridgeContractVersion: BRIDGE_CONTRACT_VERSION,
+        requestedModel: safeText(flags.model, undefined),
+        requestedThinking: safeText(flags.thinking, undefined),
+        actualRuntimeModel: normalizedModel(flags.model),
+        executionTelemetry: telemetry,
+      };
+  process.stderr.write(`${ANALYSIS_BRIDGE_ERROR_PREFIX}${JSON.stringify(record)}\n`);
+  return {
+    ...child,
+    stderr: safeText(child.stderr)
+      .split("\n")
+      .filter((line) => !line.trim().startsWith(ANALYSIS_BRIDGE_ERROR_PREFIX))
+      .join("\n"),
+  };
+}
+
+function transformEnvelope(stdout, flags, telemetry) {
   const envelope = JSON.parse(stdout);
   if (!Array.isArray(envelope.payloads) || !envelope.payloads[0]?.text) {
     throw new Error("Codex analysis wrapper received an invalid bridge envelope");
@@ -351,6 +429,10 @@ function transformEnvelope(stdout, flags) {
   if (!(response.completion && typeof response.completion === "object")) {
     response.completion = analysisCompletionMarker(response.status, response.recoverySource);
   }
+  // #2518: the codex JSONL usage, parsed by the adapter. The shared core only
+  // knows Claude envelopes, so whatever it attached does not describe codex.
+  if (telemetry) response.executionTelemetry = telemetry;
+  else delete response.executionTelemetry;
   response.modelInheritanceMode = "explicit";
   delete response.claudeModelArgumentApplied;
   response.modelInheritanceNote = "Codex bridge applies the requested model and reasoning explicitly to codex exec.";
@@ -364,20 +446,31 @@ function runBridge() {
   if (flags.subcommand !== "agent" || !flags.json || !safeText(flags.message, "")) {
     throw new Error("expected OpenClaw-shaped agent --message ... --json invocation");
   }
-  const child = spawnSync(process.execPath, [CLAUDE_BRIDGE_PATH, ...process.argv.slice(2)], {
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      A2A_CLAUDE_CODE_BIN: SELF_PATH,
-      A2A_CODEX_ADAPTER_MODE: "1",
-      A2A_CODEX_MODEL: safeText(flags.model, process.env.A2A_CODEX_MODEL || "gpt-5.6-sol"),
-      A2A_CODEX_REASONING_EFFORT: safeText(flags.thinking, process.env.A2A_CODEX_REASONING_EFFORT || "high"),
-    },
-    maxBuffer: 20 * 1024 * 1024,
-  });
-  if (child.error) throw new Error(`shared analysis bridge spawn failed: ${child.error.message}`);
-  if (child.status !== 0) throw new Error(redactSecrets(childOutputExcerpt(child)));
-  process.stdout.write(transformEnvelope(child.stdout, flags));
+  const telemetryDir = mkdtempSync(join(tmpdir(), "a2a-codex-telemetry-"));
+  const telemetryPath = join(telemetryDir, "telemetry.json");
+  try {
+    const child = spawnSync(process.execPath, [CLAUDE_BRIDGE_PATH, ...process.argv.slice(2)], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: SELF_PATH,
+        A2A_CODEX_ADAPTER_MODE: "1",
+        A2A_CODEX_MODEL: safeText(flags.model, process.env.A2A_CODEX_MODEL || "gpt-5.6-sol"),
+        A2A_CODEX_REASONING_EFFORT: safeText(flags.thinking, process.env.A2A_CODEX_REASONING_EFFORT || "high"),
+        [TELEMETRY_PATH_ENV]: telemetryPath,
+      },
+      maxBuffer: 20 * 1024 * 1024,
+    });
+    const telemetry = readAdapterTelemetry(telemetryPath);
+    if (child.error) throw new Error(`shared analysis bridge spawn failed: ${child.error.message}`);
+    if (child.status !== 0) {
+      const reported = telemetry ? emitFailureTelemetryRecord(child, flags, telemetry) : child;
+      throw new Error(redactSecrets(childOutputExcerpt(reported)));
+    }
+    process.stdout.write(transformEnvelope(child.stdout, flags, telemetry));
+  } finally {
+    rmSync(telemetryDir, { recursive: true, force: true });
+  }
 }
 
 try {

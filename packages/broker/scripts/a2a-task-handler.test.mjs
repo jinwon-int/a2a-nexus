@@ -4617,3 +4617,144 @@ test("normalizeAnalysisHarness settingSources and the unmarked completion reason
   assert.equal(unmarked.error.details.completion.reason, "k".repeat(63));
   assert.equal(unmarked.error.details.completion.marked, false);
 });
+
+// ---------------------------------------------------------------------------
+// #2518: patch-lane usage telemetry reaches the broker terminal result —
+// result.output.executionTelemetry on success, error.details.bridgeFailure
+// on failure (the carrier the broker's spend row reads).
+// ---------------------------------------------------------------------------
+const PATCH_LANE_TELEMETRY = {
+  schemaVersion: "a2a.analysis-execution-telemetry.v1",
+  source: "claude_cli_envelope",
+  elapsedMs: 90_000,
+  modelRequests: 12,
+  inputTokens: 40,
+  outputTokens: 3_000,
+  cacheReadInputTokens: 200_000,
+  cacheCreationInputTokens: 9_000,
+  costUsd: 1.25,
+};
+
+test("#2518 docker runner success carries the runner's executionTelemetry into result.output", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-runner-usage-ok-"));
+  const runner = join(dir, "fake-runner.mjs");
+  writeHybridRunnerStub(runner, `
+process.stdout.write(JSON.stringify({
+  ok: true,
+  status: "pr_opened",
+  prUrl: "https://github.com/jinwon-int/a2a-nexus/pull/9990",
+  branch: "usage-telemetry",
+  filesChanged: ["README.md"],
+  resultSummary: { executionTelemetry: ${JSON.stringify({ ...PATCH_LANE_TELEMETRY, unknownKey: "dropped" })} },
+}) + "\\n");
+`);
+  try {
+    const result = handleTask(patchTask({ id: "task-runner-usage-ok" }), {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "docker",
+      A2A_DOCKER_RUNNER_BIN: runner,
+    });
+    assert.equal(result.error, undefined, JSON.stringify(result.error));
+    assert.deepEqual(result.result?.output?.executionTelemetry, PATCH_LANE_TELEMETRY);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#2518 docker runner max-turn failure projects the spent usage into error.details.bridgeFailure", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-runner-usage-fail-"));
+  const runner = join(dir, "fake-runner.mjs");
+  writeHybridRunnerStub(runner, `
+process.stdout.write(JSON.stringify({
+  ok: false,
+  status: "failed",
+  terminalReason: "max_turns",
+  error: "Claude Code max-turn budget exhausted",
+  artifactManifest: { status: "budget_limited", executionTelemetry: ${JSON.stringify(PATCH_LANE_TELEMETRY)} },
+}) + "\\n");
+process.exitCode = 1;
+`);
+  try {
+    const result = handleTask(patchTask({ id: "task-runner-usage-fail" }), {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "docker",
+      A2A_DOCKER_RUNNER_BIN: runner,
+    });
+    assert.equal(result.error?.code, "docker_runner_max_turns");
+    assert.deepEqual(result.error?.details?.bridgeFailure, {
+      code: "docker_runner_max_turns",
+      stage: "patch_lane",
+      adapterClass: "docker_runner",
+      executionTelemetry: PATCH_LANE_TELEMETRY,
+    });
+    assert.equal(result.error?.details?.terminalReason, "max_turns", "existing failure evidence is kept");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#2518 docker runner without telemetry keeps the pre-#2518 result shape", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-runner-usage-none-"));
+  const runner = join(dir, "fake-runner.mjs");
+  writeHybridRunnerStub(runner, `
+process.stdout.write(JSON.stringify({ ok: false, status: "failed", error: "container exited 1" }) + "\\n");
+process.exitCode = 1;
+`);
+  try {
+    const result = handleTask(patchTask({ id: "task-runner-usage-none" }), {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "docker",
+      A2A_DOCKER_RUNNER_BIN: runner,
+    });
+    assert.equal(result.error?.code, "docker_runner_failed");
+    assert.equal(result.error?.details?.bridgeFailure, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#2518 host patch bridge telemetry line reaches result.output (success) and bridgeFailure (failure)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-host-patch-usage-"));
+  const bin = join(dir, "patch-bridge.mjs");
+  const line = `a2a_execution_telemetry=${JSON.stringify(PATCH_LANE_TELEMETRY)}`;
+  const run = (body) => {
+    writeFileSync(bin, ["#!/usr/bin/env node", ...body, ""].join("\n"));
+    chmodSync(bin, 0o755);
+    return handleTask(patchTask({ id: "task-host-patch-usage" }), {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "auto",
+      OPENCLAW_BIN: bin,
+      A2A_OPENCLAW_TIMEOUT_SEC: "5",
+      A2A_NODE_ID: "workerzeta",
+    });
+  };
+  try {
+    const ok = run([
+      `process.stderr.write(${JSON.stringify(`${line}\n`)});`,
+      `process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify({ status: "pr_opened", summary: "s", prUrl: "https://github.com/jinwon-int/a2a-broker/pull/5", executionTelemetry: { schemaVersion: "a2a.analysis-execution-telemetry.v1", source: "claude_cli_envelope", costUsd: 0 } }) }] }));`,
+    ]);
+    assert.equal(ok.error, undefined, JSON.stringify(ok.error));
+    assert.deepEqual(ok.result?.output?.executionTelemetry, PATCH_LANE_TELEMETRY, "the bridge's stderr line, never model-shaped response text");
+
+    const failed = run([
+      `process.stderr.write(${JSON.stringify(`${line}\n`)});`,
+      "process.stderr.write('patch bridge failed: git apply rejected the diff\\n');",
+      "process.exit(1);",
+    ]);
+    assert.equal(failed.error?.code, "openclaw_bridge_failed");
+    assert.equal(failed.error?.details?.bridgeFailure?.adapterClass, "claude_patch_bridge");
+    assert.deepEqual(failed.error?.details?.bridgeFailure?.executionTelemetry, PATCH_LANE_TELEMETRY);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#2518 dockerRunnerExecutionTelemetry prefers the runner fields, falls back to the stderr copy, rejects unknown sources", () => {
+  const fromStderr = __test.dockerRunnerExecutionTelemetry({ stderr: `noise\na2a_execution_telemetry=${JSON.stringify(PATCH_LANE_TELEMETRY)}\n` });
+  assert.deepEqual(fromStderr, PATCH_LANE_TELEMETRY);
+  assert.equal(__test.dockerRunnerExecutionTelemetry({ executionTelemetry: { ...PATCH_LANE_TELEMETRY, source: "made_up" } }), undefined);
+  assert.equal(__test.dockerRunnerExecutionTelemetry(undefined), undefined);
+  // An existing structured bridgeFailure is never overwritten.
+  const existing = { error: { code: "x", message: "m", details: { bridgeFailure: { code: "inner" } } } };
+  assert.equal(__test.attachPatchLaneTelemetry(existing, PATCH_LANE_TELEMETRY, "docker_runner"), existing);
+});

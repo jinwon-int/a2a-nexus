@@ -3060,3 +3060,169 @@ test("#2533 checkDiff/applyDiff error text never splits a surrogate pair", async
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// #2518: patch-lane usage telemetry. The bridge sums the usage/cost of every
+// Claude CLI envelope of the run and writes it as artifacts/execution-
+// telemetry.json (runner boundary, absent here) plus one
+// `a2a_execution_telemetry=` stderr line, on success and failure alike.
+// ---------------------------------------------------------------------------
+const PATCH_USAGE = { input_tokens: 40, output_tokens: 3_000, cache_read_input_tokens: 200_000, cache_creation_input_tokens: 9_000 };
+
+function telemetryLine(stderr) {
+  const lines = stderr.split("\n").filter((line) => line.startsWith("a2a_execution_telemetry="));
+  return lines.length > 0 ? JSON.parse(lines.at(-1).slice("a2a_execution_telemetry=".length)) : undefined;
+}
+
+test("#2518 PATCH success reports the envelope usage and cost on the telemetry line", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-usage-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "const result = { status: 'pr_opened', summary: 'done', prUrl: 'https://github.com/jinwon-int/example/pull/9', filesChanged: ['src/x.mjs'], tests: [], risks: [] };",
+      `console.log(JSON.stringify({ type: 'result', subtype: 'success', num_turns: 12, duration_ms: 90000, total_cost_usd: 1.25, usage: ${JSON.stringify(PATCH_USAGE)}, result: JSON.stringify(result) }));`,
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs(patchMessage()), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(telemetryLine(result.stderr), {
+      schemaVersion: "a2a.analysis-execution-telemetry.v1",
+      source: "claude_cli_envelope",
+      elapsedMs: 90000,
+      modelRequests: 12,
+      inputTokens: 40,
+      outputTokens: 3_000,
+      cacheReadInputTokens: 200_000,
+      cacheCreationInputTokens: 9_000,
+      costUsd: 1.25,
+    });
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("#2518 PATCH max-turn failure (budget_limited) still reports the spent usage", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-usage-max-turns-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  try {
+    writeStubClaude(fakeClaudePath, [
+      `console.log(JSON.stringify({ type: 'result', subtype: 'error_max_turns', is_error: true, num_turns: 80, total_cost_usd: 4.5, usage: ${JSON.stringify(PATCH_USAGE)}, result: 'stopped' }));`,
+      "process.exitCode = 1;",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs(patchMessage()), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /terminal_reason=max_turns/);
+    const telemetry = telemetryLine(result.stderr);
+    assert.equal(telemetry.costUsd, 4.5);
+    assert.equal(telemetry.modelRequests, 80);
+    assert.equal(telemetry.outputTokens, 3_000);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("#2518 PATCH failure without a parseable envelope reports no telemetry line", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-usage-none-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  try {
+    writeStubClaude(fakeClaudePath, ["console.error('boom');", "process.exitCode = 2;"]);
+    const result = spawnSync(bridgePath, bridgeArgs(patchMessage()), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_CODE_BIN: fakeClaudePath },
+    });
+    assert.notEqual(result.status, 0);
+    assert.equal(telemetryLine(result.stderr), undefined);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("#2518 ANALYSIS intent on the patch bridge returns executionTelemetry in the response", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-usage-analysis-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "const analysis = { status: 'done', summary: 's', findings: ['f'], risks: [], recommendations: [], evidenceRefs: ['embedded:x'] };",
+      `console.log(JSON.stringify({ type: 'result', subtype: 'success', num_turns: 2, total_cost_usd: 0.05, usage: ${JSON.stringify(PATCH_USAGE)}, result: JSON.stringify(analysis) }));`,
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs(analysisMessage()), {
+      encoding: "utf8",
+      env: { ...process.env, A2A_CLAUDE_MODEL: "", A2A_CLAUDE_EFFORT: "", A2A_CLAUDE_CODE_BIN: fakeClaudePath },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
+    assert.equal(payload.executionTelemetry.source, "claude_cli_envelope");
+    assert.equal(payload.executionTelemetry.costUsd, 0.05);
+    assert.equal(payload.executionTelemetry.inputTokens, 40);
+    assert.deepEqual(telemetryLine(result.stderr), payload.executionTelemetry);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+function writeUsageRetryClaudeStub(path, firstDiff, secondDiff, callCountPath, secondCost) {
+  const script = [
+    "#!/usr/bin/env node",
+    "import { existsSync, readFileSync, writeFileSync } from 'node:fs';",
+    `const countPath = ${JSON.stringify(callCountPath)};`,
+    "const count = (existsSync(countPath) ? Number(readFileSync(countPath, 'utf8')) : 0) + 1;",
+    "writeFileSync(countPath, String(count));",
+    `const diff = count === 1 ? ${JSON.stringify(firstDiff)} : ${JSON.stringify(secondDiff)};`,
+    "const usage = count === 1 ? { input_tokens: 10, output_tokens: 100, cache_read_input_tokens: 1000, cache_creation_input_tokens: 50 } : { input_tokens: 5, output_tokens: 60, cache_read_input_tokens: 500, cache_creation_input_tokens: 0 };",
+    `const cost = count === 1 ? 0.2 : ${JSON.stringify(secondCost)};`,
+    "const envelope = { type: 'result', subtype: 'success', num_turns: 1, usage, result: '```diff\\n' + diff + '\\n```' };",
+    "if (cost !== null) envelope.total_cost_usd = cost;",
+    "process.stdout.write(JSON.stringify(envelope));",
+    "",
+  ].join("\n");
+  writeFileSync(path, script);
+  chmodSync(path, 0o755);
+}
+
+for (const [label, secondCost, expectedCost] of [["both priced", 0.1, 0.30000000000000004], ["one unpriced", null, undefined]]) {
+  test(`#2518 SINGLE-SHOT corrective retry sums both invocations (${label})`, () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-usage-"));
+    const { workSeed } = setupLocalFakeOrigin(tempDir);
+    const fakeGitPath = join(tempDir, "fake-git.mjs");
+    const fakeGhPath = join(tempDir, "fake-gh.mjs");
+    const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+    const callCountPath = join(tempDir, "call-count.txt");
+    try {
+      writeFakeGitStub(fakeGitPath);
+      writeFakeGhStub(fakeGhPath);
+      const firstDiff = ["diff --git a/no-such-file.txt b/no-such-file.txt", "index 0000000..ce01362 100644", "--- a/no-such-file.txt", "+++ b/no-such-file.txt", "@@ -0,0 +1 @@", "+leaked"].join("\n");
+      const secondDiff = ["diff --git a/hello.txt b/hello.txt", "index ce01362..6b0f5f6 100644", "--- a/hello.txt", "+++ b/hello.txt", "@@ -1 +1 @@", "-hello world", "+hello world (corrected on retry)"].join("\n");
+      writeUsageRetryClaudeStub(fakeClaudePath, firstDiff, secondDiff, callCountPath, secondCost);
+      const result = spawnSync(bridgePath, bridgeArgs(singleShotMessage()), {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+          A2A_CLAUDE_CODE_GIT_BIN: fakeGitPath,
+          A2A_CLAUDE_CODE_GH_BIN: fakeGhPath,
+          A2A_CLAUDE_CODE_PATCH_MODE: "single-shot",
+          FAKE_GIT_SEED_PATH: workSeed,
+          FAKE_GH_PR_URL: "https://github.com/jinwon-int/a2a-nexus/pull/1021",
+          REAL_GIT_BIN: "git",
+          REAL_GH_BIN: "gh",
+        },
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(readFileSync(callCountPath, "utf8"), "2");
+      const telemetry = telemetryLine(result.stderr);
+      assert.equal(telemetry.modelRequests, 2);
+      assert.equal(telemetry.inputTokens, 15);
+      assert.equal(telemetry.outputTokens, 160);
+      assert.equal(telemetry.cacheReadInputTokens, 1500);
+      assert.equal(telemetry.cacheCreationInputTokens, 50);
+      assert.equal(telemetry.costUsd, expectedCost, "cost is known only when every invocation priced its run");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+}

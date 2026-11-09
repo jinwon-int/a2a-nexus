@@ -273,6 +273,20 @@ test("danso_cli_usage telemetry counts as an observed receipt source (#2295)", (
   assert.deepEqual(response.coverage.executionTelemetry, { observed: 1, missing: 0, invalid: 0, truncated: 0 });
 });
 
+test("codex_exec_jsonl and hermes_state_db telemetry count as observed receipt sources (#2518)", () => {
+  for (const source of ["codex_exec_jsonl", "hermes_state_db"]) {
+    const output = { ...successOutput(), executionTelemetry: observedTelemetry({ source, modelRequests: 2, schemaRetries: undefined }) };
+    const tasks = [task({ id: `r-${source}`, assignedWorkerId: `worker-${source}`, result: { output } })];
+    const events = chainEvents(`r-${source}`, { created: "2026-09-01T00:00:00.000Z", claimed: "2026-09-01T00:00:01.000Z", started: "2026-09-01T00:00:02.000Z", terminal: "2026-09-01T00:00:05.000Z" }, "succeeded");
+    const response = aggregateWorkerLatencyProfiles(tasks, events);
+    const profile = response.profiles[0];
+    assert.ok(profile, source);
+    assert.equal(profile.receipts.executionTelemetry.observed, 1, source);
+    assert.equal(profile.receipts.executionTelemetry.invalid, 0, source);
+    assert.equal(profile.receipts.executionTelemetry.modelRequests.total, 2, source);
+  }
+});
+
 test("structured bridge failure receipts win over preserved result output and count once", () => {
   const tasks = [
     task({
