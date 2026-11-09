@@ -118,13 +118,15 @@ function codexStdoutErrorEvents(stdout, limit = 3) {
 }
 
 function childOutputExcerpt(child, perStreamLimit = 2000) {
+  // #2533 review: a non-finite or < 1 limit keeps the 2000-unit default.
+  const limit = Number.isFinite(perStreamLimit) && perStreamLimit >= 1 ? perStreamLimit : 2000;
   const parts = [];
-  for (const event of codexStdoutErrorEvents(child.stdout)) parts.push(truncateUtf16Safe(event, perStreamLimit));
+  for (const event of codexStdoutErrorEvents(child.stdout)) parts.push(truncateUtf16Safe(event, limit));
   const stderrText = safeText(child.stderr).trim();
   const stdoutText = safeText(child.stdout).trim();
-  if (stderrText) parts.push(`stderr: ${truncateUtf16Safe(stderrText, perStreamLimit)}`);
+  if (stderrText) parts.push(`stderr: ${truncateUtf16Safe(stderrText, limit)}`);
   // #2533: tail cut; must not start on the low half of a split pair.
-  if (stdoutText) parts.push(`stdout: ${truncateUtf16SafeTail(stdoutText, perStreamLimit)}`);
+  if (stdoutText) parts.push(`stdout: ${truncateUtf16SafeTail(stdoutText, limit)}`);
   return parts.join("\n") || "no output captured";
 }
 

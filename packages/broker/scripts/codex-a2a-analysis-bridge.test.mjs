@@ -266,3 +266,16 @@ test("#2533 Codex redactSecrets 4000-unit cap never splits a surrogate pair", ()
   const message = result.stderr.replace(/\n$/, "");
   assert.ok(message.length <= 4000, `message length ${message.length}`);
 });
+
+// #2533 review item 6: an error event with no message is quoted as its JSON,
+// cut to 500 units; the cut must not split a surrogate pair.
+test("#2533 Codex error-event JSON cut never splits a surrogate pair", () => {
+  // '{"type":"error","pad":"' is 23 units; 476 more puts the emoji's high half at 499.
+  const eventLine = JSON.stringify({ type: "error", pad: `${"p".repeat(476)}😀tail` });
+  assert.equal(eventLine.charCodeAt(499) >= 0xd800 && eventLine.charCodeAt(499) <= 0xdbff, true, "fixture straddles the 500-unit cut");
+  const result = runCodexAdapterFailure("", `${eventLine}\n`);
+  assert.notEqual(result.status, 0);
+  assert.equal(result.stderr.includes("\uFFFD"), false, "no replacement character from a split pair");
+  assert.equal(CODEX_LONE_SURROGATE.test(result.stderr), false);
+  assert.ok(result.stderr.includes(`error: ${eventLine.slice(0, 499)}\n`), "backs off exactly the split pair");
+});

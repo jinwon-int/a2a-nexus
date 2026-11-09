@@ -1051,14 +1051,9 @@ function positiveIntegerEnv(value, fallback, name) {
   return fallback;
 }
 
-/**
- * TEST-ONLY: re-arm the once-per-name env warnings above (#2533 D3). Importing
- * this module runs the bridge's main(), so in-process callers must arrange
- * argv/env for that first; spawned-bridge tests get a fresh set per process.
- */
-export function __resetEnvWarningsForTest() {
-  warnedEnvNames.clear();
-}
+// No test-only reset for warnedEnvNames (#2533 D3): importing this module
+// runs main(), so tests always spawn the bridge, and each spawned bridge
+// process starts with a fresh, empty warn-once set.
 
 // Read env[name] and parse it, so the name that is read and the name that is
 // warned about can never drift apart (#2531 review).

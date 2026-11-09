@@ -60,6 +60,9 @@ import {
 import { sourceCarrierStatsFromEnv } from "./lib/source-carriers.mjs";
 import { truncateUtf16Safe, truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
 
+// #2533: env-rejection warnings name this bridge (positiveIntegerEnv prefix).
+const ENV_WARNING_SOURCE = Object.freeze({ source: "danso-a2a-analysis-bridge" });
+
 const BRIDGE_FILE = fileURLToPath(import.meta.url);
 
 const ENV_PREFIX = "A2A_DANSO_ANALYSIS";
@@ -142,7 +145,7 @@ function resolveDansoConfig(env) {
 		credentialEnv: spec.credentialEnv,
 		credentialKind: spec.credentialKind,
 		cli: safeText(env.A2A_DANSO_CLI, "danso"),
-		maxTurns: positiveIntegerEnv(env.A2A_DANSO_ANALYSIS_MAX_TURNS, DEFAULT_MAX_TURNS, "A2A_DANSO_ANALYSIS_MAX_TURNS"),
+		maxTurns: positiveIntegerEnv(env.A2A_DANSO_ANALYSIS_MAX_TURNS, DEFAULT_MAX_TURNS, "A2A_DANSO_ANALYSIS_MAX_TURNS", ENV_WARNING_SOURCE),
 		providerTimeoutSec: positiveIntegerEnv(env.A2A_DANSO_PROVIDER_TIMEOUT_SECONDS, 0),
 		maxOutputTokens: positiveIntegerEnv(env.A2A_DANSO_MAX_OUTPUT_TOKENS, 0),
 	};
@@ -212,7 +215,7 @@ function buildDansoPrompt({ message, payload, sourceBundle, flags, model, effort
 function resolveDansoMaxPromptBytes(env) {
 	return Math.min(
 		DANSO_MAX_PROMPT_BYTES,
-		positiveIntegerEnv(env.A2A_DANSO_ANALYSIS_MAX_PROMPT_BYTES, DEFAULT_MAX_PROMPT_BYTES, "A2A_DANSO_ANALYSIS_MAX_PROMPT_BYTES"),
+		positiveIntegerEnv(env.A2A_DANSO_ANALYSIS_MAX_PROMPT_BYTES, DEFAULT_MAX_PROMPT_BYTES, "A2A_DANSO_ANALYSIS_MAX_PROMPT_BYTES", ENV_WARNING_SOURCE),
 	);
 }
 
@@ -508,6 +511,7 @@ function main() {
 			flags.timeout || env.A2A_DANSO_ANALYSIS_TIMEOUT_SEC,
 			DEFAULT_TIMEOUT_SEC,
 			flags.timeout ? undefined : "A2A_DANSO_ANALYSIS_TIMEOUT_SEC",
+			ENV_WARNING_SOURCE,
 		),
 	);
 	const prompt = applyDansoPromptBudget(

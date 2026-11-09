@@ -3013,3 +3013,50 @@ test("#2533 patch-bridge failure excerpts never split a surrogate pair at the cu
   assert.equal(excerpt, `stderr: ${"s".repeat(9)}\nstdout: ${"o".repeat(9)}`);
   assert.equal(LONE_SURROGATE.test(excerpt), false);
 });
+
+// #2533 review items 4/6: firstSentence never splits a pair at max - 1, and a
+// non-finite or < 1 max falls back to the 240 default instead of an empty or
+// uncut summary.
+test("#2533 patch-bridge firstSentence is surrogate-safe and guards its max", () => {
+  const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  const first = __test.firstSentence;
+  assert.equal(typeof first, "function", "firstSentence is exposed for tests");
+  const text = `${"a".repeat(238)}😀${"b".repeat(100)}`; // index 238 = high half, cut at 239
+  assert.equal(first(text), `${"a".repeat(238)}…`);
+  assert.equal(LONE_SURROGATE.test(first(text)), false);
+  const long = "w ".repeat(300).trim();
+  const byDefault = first(long);
+  assert.equal(byDefault.length, 240);
+  for (const max of [Number.NaN, Number.POSITIVE_INFINITY, 0, -5, 0.5, "abc"]) {
+    assert.equal(first(long, max), byDefault, `max ${String(max)} uses the default`);
+  }
+  assert.equal(first("short text", Number.NaN), "short text");
+  assert.equal(first(long, 10), "w w w w w…");
+});
+
+test("#2533 checkDiff/applyDiff error text never splits a surrogate pair", async () => {
+  const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  assert.equal(typeof __test.checkDiff, "function", "checkDiff is exposed for tests");
+  assert.equal(typeof __test.applyDiff, "function", "applyDiff is exposed for tests");
+  const dir = mkdtempSync(join(tmpdir(), "claude-patch-utf16-git-"));
+  try {
+    const fakeGit = join(dir, "fake-git.mjs");
+    writeFileSync(fakeGit, [
+      "#!/usr/bin/env node",
+      // index 3999 is the high half of the emoji
+      `process.stderr.write(${JSON.stringify(`${"g".repeat(3999)}😀tail`)});`,
+      "process.exitCode = 1;",
+      "",
+    ].join("\n"));
+    chmodSync(fakeGit, 0o755);
+    const env = { PATH: process.env.PATH, A2A_CLAUDE_CODE_GIT_BIN: fakeGit };
+    for (const run of [__test.checkDiff, __test.applyDiff]) {
+      const res = await run(dir, join(dir, "x.diff"), env);
+      assert.equal(res.ok, false);
+      assert.equal(res.error, "g".repeat(3999), "backs off exactly the split pair");
+      assert.equal(LONE_SURROGATE.test(res.error), false);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

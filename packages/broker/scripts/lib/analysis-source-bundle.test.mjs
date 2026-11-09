@@ -349,6 +349,27 @@ test("positiveIntegerEnv stays silent for blank/unset values and when no name is
 	resetEnvWarnings();
 });
 
+// #2533 review item 3: the warning prefix names the reporting bridge. The
+// line must keep the shape the task handler moves after the real failure.
+test("positiveIntegerEnv uses the { source } prefix for its warning, default a2a-analysis-source-bundle (#2533)", () => {
+	const HANDLER_ENV_WARNING_LINE_RE = /^[\w.-]+: ignoring [A-Z0-9_]+ \(not a positive integer\)/;
+	resetEnvWarnings();
+	const out = captureStderr(() => {
+		assert.equal(positiveIntegerEnv("junk", 30, "A2A_TEST_SOURCE_A", { source: "danso-a2a-analysis-bridge" }), 30);
+		assert.equal(positiveIntegerEnv("junk", 31, "A2A_TEST_SOURCE_B", {}), 31);
+		assert.equal(positiveIntegerEnv("junk", 32, "A2A_TEST_SOURCE_C"), 32);
+		assert.equal(positiveIntegerEnv("12", 33, "A2A_TEST_SOURCE_D", { source: "danso-a2a-analysis-bridge" }), 12);
+	});
+	const lines = out.split("\n").filter(Boolean);
+	assert.deepEqual(lines, [
+		"danso-a2a-analysis-bridge: ignoring A2A_TEST_SOURCE_A (not a positive integer); falling back to the default 30",
+		"a2a-analysis-source-bundle: ignoring A2A_TEST_SOURCE_B (not a positive integer); falling back to the default 31",
+		"a2a-analysis-source-bundle: ignoring A2A_TEST_SOURCE_C (not a positive integer); falling back to the default 32",
+	]);
+	for (const line of lines) assert.match(line, HANDLER_ENV_WARNING_LINE_RE);
+	resetEnvWarnings();
+});
+
 // #2533 D2: collectSourceBundle names the variable it actually read.
 test("collectSourceBundle warns with the prefixed name when set, else the A2A_HERMES_ANALYSIS_ name (#2533)", () => {
 	resetEnvWarnings();

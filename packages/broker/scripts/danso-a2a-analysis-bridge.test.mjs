@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import test from "node:test";
 import { __test } from "./danso-a2a-analysis-bridge.mjs";
+import { __resetEnvWarningsForTest } from "./lib/analysis-source-bundle.mjs";
 import {
 	dansoExecutionTelemetry,
 	normalizeAnalysisExecutionTelemetry,
@@ -79,10 +80,11 @@ function fixture() {
 
 const MESSAGE = 'Analyze. Payload JSON: {"assignment":"review the bridge","repo":"jinwon-int/a2a-nexus","review":{"required":true}}';
 
-function runBridge(env, { message = MESSAGE, sessionId = "sess-1", extraArgs = [] } = {}) {
+function runBridge(env, { message = MESSAGE, sessionId = "sess-1", extraArgs = [], timeout = "120" } = {}) {
 	return spawnSync(process.execPath, [
 		BRIDGE, "agent", "--local", "--agent", "worker", "--session-id", sessionId,
-		"--message", message, "--model", "glm-5.3-flash", "--thinking", "max", "--timeout", "120", "--json",
+		"--message", message, "--model", "glm-5.3-flash", "--thinking", "max",
+		...(timeout === null ? [] : ["--timeout", timeout]), "--json",
 		...extraArgs,
 	], { env, encoding: "utf8" });
 }
@@ -425,4 +427,71 @@ test("normalizeResponse passes the structured reviewLineage block through (#2351
 	assert.deepEqual(__test.normalizeResponse({ ...base, reviewLineage: block }).reviewLineage, block);
 	assert.equal(__test.normalizeResponse({ ...base, reviewLineage: ["not", "an", "object"] }).reviewLineage, undefined);
 	assert.equal(__test.normalizeResponse(base).reviewLineage, undefined);
+});
+
+// #2531/#2533 review item 5: danso names the env var it rejected, under its
+// own prefix, only when that env var (not the --timeout flag) was the source;
+// limits whose fallback is 0 stay silent.
+const dansoEnvWarnings = (stderr) => stderr.split("\n").filter((line) => / ignoring [A-Z0-9_]+ \(not a positive integer\)/.test(line));
+
+test("danso warns about a junk A2A_DANSO_ANALYSIS_TIMEOUT_SEC under its own prefix when no --timeout is given (#2533)", () => {
+	const fx = fixture();
+	try {
+		const result = runBridge({ ...fx.env, A2A_DANSO_ANALYSIS_TIMEOUT_SEC: "junk-timeout" }, { timeout: null });
+		assert.equal(result.status, 0, result.stderr);
+		const warnings = dansoEnvWarnings(result.stderr);
+		assert.equal(warnings.length, 1, result.stderr);
+		assert.match(warnings[0], /^danso-a2a-analysis-bridge: ignoring A2A_DANSO_ANALYSIS_TIMEOUT_SEC \(not a positive integer\); falling back to the default \d+$/);
+		assert.equal(result.stderr.includes("junk-timeout"), false, "the value is never printed");
+	} finally {
+		fx.cleanup();
+	}
+});
+
+test("a junk --timeout flag never produces a warning naming the env var (#2533)", () => {
+	const fx = fixture();
+	try {
+		const result = runBridge({ ...fx.env, A2A_DANSO_ANALYSIS_TIMEOUT_SEC: "junk-timeout" }, { timeout: "junk-flag" });
+		assert.equal(result.status, 0, result.stderr);
+		assert.equal(result.stderr.includes("A2A_DANSO_ANALYSIS_TIMEOUT_SEC"), false, result.stderr);
+		assert.deepEqual(dansoEnvWarnings(result.stderr), []);
+	} finally {
+		fx.cleanup();
+	}
+});
+
+test("a junk zero-fallback limit (A2A_DANSO_PROVIDER_TIMEOUT_SECONDS) stays silent (#2533)", () => {
+	const fx = fixture();
+	try {
+		const result = runBridge({ ...fx.env, A2A_DANSO_PROVIDER_TIMEOUT_SECONDS: "junk-provider" });
+		assert.equal(result.status, 0, result.stderr);
+		assert.deepEqual(dansoEnvWarnings(result.stderr), []);
+		assert.equal(result.stderr.includes("A2A_DANSO_PROVIDER_TIMEOUT_SECONDS"), false);
+	} finally {
+		fx.cleanup();
+	}
+});
+
+test("danso maxTurns and prompt-bytes warnings use the danso prefix (#2533)", () => {
+	const original = process.stderr.write;
+	let captured = "";
+	process.stderr.write = (chunk, ...rest) => {
+		captured += String(chunk);
+		const callback = rest.find((arg) => typeof arg === "function");
+		if (callback) callback();
+		return true;
+	};
+	__resetEnvWarningsForTest();
+	try {
+		__test.resolveDansoConfig({ A2A_DANSO_ANALYSIS_MAX_TURNS: "junk-turns" });
+		__test.resolveDansoMaxPromptBytes({ A2A_DANSO_ANALYSIS_MAX_PROMPT_BYTES: "junk-bytes" });
+	} finally {
+		process.stderr.write = original;
+	}
+	__resetEnvWarningsForTest();
+	const warnings = dansoEnvWarnings(captured);
+	assert.equal(warnings.length, 2, captured);
+	assert.match(warnings[0], /^danso-a2a-analysis-bridge: ignoring A2A_DANSO_ANALYSIS_MAX_TURNS \(not a positive integer\); falling back to the default \d+$/);
+	assert.match(warnings[1], /^danso-a2a-analysis-bridge: ignoring A2A_DANSO_ANALYSIS_MAX_PROMPT_BYTES \(not a positive integer\); falling back to the default \d+$/);
+	assert.equal(captured.includes("junk-"), false);
 });

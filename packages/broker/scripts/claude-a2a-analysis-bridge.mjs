@@ -429,9 +429,11 @@ function looksJsonLikeText(value) {
 }
 
 function firstSentence(text, max = 240) {
+  // #2533 review: a non-finite or < 1 max falls back to the default.
+  const limit = Number.isFinite(max) && max >= 1 ? max : 240;
   const compact = safeText(text).replace(/\s+/g, " ").trim();
-  if (compact.length <= max) return compact;
-  return `${truncateUtf16Safe(compact, max - 1).trim()}…`;
+  if (compact.length <= limit) return compact;
+  return `${truncateUtf16Safe(compact, limit - 1).trim()}…`;
 }
 
 function isProbablyClaudeErrorText(text) {

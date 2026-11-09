@@ -30,15 +30,19 @@ const warnedEnvNames = new Set();
  * once per name on stderr (#2531/#2533 D1) - the name and the default only,
  * never the value. An unset or blank value is not a rejection, and callers
  * that pass no name stay silent. The return value never depends on `name`.
+ * `source` (default "a2a-analysis-source-bundle") prefixes the warning line
+ * so it names the reporting bridge; the line keeps the
+ * `<source>: ignoring <NAME> (not a positive integer)` shape the task handler
+ * moves after the real failure.
  */
-export function positiveIntegerEnv(value, fallback, name) {
+export function positiveIntegerEnv(value, fallback, name, { source = "a2a-analysis-source-bundle" } = {}) {
 	// #2528 B7: a value that floors to 0 (e.g. "0.5") is not a positive
 	// integer; use the fallback instead of silently disabling a limit.
 	const parsed = Math.floor(Number(value));
 	if (Number.isFinite(parsed) && parsed >= 1) return parsed;
 	if (name && String(value ?? "").trim() !== "" && !warnedEnvNames.has(name)) {
 		warnedEnvNames.add(name);
-		process.stderr.write(`a2a-analysis-source-bundle: ignoring ${name} (not a positive integer); falling back to the default ${fallback}\n`);
+		process.stderr.write(`${source}: ignoring ${name} (not a positive integer); falling back to the default ${fallback}\n`);
 	}
 	return fallback;
 }
