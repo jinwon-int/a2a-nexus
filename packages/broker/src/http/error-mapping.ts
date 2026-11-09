@@ -42,8 +42,17 @@ export function registerDurableAckGate(stateStore: BrokerStateStore, gate: () =>
   durableAckGates.set(stateStore, gate);
 }
 
-export async function awaitDurablePersistenceAck(stateStore: BrokerStateStore): Promise<void> {
+/**
+ * #2523: run the registered fail-closed gate alone, for a route that writes
+ * the store directly instead of acknowledging a broker mutation (it refuses
+ * before the write).
+ */
+export function assertDurableWritesAvailable(stateStore: BrokerStateStore): void {
   durableAckGates.get(stateStore)?.();
+}
+
+export async function awaitDurablePersistenceAck(stateStore: BrokerStateStore): Promise<void> {
+  assertDurableWritesAvailable(stateStore);
   const awaitAck = stateStore.awaitDurablePersistenceAck;
   if (!awaitAck) {
     return;

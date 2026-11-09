@@ -410,8 +410,9 @@ export function projectBudgetAlert(input: {
 export interface PersistenceDegradedAlertInput {
   state: "ok" | "degraded";
   degradedSince: string | null;
-  lastFailure: { at: string; topology: string } | null;
+  lastFailure: { at: string; topology: string; errorClass: string; message: string } | null;
   failuresTotal: number;
+  recoveryProbe: { consecutiveFailures: number; nextAt: string | null };
 }
 
 /**
@@ -427,14 +428,19 @@ export function projectPersistenceDegradedAlert(health: PersistenceDegradedAlert
     kind: "persistence_degraded",
     severity: "critical",
     subject: { kind: "storage", id: "broker-persistence" },
-    summary: "Broker persistence degraded: a durable write failed; mutations are refused with 503 until a recovery save succeeds",
+    summary: `Broker persistence degraded (${health.lastFailure?.errorClass ?? "unknown error"}, `
+      + `${health.recoveryProbe.consecutiveFailures} failed recovery save(s)): mutations are refused with 503 until a recovery save succeeds`,
     detectedAt: health.degradedSince ?? health.lastFailure?.at ?? new Date(0).toISOString(),
     metadata: {
       degradedSince: health.degradedSince,
       lastFailureAt: health.lastFailure?.at ?? null,
       lastFailureTopology: health.lastFailure?.topology ?? null,
+      lastFailureErrorClass: health.lastFailure?.errorClass ?? null,
+      lastFailureMessage: health.lastFailure?.message ?? null,
       failuresTotal: health.failuresTotal,
-      operatorAction: "check disk space and SQLite errors in the broker log (broker.persistence.degraded)",
+      consecutiveRecoveryFailures: health.recoveryProbe.consecutiveFailures,
+      nextRecoveryAt: health.recoveryProbe.nextAt,
+      operatorAction: "see packages/broker/docs/persistence-durability.md (Runbook: persistence degraded)",
     },
   };
 }

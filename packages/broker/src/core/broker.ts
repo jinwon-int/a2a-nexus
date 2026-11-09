@@ -5803,8 +5803,7 @@ export class InMemoryA2ABroker {
       queued = this.queuedWriteSince(before);
     } catch (error) {
       if (hints) this.pendingHot.restore(hints);
-      this.recordDurableWriteFailure(error, "in_process");
-      this.durableWrites.probeSettled(token, false);
+      this.recordDurableWriteFailure(error, "in_process", token);
       return "refused";
     }
     if (!queued) return this.settleRecoverySave(token, true) ? "cleared" : "refused";
@@ -5814,39 +5813,62 @@ export class InMemoryA2ABroker {
       },
       (error: unknown) => {
         if (hints) this.pendingHot.restore(hints, { except: QUEUED_RESTORE_EXCEPT });
-        this.recordDurableWriteFailure(error, "queued");
-        this.durableWrites.probeSettled(token, false);
+        this.recordDurableWriteFailure(error, "queued", token);
       },
     );
     return "queued";
   }
 
   private settleRecoverySave(token: number, ok: boolean): boolean {
-    const degradedSince = this.durableWrites.snapshot().degradedSince;
+    const before = this.durableWrites.snapshot();
     if (!this.durableWrites.probeSettled(token, ok)) return false;
-    console.warn(JSON.stringify({ event: "broker.persistence.recovered", degradedSince }));
+    console.warn(JSON.stringify({
+      event: "broker.persistence.recovered",
+      degradedSince: before.degradedSince,
+      failuresTotal: before.failuresTotal,
+      failedRecoverySaves: before.recoveryProbe.consecutiveFailures,
+    }));
+    this.announceDurableWriteStateChange();
     return true;
   }
 
-  private recordDurableWriteFailure(error: unknown, topology: DurableWriteTopology): void {
+  /**
+   * Record one failed durable write; `probeToken` when it was a recovery
+   * save (settled here, so the log carries the updated failure streak).
+   */
+  private recordDurableWriteFailure(error: unknown, topology: DurableWriteTopology, probeToken?: number): void {
     const opened = this.durableWrites.markFailed(error, topology);
+    if (probeToken !== undefined) this.durableWrites.probeSettled(probeToken, false);
     const health = this.durableWrites.snapshot();
+    const line = {
+      topology,
+      degradedSince: health.degradedSince,
+      errorClass: health.lastFailure?.errorClass,
+      error: health.lastFailure?.message,
+      failuresTotal: health.failuresTotal,
+      failedRecoverySaves: health.recoveryProbe.consecutiveFailures,
+      nextRecoveryAt: health.recoveryProbe.nextAt,
+    };
     if (opened) {
       console.error(JSON.stringify({
         event: "broker.persistence.degraded",
-        topology,
-        degradedSince: health.degradedSince,
-        error: health.lastFailure?.message,
+        ...line,
         effect: "mutations refused with 503 state_unavailable until a recovery save succeeds or the broker restarts",
       }));
+      this.announceDurableWriteStateChange();
       return;
     }
-    this.warnRateLimited("broker.persistence.write_failed", {
-      event: "broker.persistence.write_failed",
-      topology,
-      failuresTotal: health.failuresTotal,
-      error: health.lastFailure?.message,
-    });
+    this.warnRateLimited("broker.persistence.write_failed", { event: "broker.persistence.write_failed", ...line });
+  }
+
+  /**
+   * #2523: announce a degraded/recovered transition as a state change, so
+   * the operator snapshot (and its `persistence_degraded` alert) publishes
+   * now. Deferred to a microtask: listeners may mutate (the default agent),
+   * and must not run inside the commitMutation that is failing.
+   */
+  private announceDurableWriteStateChange(): void {
+    queueMicrotask(() => this.listeners.emitStateChange({ kind: "state.persisted" }));
   }
 
   private persistenceDegradedError(): BrokerError {
@@ -5854,7 +5876,11 @@ export class InMemoryA2ABroker {
     return new BrokerError(
       "state_unavailable",
       "broker_persistence_degraded: a durable write failed; mutations are refused until a recovery save succeeds",
-      { reasonCode: "persistence_degraded", degradedSince: health.degradedSince },
+      {
+        reasonCode: "persistence_degraded",
+        degradedSince: health.degradedSince,
+        nextRecoveryAt: health.recoveryProbe.nextAt,
+      },
     );
   }
 

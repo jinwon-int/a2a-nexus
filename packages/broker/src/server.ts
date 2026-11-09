@@ -1076,10 +1076,17 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       const persistenceChanged = persistenceState !== lastSweepPersistenceState;
       lastSweepPersistenceState = persistenceState;
       if (persistenceChanged) publishOperatorEvents();
-      const { requeued, deadLettered } = broker.requeueStaleTasksDetailed(
-        staleReaperOlderThanSec * 1000,
-        { workerOfflineAfterMs: workerOfflineAfterSec * 1000 },
-      );
+      // #2523: while degraded the mutating steps (requeue/dead-letter, the
+      // wave-stall audit, goal budget limits) would only be refused with 503;
+      // skip them for this tick instead of failing the whole sweep. The
+      // ledger repair passes and the budget alert evaluation still run.
+      const persistenceDegraded = persistenceState === "degraded";
+      const { requeued, deadLettered } = persistenceDegraded
+        ? { requeued: [], deadLettered: [] }
+        : broker.requeueStaleTasksDetailed(
+            staleReaperOlderThanSec * 1000,
+            { workerOfflineAfterMs: workerOfflineAfterSec * 1000 },
+          );
       staleReaperStatus.recordSweep(requeued.length, deadLettered.length);
       if (deadLettered.length > 0) {
         // Operators want to see this without trawling audit logs. Keep it a single, greppable
@@ -1092,7 +1099,9 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       }
       // Stale wave-plan sweep rides the same interval: warn-only wave.stalled
       // audit events for live waves idle past the threshold (never auto-abort).
-      const stalledWaves = waveStaleAfterSec > 0 ? broker.sweepStalledWavePlans(waveStaleAfterSec * 1000) : [];
+      const stalledWaves = waveStaleAfterSec > 0 && !persistenceDegraded
+        ? broker.sweepStalledWavePlans(waveStaleAfterSec * 1000)
+        : [];
       if (stalledWaves.length > 0) {
         console.warn(
           `[a2a-broker] wave reaper flagged ${stalledWaves.length} stalled wave plan(s): ${stalledWaves
@@ -1112,7 +1121,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
       // (in a mode other than `on` budget-limited goals are only resumed,
       // without spend reads). Both are bounded per sweep and never throw.
       broker.restageLostLateMeterings();
-      broker.applyGoalBudgetLimits();
+      if (!persistenceDegraded) broker.applyGoalBudgetLimits();
       // #2499 slice 4: budget alerts are evaluated here (bounded per sweep,
       // in every enforcement mode, never throws) and cached on the broker;
       // the alert projection only reads that cache. A changed alert set
@@ -1536,6 +1545,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
           store: nclexEvaluationStore,
           keyring: nclexEvaluationKeyring,
           persistReceipts: () => stateStore.save(broker.exportSnapshot()),
+          assertDurableWritesAvailable: () => broker.assertDurableWritesAvailable(),
         })
       : []),
     ...createA2ATaskStreamRouteEntries({
@@ -1649,6 +1659,7 @@ export function createBrokerServer(options: BrokerServerOptions = {}): BrokerSer
     }),
     ...createAuditReadRouteEntries({ broker, stateStore }),
     ...createGitHubRouteEntries({
+      assertDurableWritesAvailable: () => broker.assertDurableWritesAvailable(),
       githubIngestion,
       githubWebhookSecret,
       // `boundedPoller` is mutable during startup — read it per request.

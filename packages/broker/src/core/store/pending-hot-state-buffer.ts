@@ -328,16 +328,41 @@ export interface DurableWriteHealthSnapshot {
   state: "ok" | "degraded";
   /** When the current degraded period began (null while ok). */
   degradedSince: string | null;
-  lastFailure: { at: string; topology: DurableWriteTopology; message: string } | null;
+  /**
+   * The last failed durable write: when, where, the error class (`name`, plus
+   * `/code` when the error has one, e.g. `Error/ERR_SQLITE_ERROR`) and the
+   * message (bounded).
+   */
+  lastFailure: { at: string; topology: DurableWriteTopology; errorClass: string; message: string } | null;
   /** Failed durable writes since process start (every failure, also while degraded). */
   failuresTotal: number;
   /** Degraded periods ended by a successful recovery save since process start. */
   recoveriesTotal: number;
   lastRecoveredAt: string | null;
-  recoveryProbe: { inFlight: boolean; lastAt: string | null; intervalMs: number };
+  recoveryProbe: {
+    inFlight: boolean;
+    lastAt: string | null;
+    /** Recovery saves that failed in a row in this degraded period (reset when it clears). */
+    consecutiveFailures: number;
+    /** Wait before the next recovery save: the base interval, doubled per consecutive failure, capped. */
+    intervalMs: number;
+    baseIntervalMs: number;
+    maxIntervalMs: number;
+    /** Earliest time the next recovery save may run (null while ok or before the first probe). */
+    nextAt: string | null;
+  };
 }
 
 const FAILURE_MESSAGE_MAX_CHARS = 300;
+/** #2523: cap of the recovery-save backoff (the base interval wins when it is larger). */
+export const DEFAULT_RECOVERY_PROBE_MAX_INTERVAL_MS = 60_000;
+
+/** `name`, plus `/code` when the error carries a string code (`Error/ERR_SQLITE_ERROR`). */
+export function durableWriteErrorClass(error: unknown): string {
+  if (!(error instanceof Error)) return typeof error;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" && code.length > 0 ? `${error.name}/${code.slice(0, 60)}` : error.name;
+}
 
 /**
  * #2523: fail-closed persistence state. A failed durable write opens it; the
@@ -349,8 +374,10 @@ const FAILURE_MESSAGE_MAX_CHARS = 300;
  * starts and clears the state only if no failure arrived meanwhile, so a
  * queued write that fails after the probe was queued keeps the broker
  * degraded. The first probe after the state opens may run at once (a one-off
- * fault self-heals on the next mutation); later probes run at most once per
- * `probeIntervalMs`, and never two queued at a time.
+ * fault self-heals on the next mutation). After a failed probe the next one
+ * waits `baseIntervalMs`, doubled per consecutive failure up to
+ * `maxIntervalMs` (a full save is expensive and, in process, synchronous on
+ * the event loop); never two queued probes at a time.
  */
 export class DurableWriteHealth {
   private degradedSince: string | undefined;
@@ -361,8 +388,15 @@ export class DurableWriteHealth {
   private lastRecoveredAt: string | null = null;
   private lastProbeAtMs: number | undefined;
   private probeInFlight = false;
+  private consecutiveProbeFailures = 0;
+  private readonly maxIntervalMs: number;
 
-  constructor(private readonly probeIntervalMs: number) {}
+  constructor(
+    private readonly baseIntervalMs: number,
+    maxIntervalMs = DEFAULT_RECOVERY_PROBE_MAX_INTERVAL_MS,
+  ) {
+    this.maxIntervalMs = Math.max(baseIntervalMs, maxIntervalMs);
+  }
 
   get degraded(): boolean {
     return this.degradedSince !== undefined;
@@ -374,37 +408,63 @@ export class DurableWriteHealth {
     const message = error instanceof Error ? error.message : String(error);
     this.epoch += 1;
     this.failuresTotal += 1;
-    this.lastFailure = { at, topology, message: message.slice(0, FAILURE_MESSAGE_MAX_CHARS) };
+    this.lastFailure = {
+      at,
+      topology,
+      errorClass: durableWriteErrorClass(error),
+      message: message.slice(0, FAILURE_MESSAGE_MAX_CHARS),
+    };
     if (this.degradedSince !== undefined) return false;
     this.degradedSince = at;
     this.lastProbeAtMs = undefined;
+    this.consecutiveProbeFailures = 0;
     return true;
+  }
+
+  /** The wait after the last probe: base, doubled per consecutive failure, capped. */
+  private currentIntervalMs(): number {
+    if (this.consecutiveProbeFailures <= 1) return this.baseIntervalMs;
+    const factor = 2 ** Math.min(this.consecutiveProbeFailures - 1, 30);
+    return Math.min(this.maxIntervalMs, this.baseIntervalMs * factor);
   }
 
   /**
    * Claim a recovery probe: the epoch token to pass to `probeSettled`, or
    * undefined when not degraded, a queued probe is still in flight, or the
-   * interval since the last probe has not elapsed.
+   * backoff since the last probe has not elapsed.
    */
   beginProbe(options: { queued: boolean }, nowMs = Date.now()): number | undefined {
     if (!this.degraded || this.probeInFlight) return undefined;
-    if (this.lastProbeAtMs !== undefined && nowMs - this.lastProbeAtMs < this.probeIntervalMs) return undefined;
+    if (this.lastProbeAtMs !== undefined && nowMs - this.lastProbeAtMs < this.currentIntervalMs()) return undefined;
     this.lastProbeAtMs = nowMs;
     this.probeInFlight = options.queued;
     return this.epoch;
   }
 
-  /** Settle a probe; true when its success cleared the degraded state. */
+  /**
+   * Settle a probe; true when its success cleared the degraded state. A
+   * failed probe counts toward the backoff; a successful one superseded by a
+   * newer failure (stale epoch) neither counts nor clears.
+   */
   probeSettled(token: number, ok: boolean, nowMs = Date.now()): boolean {
     this.probeInFlight = false;
-    if (!ok || !this.degraded || token !== this.epoch) return false;
+    if (!this.degraded) return false;
+    if (!ok) {
+      this.consecutiveProbeFailures += 1;
+      return false;
+    }
+    if (token !== this.epoch) return false;
     this.degradedSince = undefined;
+    this.consecutiveProbeFailures = 0;
     this.recoveriesTotal += 1;
     this.lastRecoveredAt = new Date(nowMs).toISOString();
     return true;
   }
 
   snapshot(): DurableWriteHealthSnapshot {
+    const nextAtMs = this.degraded && this.lastProbeAtMs !== undefined
+      ? this.lastProbeAtMs + this.currentIntervalMs()
+      : undefined;
     return {
       state: this.degraded ? "degraded" : "ok",
       degradedSince: this.degradedSince ?? null,
@@ -415,7 +475,11 @@ export class DurableWriteHealth {
       recoveryProbe: {
         inFlight: this.probeInFlight,
         lastAt: this.lastProbeAtMs === undefined ? null : new Date(this.lastProbeAtMs).toISOString(),
-        intervalMs: this.probeIntervalMs,
+        consecutiveFailures: this.consecutiveProbeFailures,
+        intervalMs: this.currentIntervalMs(),
+        baseIntervalMs: this.baseIntervalMs,
+        maxIntervalMs: this.maxIntervalMs,
+        nextAt: nextAtMs === undefined ? null : new Date(nextAtMs).toISOString(),
       },
     };
   }

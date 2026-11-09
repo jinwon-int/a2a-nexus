@@ -129,6 +129,7 @@ import {
   tombstoneSchema,
   terminalOutboxEventSchema,
   goalRecordSchema,
+  reviewLineageRecordSchema,
   BUDGET_SCOPE_TYPES,
 } from "../store-schemas.js";
 import type {
@@ -535,7 +536,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
 
   save(snapshot: BrokerSnapshot, hints?: BrokerStateSaveHints): void {
     this.saveSnapshot(
-      this.withCanonicalReviewLineages(snapshot, snapshot.reviewLineages),
+      this.withCanonicalReviewLineages(snapshot, snapshot.reviewLineages, { deferInvalidImport: true }),
       hints,
     );
   }
@@ -1917,6 +1918,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   private withCanonicalReviewLineages(
     snapshot: BrokerSnapshot,
     legacyRecords: ReviewLineageRecord[] | undefined,
+    options: { deferInvalidImport?: boolean } = {},
   ): BrokerSnapshot {
     // A snapshot is compatibility input only. Once the import marker exists,
     // dedicated SQLite rows always win and a later stale blob cannot overwrite
@@ -1929,10 +1931,25 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
     // `runBatch`, and the import used to open a nested BEGIN IMMEDIATE (and
     // re-validate every record) on every full save. A store that reaches its
     // first save never imported still imports here, joining the open batch.
+    //
+    // #2523: on save, a legacy record the lineage schema rejects defers the
+    // import instead of failing the save. The import validated every record
+    // and threw, so before #2523 such a record failed every full save; with
+    // fail-closed persistence it would fail every recovery save too, and the
+    // broker would refuse all mutations, also after a restart (the record
+    // comes back from memory). Deferred, the save writes the records into the
+    // canonical blob as before (a later load quarantines a rejected record
+    // per #2044), the marker stays unset and the next save retries. Load and
+    // the pre-write import keep failing loudly as before.
     let imported = this.reviewLineageObservations.legacySnapshotImported();
     if (!imported && !this.deferReviewLineageImport && legacyRecords !== undefined) {
-      this.reviewLineageObservations.importLegacySnapshot(legacyRecords);
-      imported = true;
+      const invalid = options.deferInvalidImport ? invalidReviewLineageRecords(legacyRecords) : [];
+      if (invalid.length > 0) {
+        this.warnLegacyReviewLineageImportDeferred(invalid);
+      } else {
+        this.reviewLineageObservations.importLegacySnapshot(legacyRecords);
+        imported = true;
+      }
     }
     const canonical = this.reviewLineageObservations.listLineages();
     const canonicalAuthorityReady = canonical.length > 0 || imported;
@@ -1942,6 +1959,20 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
         ? canonical
         : legacyRecords ?? [],
     };
+  }
+
+  /** #2523: one log line per store instance while the legacy import stays deferred. */
+  private legacyReviewLineageImportDeferredLogged = false;
+
+  private warnLegacyReviewLineageImportDeferred(invalid: Array<{ lineageId: string; issue: string }>): void {
+    if (this.legacyReviewLineageImportDeferredLogged) return;
+    this.legacyReviewLineageImportDeferredLogged = true;
+    console.error(JSON.stringify({
+      event: "broker.review_lineage.legacy_import_deferred",
+      invalidRecords: invalid.length,
+      first: invalid[0],
+      effect: "legacy review-lineage import deferred; saves continue and keep the records in the canonical blob",
+    }));
   }
 
   /**
@@ -2935,4 +2966,22 @@ function countHotHintEntries(hints: BrokerStateSaveHints): BrokerHotHintCounts {
     hotWorkers: hints.hotWorkers?.length ?? 0,
     hotTerminalOutboxEvents: hints.hotTerminalOutboxEvents?.length ?? 0,
   };
+}
+
+/**
+ * #2523: the legacy review-lineage records the lineage schema rejects (the
+ * import would throw on them), with the first issue each, bounded.
+ */
+function invalidReviewLineageRecords(records: ReviewLineageRecord[]): Array<{ lineageId: string; issue: string }> {
+  const invalid: Array<{ lineageId: string; issue: string }> = [];
+  for (const record of records) {
+    const result = reviewLineageRecordSchema.safeParse(structuredClone(record));
+    if (result.success) continue;
+    const issue = result.error.issues[0];
+    invalid.push({
+      lineageId: String((record as { lineageId?: unknown }).lineageId ?? "").slice(0, 200),
+      issue: `${issue?.path.join(".") ?? ""}: ${issue?.message ?? "invalid"}`.slice(0, 200),
+    });
+  }
+  return invalid;
 }

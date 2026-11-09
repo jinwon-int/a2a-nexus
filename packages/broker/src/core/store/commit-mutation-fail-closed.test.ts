@@ -25,13 +25,25 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test, { type TestContext } from "node:test";
 
+import { intentHash } from "a2a-review-lifecycle";
+import type { IntentContractV1, ReviewLineageBudgetV1, ReviewLineageRecord } from "a2a-review-lifecycle";
+
+import { assertDurableWritesAvailable, registerDurableAckGate } from "../../http/error-mapping.js";
 import { jsonHeaders, startTestServer } from "../../server-test-helpers.js";
 import { BrokerError, InMemoryA2ABroker } from "../broker.js";
 import { projectPersistenceDegradedAlert } from "../observability/alert-projection.js";
 import type { CreateTaskRequest, SpendEventRecord, TaskRecord } from "../types.js";
-import { DurableWriteHealth, PendingHotStateBuffer, withoutHotTableHints } from "./pending-hot-state-buffer.js";
+import {
+  DurableWriteHealth,
+  durableWriteErrorClass,
+  PendingHotStateBuffer,
+  withoutHotTableHints,
+} from "./pending-hot-state-buffer.js";
+import { REVIEW_LINEAGE_OBSERVATION_META_TABLE } from "./review-lineage-observation-store.js";
+import { ReviewLineageStore } from "./review-lineage-store.js";
 import { createWorkerThreadPersistence } from "./sqlite-worker-thread-persistence.js";
 import {
+  emptySnapshot,
   SqliteArtifactRuntimeRepository,
   SqliteAuditRuntimeRepository,
   SqliteBrokerStateStore,
@@ -579,4 +591,287 @@ test("DurableWriteHealth: epoch-guarded probes, an immediate first probe, then t
   health.markFailed(new Error("x".repeat(1_000)), "in_process", 2_000);
   assert.equal(health.snapshot().lastFailure?.message.length, 300, "the stored message is bounded");
   assert.equal(projectPersistenceDegradedAlert(health.snapshot())?.severity, "critical");
+});
+
+// --- Review findings (#2538): persistent failures, backoff, legacy import, sweep -------
+
+function freezeClock(t: TestContext): { advance(ms: number): void } {
+  let now = Date.now();
+  t.mock.timers.enable({ apis: ["Date"], now });
+  return {
+    advance(ms: number) {
+      now += ms;
+      t.mock.timers.setTime(now);
+    },
+  };
+}
+
+test("a failure disk always rejects stays fail-closed, reports its error class and failure streak, and a restart clears it (#2523)", (t) => {
+  captureLogs(t);
+  const dir = tempDir("a2a-2523-persistent-");
+  const dbFile = join(dir, "state.sqlite");
+  try {
+    const store = new SqliteBrokerStateStore(dbFile, { loadSource: "hot-tables" });
+    try {
+      const broker = openBroker(store, "repositories");
+      registerWorker(broker);
+      startedTask(broker, "task-poison");
+      // Disk rejects this one task's terminal row for good; memory holds it.
+      for (const op of ["INSERT", "UPDATE"]) {
+        exec(dbFile, `CREATE TRIGGER poison_2523_${op} BEFORE ${op} ON broker_tasks
+          WHEN NEW.id = 'task-poison' AND NEW.status = 'succeeded'
+          BEGIN SELECT RAISE(ABORT, 'poison_row_2523'); END`);
+      }
+      assert.throws(() => broker.completeTask("task-poison", "worker-a", RESULT), /poison_row_2523/);
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        assertStateUnavailable(() => broker.createTask(taskRequest(`task-refused-${attempt}`)), `attempt ${attempt}`);
+      }
+      const health = broker.getDurableWriteHealth();
+      assert.equal(health.state, "degraded", "drift is worse than refusing: stays fail-closed");
+      assert.equal(health.lastFailure?.errorClass, "Error/ERR_SQLITE_ERROR");
+      assert.equal(health.recoveryProbe.consecutiveFailures, 5);
+      assert.equal(health.failuresTotal, 6);
+      const alert = broker.getPersistenceAlerts()[0]!;
+      assert.equal(alert.metadata.lastFailureErrorClass, "Error/ERR_SQLITE_ERROR");
+      assert.equal(alert.metadata.consecutiveRecoveryFailures, 5);
+      assert.match(alert.summary, /Error\/ERR_SQLITE_ERROR, 5 failed recovery save/);
+    } finally {
+      store.close();
+    }
+    // The restart reloads memory from disk: the row disk rejects is not in
+    // memory any more, so nothing has to be written and the broker serves.
+    const reopened = new SqliteBrokerStateStore(dbFile, { loadSource: "hot-tables" });
+    try {
+      const broker = openBroker(reopened, "repositories");
+      assert.equal(broker.getDurableWriteHealth().state, "ok");
+      assert.equal(broker.getTask("task-poison")?.status, "running");
+      broker.createTask(taskRequest("task-after-restart"));
+      assert.equal(broker.getDurableWriteHealth().state, "ok");
+    } finally {
+      reopened.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("recovery saves back off exponentially while they keep failing, and the backoff resets on success (#2523)", (t) => {
+  captureLogs(t);
+  const clock = freezeClock(t);
+  const dir = tempDir("a2a-2523-backoff-");
+  const dbFile = join(dir, "state.sqlite");
+  try {
+    const store = new SqliteBrokerStateStore(dbFile);
+    try {
+      const broker = new InMemoryA2ABroker(store, store.load(), { persistenceRecoveryProbeIntervalMs: 1_000 });
+      registerWorker(broker);
+      startedTask(broker, "task-backoff");
+      exec(dbFile, FAIL_SPEND_TRIGGER);
+      assert.throws(() => broker.completeTask("task-backoff", "worker-a", RESULT), /forced_spend_write_failure_2523/);
+      const probes = (): number => broker.getDurableWriteHealth().failuresTotal - 1;
+      // Probe 1 runs at once and fails; then waits of 1 s, 2 s, 4 s, 8 s.
+      assertStateUnavailable(() => broker.createTask(taskRequest("x")), "probe 1");
+      assert.equal(probes(), 1);
+      for (const wait of [1_000, 2_000, 4_000, 8_000]) {
+        clock.advance(wait - 1);
+        const commits = store.commits;
+        assertStateUnavailable(() => broker.createTask(taskRequest("x")), `inside ${wait}`);
+        assert.equal(store.commits, commits, `no write inside the ${wait} ms backoff`);
+        assert.equal(broker.getDurableWriteHealth().recoveryProbe.intervalMs, wait);
+        const before = probes();
+        clock.advance(1);
+        assertStateUnavailable(() => broker.createTask(taskRequest("x")), `after ${wait}`);
+        assert.equal(probes(), before + 1, `a probe runs once ${wait} ms passed`);
+      }
+      assert.equal(broker.getDurableWriteHealth().recoveryProbe.consecutiveFailures, 5);
+      assert.equal(broker.getDurableWriteHealth().recoveryProbe.intervalMs, 16_000);
+
+      exec(dbFile, DROP_SPEND_TRIGGER);
+      clock.advance(16_000);
+      broker.createTask(taskRequest("task-recovered"));
+      const recovered = broker.getDurableWriteHealth();
+      assert.equal(recovered.state, "ok");
+      assert.equal(recovered.recoveryProbe.consecutiveFailures, 0, "the streak resets on success");
+      assert.equal(recovered.recoveryProbe.intervalMs, 1_000);
+      assert.deepEqual(spendRows(dbFile), ["task-backoff"]);
+    } finally {
+      store.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("DurableWriteHealth: the backoff is capped at 60 s (or the base interval when larger) (#2523)", () => {
+  const health = new DurableWriteHealth(1_000);
+  health.markFailed(new Error("disk full"), "in_process", 0);
+  let now = 0;
+  for (let failure = 0; failure < 12; failure += 1) {
+    const token = health.beginProbe({ queued: false }, now)!;
+    assert.notEqual(token, undefined, `probe ${failure} allowed at ${now}`);
+    health.markFailed(new Error("disk full"), "in_process", now);
+    health.probeSettled(token, false, now);
+    now += health.snapshot().recoveryProbe.intervalMs;
+  }
+  assert.equal(health.snapshot().recoveryProbe.intervalMs, 60_000);
+  assert.equal(new DurableWriteHealth(120_000).snapshot().recoveryProbe.maxIntervalMs, 120_000);
+  assert.equal(durableWriteErrorClass(Object.assign(new Error("x"), { code: "ERR_SQLITE_ERROR" })), "Error/ERR_SQLITE_ERROR");
+  assert.equal(durableWriteErrorClass(new TypeError("x")), "TypeError");
+  assert.equal(durableWriteErrorClass("x"), "string");
+});
+
+function legacyLineage(lineageId: string): ReviewLineageRecord {
+  const partial = {
+    kind: "IntentContractV1" as const,
+    lineageId,
+    goal: "Legacy lineage carried in memory.",
+    nonGoals: ["None."],
+    invariants: ["Imported once."],
+    acceptanceCriteria: [{ id: "AC-1", text: "Imported once." }],
+    declaredPaths: { allowed: ["packages/broker/src/core/**"], forbidden: [] },
+    baseSha: "2".repeat(40),
+    headSha: "3".repeat(40),
+    createdAt: "2026-07-23T14:20:00Z",
+  };
+  const contract: IntentContractV1 = { ...partial, intentHash: intentHash(partial as unknown as Record<string, unknown>) };
+  const budget: ReviewLineageBudgetV1 = {
+    kind: "ReviewLineageBudgetV1",
+    maxWallClockSeconds: 21600,
+    maxCorrectionGenerations: 1,
+    maxReviewerRuns: 2,
+    maxReviewerReplacements: 1,
+    repeatedFindingThreshold: 2,
+    onExhaustion: "blocked_needs_operator",
+  };
+  return new ReviewLineageStore().create({ contract, budget, diffHash: `sha256:${"b".repeat(64)}`, at: "2026-07-23T14:20:00Z" });
+}
+
+/** A record the lineage schema rejects (an unknown mode). */
+function invalidLineage(lineageId: string): ReviewLineageRecord {
+  return { ...legacyLineage(lineageId), mode: "bogus" } as unknown as ReviewLineageRecord;
+}
+
+function importMarkerCount(dbFile: string): number {
+  return query<{ count: number }>(
+    dbFile,
+    `SELECT COUNT(*) AS count FROM ${REVIEW_LINEAGE_OBSERVATION_META_TABLE} WHERE key = 'legacy_snapshot_import_v1'`,
+  )[0]!.count;
+}
+
+test("a legacy review lineage the schema rejects defers the import instead of failing the save (#2523)", (t) => {
+  const logs = captureLogs(t);
+  const dir = tempDir("a2a-2523-legacy-store-");
+  const dbFile = join(dir, "state.sqlite");
+  try {
+    const store = new SqliteBrokerStateStore(dbFile);
+    try {
+      const snapshot = { ...emptySnapshot(), reviewLineages: [legacyLineage("legacy-ok"), invalidLineage("legacy-bad")] };
+      store.runBatch(() => store.save(snapshot));
+      store.save(snapshot);
+      assert.equal(importMarkerCount(dbFile), 0, "the import stays pending");
+      assert.equal(
+        logs.errors.filter((line) => line.includes("broker.review_lineage.legacy_import_deferred")).length,
+        1,
+        "logged once per store",
+      );
+      assert.match(logs.errors.find((line) => line.includes("legacy_import_deferred"))!, /legacy-bad/);
+      // The pre-write import (not a save) still fails loudly, as before.
+      assert.throws(() => store.runBatch(() => {
+        (store as unknown as { reviewLineageObservations: { importLegacySnapshot(records: unknown[]): unknown } })
+          .reviewLineageObservations.importLegacySnapshot(snapshot.reviewLineages);
+      }));
+    } finally {
+      store.close();
+    }
+    // A restart quarantines the rejected record (#2044) and imports the rest.
+    const reopened = new SqliteBrokerStateStore(dbFile, { loadSource: "snapshot" });
+    try {
+      const loaded = reopened.load();
+      assert.deepEqual(loaded.reviewLineages?.map((record) => record.lineageId), ["legacy-ok"]);
+      assert.equal(importMarkerCount(dbFile), 1);
+    } finally {
+      reopened.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+for (const loadSource of LOAD_SOURCES) {
+  test(`[${loadSource}] an invalid in-memory legacy lineage cannot degrade persistence through the full save (#2523)`, (t) => {
+    captureLogs(t);
+    const clock = freezeClock(t);
+    const dir = tempDir("a2a-2523-legacy-broker-");
+    const dbFile = join(dir, "state.sqlite");
+    try {
+      const store = new SqliteBrokerStateStore(dbFile, { loadSource });
+      try {
+        const broker = new InMemoryA2ABroker(
+          store,
+          { ...store.load(), reviewLineages: [invalidLineage("legacy-bad")] },
+          { persistenceRecoveryProbeIntervalMs: 0 },
+        );
+        registerWorker(broker);
+        clock.advance(6 * 60_000);
+        broker.createTask(taskRequest("task-full-save"));
+        clock.advance(6 * 60_000);
+        broker.createTask(taskRequest("task-full-save-2"));
+        assert.equal(broker.getDurableWriteHealth().state, "ok");
+        assert.equal(broker.getDurableWriteHealth().failuresTotal, 0);
+        assert.equal(diskStatus(dbFile, "task-full-save-2"), "queued");
+      } finally {
+        store.close();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+test("while degraded the stale-reaper sweep skips its mutating steps without failing, probes, and publishes the recovery (#2523)", async (t) => {
+  const logs = captureLogs(t);
+  const clock = freezeClock(t);
+  const dir = tempDir("a2a-2523-sweep-");
+  const dbFile = join(dir, "state.sqlite");
+  const store = new SqliteBrokerStateStore(dbFile, { loadSource: "hot-tables" });
+  const broker = openBroker(store, "repositories");
+  const server = await startTestServer({
+    stateStore: store,
+    broker,
+    sharedStateFile: join(dir, "serving-fence.sqlite"),
+    enforceRequesterIdentity: false,
+    staleReaperOlderThanSec: 60,
+  });
+  try {
+    registerWorker(broker);
+    startedTask(broker, "task-sweep-done");
+    startedTask(broker, "task-stale");
+    exec(dbFile, FAIL_SPEND_TRIGGER);
+    assert.throws(() => broker.completeTask("task-sweep-done", "worker-a", RESULT), /forced_spend_write_failure_2523/);
+    clock.advance(10 * 60_000);
+
+    assert.equal(server.runtime.runStaleReaperSweep(), 0, "the requeue step is skipped while degraded");
+    assert.equal(broker.getTask("task-stale")?.status, "running");
+    assert.equal(logs.errors.some((line) => line.includes("stale reaper sweep failed")), false, "no sweep error");
+    assert.equal(broker.getDurableWriteHealth().state, "degraded", "the sweep's recovery save failed (trigger)");
+
+    exec(dbFile, DROP_SPEND_TRIGGER);
+    server.runtime.runStaleReaperSweep();
+    assert.equal(broker.getDurableWriteHealth().state, "ok", "the sweep's recovery save cleared it");
+    assert.equal(diskStatus(dbFile, "task-sweep-done"), "succeeded");
+    assert.equal(logs.errors.some((line) => line.includes("stale reaper sweep failed")), false);
+  } finally {
+    await server.close();
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("routes that write directly run the registered fail-closed gate (#2523)", () => {
+  const store = { load: () => emptySnapshot(), save: () => undefined } as BrokerStateStore;
+  assert.doesNotThrow(() => assertDurableWritesAvailable(store), "no gate registered");
+  registerDurableAckGate(store, () => {
+    throw new BrokerError("state_unavailable", "broker_persistence_degraded: test");
+  });
+  assert.throws(() => assertDurableWritesAvailable(store), /broker_persistence_degraded/);
 });
