@@ -91,7 +91,8 @@ export function handleWorkerAssignmentEventStream(
   // #2499 slice 4 / #2520: the budget revision (InMemoryA2ABroker
   // getBudgetRevision) changes on every budget create or update, when the
   // period rolls, and when the alert sweep sees a budget become exhausted
-  // or stop being exhausted. When it differs from the revision of this
+  // or stop being exhausted (the next time the sweep evaluates that budget:
+  // up to 200 budgets per sweep, round-robin past that). When it differs from the revision of this
   // stream's last snapshot, the stream drops its memoized filter and sends a
   // fresh, filtered `worker-assignment-snapshot`, the authoritative queued
   // set that replaces the earlier one: tasks a lifted omission allows again
@@ -123,8 +124,12 @@ export function handleWorkerAssignmentEventStream(
     }
   };
   const sendSnapshot = (): void => {
-    // Read before the listing: a change during it is caught by the next check.
-    if (budgetFiltered) snapshotRevision = readBudgetRevision();
+    // Read before the listing (a change during it is caught by the next
+    // check), recorded only once the snapshot was written: a listing that
+    // throws leaves the old revision, so the next check retries. A revision
+    // read that failed records null, which the next check (with a readable
+    // revision) also treats as changed.
+    const revision = budgetFiltered ? readBudgetRevision() : null;
     const queued = broker.listTasks({ assignedWorkerId: workerId, status: "queued" });
     // #2499 slice 3b-2: the same budget filter as the worker poll route, so
     // poll and snapshot list the same tasks.
@@ -139,11 +144,14 @@ export function handleWorkerAssignmentEventStream(
         updatedAt: task.updatedAt,
       })),
     });
+    snapshotRevision = revision;
   };
   const reannounceIfBudgetChanged = (): void => {
-    if (snapshotRevision === null || !flushed || res.writableEnded) return;
+    if (!budgetFiltered || !flushed || res.writableEnded) return;
     try {
-      if (readBudgetRevision() === snapshotRevision) return;
+      // Unreadable now: undecidable, the next check tries again.
+      const current = readBudgetRevision();
+      if (current === null || current === snapshotRevision) return;
       budget = undefined;
       sendSnapshot();
     } catch {

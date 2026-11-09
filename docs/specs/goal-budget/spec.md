@@ -351,8 +351,8 @@ Corrections from the #2514 / #2515 reviews, proposed in the #2520 PR and accepte
 
 20. **Corrections.**
     - **Goal resume in `off`:** the last sentence of 18 ("Mode `off` does not resume goals limited while the mode was `on`") does not describe slice 3b-2, which resumes every goal a budget limited whenever the effective mode is not `on`, also in `off` after a restart. A goal whose goal budget left memory (a write that did not land) is resumed too, also in `on`.
-    - **Listing filter:** live `worker-assignment` events and their replay use the same filter as the snapshot (slice 3b-2). Every SSE stream sends a fresh, filtered snapshot when the budget revision changes (a budget write, the period roll, or the alert sweep seeing a budget become or stop being exhausted), after the write commits. `listing.omittedTotal` stays a per-listing count.
-    - **Alert failures:** a budget whose evaluation fails is queued again for the next sweep; only a sweep without failures resets `checkFailed.consecutive`.
+    - **Listing filter:** live `worker-assignment` events and their replay use the same filter as the snapshot (slice 3b-2). Every SSE stream sends a fresh, filtered snapshot when the budget revision changes (a budget write, the period roll, or the alert sweep seeing a budget become or stop being exhausted, the next time it evaluates that budget), after the write commits. `listing.omittedTotal` stays a per-listing count.
+    - **Alert failures:** a budget whose evaluation fails stays queued as a failed retry; retries take at most a quarter of each sweep (oldest failure first; the rest stay in the round-robin), so budgets that always fail cannot starve the others. Only a sweep without failures resets `checkFailed.consecutive`.
     - **Restart:** the startup alert pass is bounded to 1 000 budgets; the rest are evaluated first by the next sweeps, and an alert among them that still holds re-opens after the restart.
     - **`detectedAt`:** kept while an alert stays open; an alert that resolved and opens again gets the re-opening sweep's time.
 

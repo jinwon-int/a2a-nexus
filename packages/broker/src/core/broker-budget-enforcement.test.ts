@@ -2138,6 +2138,102 @@ for (const wiring of WIRINGS) {
     });
   }
 
+  for (const otherGoalBudget of [false, true]) {
+    test(`[${wiring}] #2520 review: an orphan resume that fails once is retried by the next sweep (${otherGoalBudget ? "other goal budgets remain" : "no goal budget left"})`, () => {
+      const h = harness(wiring, "on");
+      try {
+        exhaustedGoal(h);
+        if (otherGoalBudget) {
+          h.broker.createGoal({ id: "goal-2", title: "Goal two", requester: OPERATOR });
+          budget(h, { id: "b-goal-2", scopeType: "goal", scopeId: "goal-2", limitTokens: 1_000 });
+        }
+        assert.deepEqual(quiet(() => h.broker.applyGoalBudgetLimits())?.limited, ["goal-1"]);
+        h.sql("DELETE FROM broker_budgets WHERE id = 'b-goal'");
+        h.broker.reloadBudgetFromStore("b-goal");
+        const failing = mock.method(h.broker as unknown as { transitionGoalForBudget(): void }, "transitionGoalForBudget", () => {
+          throw new Error("transient persist failure");
+        });
+        let first: { resumed: string[] } | undefined;
+        try {
+          first = quiet(() => h.broker.applyGoalBudgetLimits());
+        } finally {
+          failing.mock.restore();
+        }
+        assert.deepEqual(first?.resumed, [], "the resume failed");
+        assert.equal(h.broker.getGoal("goal-1")?.status, "budget_limited");
+        assert.deepEqual(quiet(() => h.broker.applyGoalBudgetLimits())?.resumed, ["goal-1"], "retried by the next sweep");
+        assert.equal(h.broker.getGoal("goal-1")?.status, "pursuing");
+        const listGoals = mock.method(h.store, "listGoals");
+        try {
+          quiet(() => h.broker.applyGoalBudgetLimits());
+          assert.equal(listGoals.mock.callCount(), 0, "a walk without failures ends the check");
+        } finally {
+          listGoals.mock.restore();
+        }
+      } finally {
+        h.close();
+      }
+    });
+  }
+
+  test(`[${wiring}] #2520 review: a listing that throws during a re-announce sends nothing and keeps the old revision, so the next check retries`, async () => {
+    const h = harness(wiring, "on");
+    try {
+      exhaustedGoal(h);
+      quiet(() => h.broker.createTask(taskRequest("t-1", "worker-a", { goalId: "goal-1" })));
+      const stream = openAssignmentStream(h, "worker-a");
+      assert.deepEqual(stream.snapshots(), [[]]);
+      const filter = h.broker.filterQueuedListingForWorker.bind(h.broker);
+      let throws = 1;
+      const listing = mock.method(h.broker, "filterQueuedListingForWorker", ((workerId: string, items: Array<{ id: string }>) => {
+        if (throws > 0) {
+          throws -= 1;
+          throw new Error("listing failed");
+        }
+        return filter(workerId, items);
+      }) as typeof filter);
+      try {
+        h.broker.updateBudget("b-goal", { limitTokens: 10_000, actorId: "operator-1" });
+        await settle();
+        assert.equal(stream.snapshots().length, 1, "the listing threw: nothing sent");
+        quiet(() => h.broker.createTask(taskRequest("t-other", "worker-b")));
+        await settle();
+        assert.deepEqual(stream.snapshots(), [[], ["t-1"]], "the next check retries (the revision was not recorded)");
+      } finally {
+        listing.mock.restore();
+      }
+      stream.close();
+    } finally {
+      h.close();
+    }
+  });
+
+  test(`[${wiring}] #2520 review: a revision read that throws during the connect snapshot is retried once readable`, () => {
+    const h = harness(wiring, "on");
+    try {
+      exhaustedGoal(h);
+      quiet(() => h.broker.createTask(taskRequest("t-1", "worker-a", { goalId: "goal-1" })));
+      const read = h.broker.getBudgetRevision.bind(h.broker);
+      let throws = 1;
+      const revision = mock.method(h.broker, "getBudgetRevision", () => {
+        if (throws > 0) {
+          throws -= 1;
+          throw new Error("revision unreadable");
+        }
+        return read();
+      });
+      try {
+        const stream = openAssignmentStream(h, "worker-a");
+        assert.deepEqual(stream.snapshots(), [[], []], "unknown revision: the first readable check re-sends instead of never re-checking");
+        stream.close();
+      } finally {
+        revision.mock.restore();
+      }
+    } finally {
+      h.close();
+    }
+  });
+
   test(`[${wiring}] #2520 off after a restart resumes goals limited in on, also when their goal budget did not survive the restart`, () => {
     const h = harness(wiring, "on");
     try {

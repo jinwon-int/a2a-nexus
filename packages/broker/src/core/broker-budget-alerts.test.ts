@@ -530,6 +530,43 @@ test("#2520 a failed read re-queues a round-robin budget too (not only a dirty o
   }
 });
 
+test("#2520 review: budgets that always fail take at most the retry share; the others are still reached", () => {
+  const h = harness("off");
+  try {
+    for (let index = 0; index < 6; index += 1) budget(h, { id: `b-${index}`, scopeType: "lane", scopeId: `lane-${index}`, limitTokens: 10 });
+    sweep(h);
+    const failingLanes = new Set(["lane-0", "lane-1", "lane-2", "lane-3"]);
+    const perSweep: string[][] = [];
+    let current: string[] = [];
+    const failing = mock.method(h.store, "readSpendScopeUsage", (query: { scopeId: string }) => {
+      current.push(query.scopeId);
+      if (failingLanes.has(query.scopeId)) throw new Error("corrupt row");
+      return { usdSpent: 0, tokensSpent: 0n };
+    });
+    try {
+      for (let index = 0; index < 6; index += 1) {
+        current = [];
+        quiet(() => h.broker.evaluateBudgetAlerts({ limit: 4 }));
+        perSweep.push(current);
+      }
+    } finally {
+      failing.mock.restore();
+    }
+    const healthy = perSweep.flat().filter((lane) => !failingLanes.has(lane));
+    assert.ok(healthy.includes("lane-4") && healthy.includes("lane-5"), `the healthy budgets are reached: ${JSON.stringify(perSweep)}`);
+    // The round-robin goes on: no two sweeps in a row read only failing budgets
+    // (before #2520's retry share, every sweep read only the four failing ones).
+    for (let index = 1; index < perSweep.length; index += 1) {
+      const pair = [...perSweep[index - 1]!, ...perSweep[index]!];
+      assert.ok(pair.some((lane) => !failingLanes.has(lane)), `two sweeps in a row reach a healthy budget: ${JSON.stringify(perSweep)}`);
+    }
+    // Every failing budget is retried too (oldest failure first, one per sweep at limit 4).
+    for (const lane of failingLanes) assert.ok(perSweep.slice(1).flat().includes(lane), lane);
+  } finally {
+    h.close();
+  }
+});
+
 test("#2520 successes in the same sweep do not reset checkFailed.consecutive; a sweep without failures does", () => {
   const h = harness("off");
   try {
