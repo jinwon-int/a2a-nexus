@@ -39,6 +39,7 @@ export function handleWorkerAssignmentEventStream(
   let unsubscribe: (() => void) | null = null;
   let unsubscribeState: (() => void) | null = null;
   let budgetTimer: NodeJS.Timeout | null = null;
+  let reannounceImmediate: NodeJS.Immediate | null = null;
 
   const cleanup = (): void => {
     stopHeartbeat();
@@ -53,6 +54,10 @@ export function handleWorkerAssignmentEventStream(
     if (budgetTimer !== null) {
       clearInterval(budgetTimer);
       budgetTimer = null;
+    }
+    if (reannounceImmediate !== null) {
+      clearImmediate(reannounceImmediate);
+      reannounceImmediate = null;
     }
   };
 
@@ -83,27 +88,47 @@ export function handleWorkerAssignmentEventStream(
       return true;
     }
   };
-  // #2499 slice 4: an assignment the budget filter omitted (from the
-  // snapshot or a live event) is re-announced once it can be allowed again:
-  // when the broker's budget revision changes (a budget write, or the period
-  // rolled; nothing else can lift an omission), a stream that omitted
-  // something since its last snapshot sends a fresh, filtered
-  // `worker-assignment-snapshot`, the authoritative queued set. lastSentId
-  // still advances past an omitted live event, so a reconnect never replays
-  // it; the reconnect's own snapshot lists it once it is allowed. The
-  // revision is checked on every broker state change (budget writes
-  // persist) and, for the period roll, at the heartbeat cadence.
-  let omittedAtRevision: string | null = null;
-  const noteOmission = (): void => {
-    omittedAtRevision ??= broker.getBudgetRevision();
+  // #2499 slice 4 / #2520: the budget revision (InMemoryA2ABroker
+  // getBudgetRevision) changes on every budget create or update, when the
+  // period rolls, and when the alert sweep sees a budget become exhausted
+  // or stop being exhausted. When it differs from the revision of this
+  // stream's last snapshot, the stream drops its memoized filter and sends a
+  // fresh, filtered `worker-assignment-snapshot`, the authoritative queued
+  // set that replaces the earlier one: tasks a lifted omission allows again
+  // are listed, and tasks a scope that just ran out now refuses are dropped.
+  // Every stream does this, whether or not it omitted anything. Mode `off`
+  // has no budget filter, so nothing is re-sent there.
+  //
+  // The revision is checked after every persisted broker state change and,
+  // for a period roll or an alert-sweep change (neither persists anything),
+  // at the heartbeat cadence. The state-change check is deferred to
+  // setImmediate: a budget write announces its state change from inside
+  // its commit, and a write that rolls back restores the earlier budget
+  // synchronously, so the deferred snapshot reflects the committed (or the
+  // restored) budget, never the rolled-back one.
+  //
+  // `lastSentId` is this connection's de-duplication point between the
+  // replay and the buffered live events; it moves past an omitted live
+  // event too, so this connection never evaluates that event again. An
+  // omitted event is never written, so the client's `Last-Event-ID` stays
+  // before it: a reconnect replays it through the same filter, and the
+  // reconnect's own snapshot lists the task once it is allowed.
+  const budgetFiltered = broker.getBudgetEnforcementMode() !== "off";
+  let snapshotRevision: string | null = null;
+  const readBudgetRevision = (): string | null => {
+    try {
+      return broker.getBudgetRevision();
+    } catch {
+      return null;
+    }
   };
   const sendSnapshot = (): void => {
+    // Read before the listing: a change during it is caught by the next check.
+    if (budgetFiltered) snapshotRevision = readBudgetRevision();
     const queued = broker.listTasks({ assignedWorkerId: workerId, status: "queued" });
     // #2499 slice 3b-2: the same budget filter as the worker poll route, so
     // poll and snapshot list the same tasks.
     const queuedTasks = broker.filterQueuedListingForWorker(workerId, queued);
-    omittedAtRevision = null;
-    if (queuedTasks.length < queued.length) noteOmission();
     writeSseEvent(res, "worker-assignment-snapshot", {
       workerId,
       count: queuedTasks.length,
@@ -116,14 +141,21 @@ export function handleWorkerAssignmentEventStream(
     });
   };
   const reannounceIfBudgetChanged = (): void => {
-    if (omittedAtRevision === null || !flushed || res.writableEnded) return;
+    if (snapshotRevision === null || !flushed || res.writableEnded) return;
     try {
-      if (broker.getBudgetRevision() === omittedAtRevision) return;
+      if (readBudgetRevision() === snapshotRevision) return;
       budget = undefined;
       sendSnapshot();
     } catch {
       // Fail-open, like the live filter: the stream must not break.
     }
+  };
+  const scheduleReannounce = (): void => {
+    if (reannounceImmediate !== null) return;
+    reannounceImmediate = setImmediate(() => {
+      reannounceImmediate = null;
+      reannounceIfBudgetChanged();
+    });
   };
   const sendAssignment = (event: TaskStatusEvent): void => {
     if (!isWorkerAssignmentEvent(event, workerId)) {
@@ -134,7 +166,6 @@ export function handleWorkerAssignmentEventStream(
     }
     lastSentId = event.id;
     if (!budgetAllows(event.taskId)) {
-      noteOmission();
       return;
     }
     writeSseEvent(res, "worker-assignment", buildWorkerAssignmentEvent(event), String(event.id));
@@ -148,7 +179,7 @@ export function handleWorkerAssignmentEventStream(
     sendAssignment(event);
   });
 
-  unsubscribeState = broker.subscribeToState(() => reannounceIfBudgetChanged());
+  if (budgetFiltered) unsubscribeState = broker.subscribeToState(scheduleReannounce);
 
   attachSseConnectionCleanup(req, res, cleanup);
 
@@ -169,8 +200,10 @@ export function handleWorkerAssignmentEventStream(
 
   if (heartbeatMs > 0) {
     stopHeartbeat = startSseHeartbeat(res, heartbeatMs, cleanup);
-    budgetTimer = setInterval(reannounceIfBudgetChanged, heartbeatMs);
-    budgetTimer.unref?.();
+    if (budgetFiltered) {
+      budgetTimer = setInterval(reannounceIfBudgetChanged, heartbeatMs);
+      budgetTimer.unref?.();
+    }
   }
 }
 

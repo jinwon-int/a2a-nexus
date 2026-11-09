@@ -25,6 +25,7 @@
  * store, so the poll route takes the SQLite hot read path.
  */
 import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -37,6 +38,8 @@ import { createBrokerAgentCard } from "../a2a/agent-card.js";
 import { executeA2AJsonRpc } from "../a2a/json-rpc.js";
 import { handleWorkerAssignmentEventStream } from "../http/task-event-streams.js";
 import { readSseEventsUntil, startTestServer } from "../server-test-helpers.js";
+import { signA2AWorkerRequest } from "../workers/worker-http-signature.js";
+import { HOT_READ_HARD_MAX_LIMIT } from "./broker-list-filters.js";
 import { BrokerError, InMemoryA2ABroker } from "./broker.js";
 import { PendingHotStateBuffer } from "./store/pending-hot-state-buffer.js";
 import { createWorkerThreadPersistence } from "./store/sqlite-worker-thread-persistence.js";
@@ -1378,6 +1381,102 @@ for (const wiring of WIRINGS) {
     }
   });
 
+  test(`[${wiring}] #2520 a period roll releases a held all-omitted long poll (re-listed every drain-check slice), not at waitMs`, async () => {
+    const h = harness(wiring, "on");
+    try {
+      completePeriod(h);
+      budget(h, { id: "b-lane", scopeType: "lane", scopeId: "analyze", limitTokens: 100 });
+      seedSpend(h, spendRow(h, "r-1", { inputTokens: 500 }));
+      h.broker.createTask(taskRequest("t-1", "worker-a"));
+      await withServer(h, "on", async (baseUrl) => {
+        const startedAt = Date.now();
+        const poll = fetch(`${baseUrl}/tasks?${POLL("worker-a")}&waitMs=10000`, { headers: { "x-a2a-requester-id": "worker-a" } });
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        const next = nextPeriodKey(h.broker.budgetPeriodKey());
+        const roll = mock.method(h.broker, "budgetPeriodKey", () => next);
+        try {
+          const body = await (await poll).json() as { items: Array<{ id: string }> };
+          assert.deepEqual(body.items.map((item) => item.id), ["t-1"]);
+          assert.ok(Date.now() - startedAt < 5_000, "released within a slice of the roll, not at the 10 s deadline");
+        } finally {
+          roll.mock.restore();
+        }
+      });
+    } finally {
+      h.close();
+    }
+  });
+
+  test(`[${wiring}] #2520 the worker= alias (and status=pending) poll applies the same budget filter`, async () => {
+    const h = harness(wiring, "on");
+    try {
+      exhaustedGoal(h);
+      h.broker.createTask(taskRequest("t-goal", "worker-a", { goalId: "goal-1" }));
+      h.broker.createTask(taskRequest("t-plain", "worker-a"));
+      await withServer(h, "on", async (baseUrl) => {
+        const expected = await listIds(baseUrl, POLL("worker-a"));
+        assert.deepEqual(expected, ["t-plain"]);
+        assert.deepEqual(await listIds(baseUrl, "worker=worker-a&status=queued"), expected, "worker= alias");
+        assert.deepEqual(await listIds(baseUrl, "worker=worker-a&status=pending"), expected, "status=pending is queued");
+        const body = await (await fetch(`${baseUrl}/tasks?worker=worker-a&status=queued`)).json() as { budgetOmitted?: number };
+        assert.equal(body.budgetOmitted, 1);
+      });
+    } finally {
+      h.close();
+    }
+  });
+
+  test(`[${wiring}] #2520 an identity-enforced (signed) worker poll applies the budget filter`, async () => {
+    const h = harness(wiring, "on");
+    const keyPair = generateKeyPairSync("ed25519");
+    const keyid = "worker:worker-a:budget";
+    try {
+      exhaustedGoal(h);
+      h.broker.createTask(taskRequest("t-goal", "worker-a", { goalId: "goal-1" }));
+      h.broker.createTask(taskRequest("t-plain", "worker-a"));
+      const server = await startTestServer({
+        broker: h.broker,
+        stateStore: h.store,
+        enforceRequesterIdentity: true,
+        brokerId: "brokeralpha",
+        a2aHttpSignatureWorkerAuth: "strict",
+        a2aHttpSignatureKeyRegistry: {
+          [keyid]: { keyid, workerId: "worker-a", publicKeyJwk: keyPair.publicKey.export({ format: "jwk" }) as Record<string, unknown> },
+        },
+        budgetEnforcementMode: "on",
+        budgetPeriodTimeZone: "UTC",
+        rateLimitMaxRequests: 1_000,
+      });
+      try {
+        const url = new URL(`/tasks?${POLL("worker-a")}`, server.baseUrl);
+        const headers = new Headers({
+          accept: "application/json",
+          "x-a2a-requester-id": "worker-a",
+          "x-a2a-requester-kind": "node",
+          "x-a2a-requester-role": "analyst",
+        });
+        const unsigned = await fetch(url, { headers });
+        assert.equal(unsigned.status, 401, "precondition: the poll is identity-enforced");
+        signA2AWorkerRequest({
+          method: "GET",
+          url,
+          headers,
+          body: "",
+          config: { keyid, privateKeyJwk: keyPair.privateKey.export({ format: "jwk" }) as Record<string, unknown>, brokerId: "brokeralpha" },
+        });
+        const res = await fetch(url, { headers });
+        assert.equal(res.status, 200);
+        const body = await res.json() as { items: Array<{ id: string }>; budgetOmitted: number };
+        assert.deepEqual(body.items.map((item) => item.id), ["t-plain"]);
+        assert.equal(body.budgetOmitted, 1);
+      } finally {
+        await server.close();
+      }
+    } finally {
+      h.close();
+    }
+  });
+
   test(`[${wiring}] m12: mode off — the worker poll and the SSE snapshot read no budget`, async () => {
     const h = harness(wiring, "off");
     try {
@@ -1642,7 +1741,7 @@ test("m12: lease-gated claim refused by a budget leaves no lease owner in the le
 // 5a is the M1 scan-bound test above.
 
 /** A worker assignment stream on a fake response; snapshots and live assignments are read back. */
-function openAssignmentStream(h: Harness, workerId: string) {
+function openAssignmentStream(h: Harness, workerId: string, options: { heartbeatMs?: number } = {}) {
   const req = new EventEmitter() as unknown as IncomingMessage;
   (req as unknown as { headers: Record<string, string> }).headers = {};
   const chunks: string[] = [];
@@ -1658,19 +1757,30 @@ function openAssignmentStream(h: Harness, workerId: string) {
       (this as { writableEnded: boolean }).writableEnded = true;
     },
   } as unknown as ServerResponse<IncomingMessage>;
-  handleWorkerAssignmentEventStream(req, res, { broker: h.broker, workerId, heartbeatMs: 0 });
+  handleWorkerAssignmentEventStream(req, res, { broker: h.broker, workerId, heartbeatMs: options.heartbeatMs ?? 0 });
   const blocks = (event: string) => chunks.join("").split("\n\n")
     .filter((block) => block.includes(`event: ${event}\n`))
     .map((block) => JSON.parse(block.split("\n").find((line) => line.startsWith("data: "))!.slice(6)) as Record<string, unknown>);
   return {
     snapshots: () => blocks("worker-assignment-snapshot").map((data) => (data.tasks as Array<{ taskId: string }>).map((task) => task.taskId).sort()),
     assignments: () => blocks("worker-assignment").map((data) => data.taskId as string),
+    heartbeats: () => chunks.filter((chunk) => chunk.startsWith(":")).length,
     close: () => req.emit("close"),
   };
 }
 
+/** #2520: the stream checks the budget revision on a deferred (setImmediate) turn after a state change. */
+function settle(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+function nextPeriodKey(current: string): string {
+  const [year, month] = current.split("-").map(Number) as [number, number];
+  return month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, "0")}`;
+}
+
 for (const wiring of WIRINGS) {
-  test(`[${wiring}] 5b: an omitted assignment (snapshot or live) is re-announced by a fresh snapshot when the budget changes; other streams are not`, () => {
+  test(`[${wiring}] 5b: an omitted assignment (snapshot or live) is re-announced by a fresh snapshot when the budget changes; #2520: every stream gets it`, async () => {
     const h = harness(wiring, "on");
     try {
       exhaustedGoal(h);
@@ -1681,13 +1791,16 @@ for (const wiring of WIRINGS) {
       quiet(() => h.broker.createTask(taskRequest("t-live", "worker-a", { goalId: "goal-1" })));
       assert.deepEqual(stream.assignments(), [], "the live event is omitted");
       quiet(() => h.broker.createTask(taskRequest("t-b", "worker-b")));
+      await settle();
       assert.equal(stream.snapshots().length, 1, "a state change without a budget change sends nothing");
       h.broker.updateBudget("b-goal", { limitTokens: 10_000, actorId: "operator-1" });
+      assert.equal(stream.snapshots().length, 1, "deferred past the write's commit");
+      await settle();
       assert.deepEqual(stream.snapshots(), [[], ["t-before", "t-live"]], "re-announced once allowed");
-      assert.deepEqual(other.snapshots(), [[]], "a stream that omitted nothing gets no extra snapshot");
+      assert.deepEqual(other.snapshots(), [[], ["t-b"]], "#2520: a stream that omitted nothing gets the fresh snapshot too");
       quiet(() => h.broker.createTask(taskRequest("t-ok", "worker-a")));
-      h.broker.updateBudget("b-goal", { warnPct: 90, actorId: "operator-1" });
-      assert.equal(stream.snapshots().length, 2, "nothing omitted since the last snapshot: no re-send");
+      await settle();
+      assert.equal(stream.snapshots().length, 2, "no budget change: no re-send");
       assert.deepEqual(stream.assignments(), ["t-ok"]);
       stream.close();
       other.close();
@@ -1696,23 +1809,140 @@ for (const wiring of WIRINGS) {
     }
   });
 
-  test(`[${wiring}] 5b: the period roll re-announces omitted assignments on the next state change`, () => {
+  test(`[${wiring}] 5b: the period roll re-announces omitted assignments on the next state change`, async () => {
     const h = harness(wiring, "on");
     try {
       exhaustedGoal(h);
       quiet(() => h.broker.createTask(taskRequest("t-1", "worker-a", { goalId: "goal-1" })));
       const stream = openAssignmentStream(h, "worker-a");
       assert.deepEqual(stream.snapshots(), [[]]);
-      const current = h.broker.budgetPeriodKey();
-      const [year, month] = current.split("-").map(Number) as [number, number];
-      const next = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, "0")}`;
-      const rolled = mock.method(h.broker, "budgetPeriodKey", () => next);
+      const next = nextPeriodKey(h.broker.budgetPeriodKey());
+      const roll = mock.method(h.broker, "budgetPeriodKey", () => next);
       try {
         quiet(() => h.broker.createTask(taskRequest("t-other", "worker-b")));
+        await settle();
         assert.deepEqual(stream.snapshots(), [[], ["t-1"]]);
       } finally {
-        rolled.mock.restore();
+        roll.mock.restore();
       }
+      stream.close();
+    } finally {
+      h.close();
+    }
+  });
+
+  test(`[${wiring}] #2520 heartbeat cadence: a period roll without any state change re-announces; close clears the interval`, () => {
+    const h = harness(wiring, "on");
+    mock.timers.enable({ apis: ["setInterval"] });
+    try {
+      exhaustedGoal(h);
+      quiet(() => h.broker.createTask(taskRequest("t-1", "worker-a", { goalId: "goal-1" })));
+      const stream = openAssignmentStream(h, "worker-a", { heartbeatMs: 1_000 });
+      assert.deepEqual(stream.snapshots(), [[]]);
+      mock.timers.tick(1_000);
+      assert.equal(stream.snapshots().length, 1, "no budget change: the heartbeat check sends nothing");
+      assert.equal(stream.heartbeats(), 1, "the heartbeat itself runs at the same cadence");
+      const next = nextPeriodKey(h.broker.budgetPeriodKey());
+      const roll = mock.method(h.broker, "budgetPeriodKey", () => next);
+      try {
+        mock.timers.tick(1_000);
+        assert.deepEqual(stream.snapshots(), [[], ["t-1"]], "the period roll is noticed at the heartbeat cadence, with no state change");
+        stream.close();
+        mock.timers.tick(5_000);
+        assert.equal(stream.snapshots().length, 2, "closed: the budget interval is cleared");
+        assert.equal(stream.heartbeats(), 2, "and so is the heartbeat");
+      } finally {
+        roll.mock.restore();
+      }
+    } finally {
+      mock.timers.reset();
+      h.close();
+    }
+  });
+
+  test(`[${wiring}] #2520 a stream that omitted nothing drops tasks of a scope that just ran out (alert sweep) and of a lowered limit`, async () => {
+    const h = harness(wiring, "on");
+    try {
+      completePeriod(h);
+      h.broker.createGoal({ id: "goal-1", title: "Goal one", requester: OPERATOR });
+      budget(h, { id: "b-goal", scopeType: "goal", scopeId: "goal-1", limitTokens: 100 });
+      quiet(() => h.broker.createTask(taskRequest("t-1", "worker-a", { goalId: "goal-1" })));
+      const stream = openAssignmentStream(h, "worker-a");
+      assert.deepEqual(stream.snapshots(), [["t-1"]], "nothing omitted yet");
+      // Spend reaches the limit: no budget write, no state change. The alert
+      // sweep notices it and the revision moves.
+      seedSpend(h, spendRow(h, "r-g", { goalId: "goal-1", inputTokens: 150 }));
+      quiet(() => h.broker.evaluateBudgetAlerts());
+      quiet(() => h.broker.createTask(taskRequest("t-other", "worker-b")));
+      await settle();
+      assert.deepEqual(stream.snapshots(), [["t-1"], []], "the scope ran out: the fresh snapshot drops it");
+      h.broker.updateBudget("b-goal", { limitTokens: 10_000, actorId: "operator-1" });
+      await settle();
+      h.broker.updateBudget("b-goal", { limitTokens: 50, actorId: "operator-1" });
+      await settle();
+      assert.deepEqual(stream.snapshots(), [["t-1"], [], ["t-1"], []], "a lowered limit drops it again");
+      stream.close();
+    } finally {
+      h.close();
+    }
+  });
+
+  test(`[${wiring}] #2520 the re-snapshot follows the committed budget: a raise that rolls back re-announces nothing new`, async () => {
+    const h = harness(wiring, "on");
+    try {
+      exhaustedGoal(h);
+      quiet(() => h.broker.createTask(taskRequest("t-1", "worker-a", { goalId: "goal-1" })));
+      const stream = openAssignmentStream(h, "worker-a");
+      assert.deepEqual(stream.snapshots(), [[]]);
+      // The outermost commit fails after the mutation ran (and announced its
+      // state change); nested joins (the store's own saves) pass through.
+      const runBatch = h.store.runBatch.bind(h.store);
+      let depth = 0;
+      let announced = 0;
+      const unsubscribe = h.broker.subscribeToState(() => {
+        announced += 1;
+      });
+      const failing = mock.method(h.store, "runBatch", <T>(fn: () => T): T => {
+        depth += 1;
+        try {
+          const result = runBatch(fn);
+          if (depth === 1) throw new Error("commit failed");
+          return result;
+        } finally {
+          depth -= 1;
+        }
+      });
+      try {
+        assert.throws(() => h.broker.updateBudget("b-goal", { limitTokens: 10_000, actorId: "operator-1" }), /commit failed/);
+      } finally {
+        failing.mock.restore();
+        unsubscribe();
+      }
+      assert.equal(announced, 1, "precondition: the state change was announced inside the failed commit");
+      assert.equal(h.broker.getBudget("b-goal")?.limitTokens, 100, "memory restored");
+      assert.equal(stream.snapshots().length, 1, "nothing sent from inside the commit");
+      await settle();
+      assert.equal(stream.snapshots().length, 2, "the revision moved: a snapshot after the rollback");
+      assert.deepEqual(stream.snapshots().at(-1), [], "the task the claim still refuses is not listed");
+      assert.equal(stream.snapshots().some((ids) => ids.includes("t-1")), false);
+      stream.close();
+    } finally {
+      h.close();
+    }
+  });
+
+  test(`[${wiring}] #2520 mode off: the stream subscribes to no budget re-check and sends one snapshot`, async () => {
+    const h = harness(wiring, "off");
+    try {
+      budget(h, { id: "b-lane", scopeType: "lane", scopeId: "analyze", limitTokens: 1 });
+      quiet(() => h.broker.createTask(taskRequest("t-1", "worker-a")));
+      const revision = mock.method(h.broker, "getBudgetRevision");
+      const stream = openAssignmentStream(h, "worker-a");
+      h.broker.updateBudget("b-lane", { limitTokens: 5, actorId: "operator-1" });
+      await settle();
+      assert.deepEqual(stream.snapshots(), [["t-1"]]);
+      assert.equal(revision.mock.callCount(), 0, "the revision is never read in mode off");
+      revision.mock.restore();
       stream.close();
     } finally {
       h.close();
@@ -1877,6 +2107,96 @@ for (const wiring of WIRINGS) {
     }
   });
 
+  for (const otherGoalBudget of [false, true]) {
+    test(`[${wiring}] #2520 a goal whose goal budget left memory is resumed in on (${otherGoalBudget ? "other goal budgets remain" : "no goal budget left"}); then nothing more is read`, () => {
+      const h = harness(wiring, "on");
+      try {
+        exhaustedGoal(h);
+        if (otherGoalBudget) {
+          h.broker.createGoal({ id: "goal-2", title: "Goal two", requester: OPERATOR });
+          budget(h, { id: "b-goal-2", scopeType: "goal", scopeId: "goal-2", limitTokens: 1_000 });
+        }
+        assert.deepEqual(quiet(() => h.broker.applyGoalBudgetLimits())?.limited, ["goal-1"]);
+        // The budget write did not land after all: the resync drops it from memory.
+        h.sql("DELETE FROM broker_budgets WHERE id = 'b-goal'");
+        h.broker.reloadBudgetFromStore("b-goal");
+        assert.equal(h.broker.getBudget("b-goal"), undefined);
+        assert.deepEqual(quiet(() => h.broker.applyGoalBudgetLimits())?.resumed, ["goal-1"]);
+        const goal = h.broker.getGoal("goal-1")!;
+        assert.equal(goal.status, "pursuing");
+        assert.equal(goal.history.at(-1)?.note, "budget_available");
+        const listGoals = mock.method(h.store, "listGoals");
+        try {
+          quiet(() => h.broker.applyGoalBudgetLimits());
+          assert.equal(listGoals.mock.callCount(), 0, "the orphan pass walked every budget_limited goal: no goal list read");
+        } finally {
+          listGoals.mock.restore();
+        }
+      } finally {
+        h.close();
+      }
+    });
+  }
+
+  test(`[${wiring}] #2520 off after a restart resumes goals limited in on, also when their goal budget did not survive the restart`, () => {
+    const h = harness(wiring, "on");
+    try {
+      exhaustedGoal(h);
+      assert.deepEqual(quiet(() => h.broker.applyGoalBudgetLimits())?.limited, ["goal-1"]);
+      h.sql("DELETE FROM broker_budgets WHERE id = 'b-goal'");
+      h.reopen("off");
+      assert.equal(h.broker.listBudgets()?.length, 0, "no goal budget after the restart");
+      assert.deepEqual(quiet(() => h.broker.applyGoalBudgetLimits())?.resumed, ["goal-1"]);
+      assert.equal(h.broker.getGoal("goal-1")?.history.at(-1)?.note, "budget_enforcement_not_on");
+      const listGoals = mock.method(h.store, "listGoals");
+      try {
+        assert.deepEqual(h.broker.applyGoalBudgetLimits(), { limited: [], resumed: [] });
+        assert.equal(listGoals.mock.callCount(), 0, "once per process start");
+      } finally {
+        listGoals.mock.restore();
+      }
+    } finally {
+      h.close();
+    }
+  });
+
+  test(`[${wiring}] #2520 listGoals: past the store's hard read bound the overlay over-fetch continues with keyset reads`, () => {
+    const h = harness(wiring, "on");
+    try {
+      const total = HOT_READ_HARD_MAX_LIMIT + 2;
+      const updatedAt = "2026-11-01T00:00:00.000Z";
+      const row = (index: number): GoalRecord => ({
+        id: `g-${String(index).padStart(6, "0")}`, title: "g", objective: "g", requester: OPERATOR, status: "pursuing",
+        createdAt: updatedAt, updatedAt, taskAttachments: [], history: [],
+      });
+      const table = Array.from({ length: total }, (_, index) => row(index));
+      const limits: number[] = [];
+      const listGoals = mock.method(h.store, "listGoals", (filters: { status?: string; limit?: number; after?: { updatedAt: string; id: string } }) => {
+        const limit = Math.min(filters.limit ?? 1_000, HOT_READ_HARD_MAX_LIMIT);
+        limits.push(limit);
+        return table
+          .filter((goal) => (!filters.status || goal.status === filters.status) && (!filters.after || goal.id > filters.after.id))
+          .slice(0, limit);
+      });
+      const overlay = h.broker["goalUpdates"] as Map<string, GoalRecord>;
+      try {
+        overlay.set(table[0]!.id, { ...table[0]!, status: "budget_limited" });
+        const page = h.broker.listGoals({ status: "pursuing", limit: HOT_READ_HARD_MAX_LIMIT });
+        assert.equal(page.length, HOT_READ_HARD_MAX_LIMIT, "not short: the clamp is read past");
+        assert.equal(page.some((goal) => goal.id === table[0]!.id), false);
+        assert.deepEqual(limits, [HOT_READ_HARD_MAX_LIMIT, 1]);
+        limits.length = 0;
+        assert.equal(h.broker.listGoals({ status: "pursuing", limit: 5 }).length, 5);
+        assert.deepEqual(limits, [6], "below the bound: one read, as before");
+      } finally {
+        overlay.clear();
+        listGoals.mock.restore();
+      }
+    } finally {
+      h.close();
+    }
+  });
+
   test(`[${wiring}] 5i: without goal budgets the goal-limit sweep reads no enforcement metadata`, () => {
     const h = harness(wiring, "on");
     try {
@@ -1929,7 +2249,7 @@ test("5c: JSON-RPC race: a cancel that throws still returns the budget refusal (
     assert.match(error.message, /canceling the task failed \(status queued\)/);
     assert.equal(h.broker.getTask(metadata.taskId!)?.status, "queued");
     assert.deepEqual(named(run.events, "broker.budget.convention_cancel_failed"), [
-      { event: "broker.budget.convention_cancel_failed", taskId: metadata.taskId },
+      { event: "broker.budget.convention_cancel_failed", taskId: metadata.taskId, taskStatus: "queued" },
     ]);
   } finally {
     h.close();
@@ -1959,6 +2279,129 @@ test("5d: the JSON-RPC pre-check decides on the same request the create uses (on
     assert.deepEqual(prechecked[0], rest);
   } finally {
     h.close();
+  }
+});
+
+test("#2520 5c: a status read that throws after a failed cancel does not replace the refusal either", () => {
+  const h = harness("hints", "on");
+  try {
+    completePeriod(h);
+    budget(h, { id: "b-agent", scopeType: "agent", scopeId: "default-agent", limitTokens: 10 });
+    seedSpend(h, spendRow(h, "r-1", { agentId: "default-agent", inputTokens: 50 }));
+    h.broker.assertClaimBudgetAllowed = () => undefined;
+    let failReads = false;
+    h.broker.cancelTask = () => {
+      failReads = true;
+      throw new Error("cancel failed");
+    };
+    const getTask = h.broker.getTask.bind(h.broker);
+    h.broker.getTask = (taskId: string) => {
+      if (failReads) throw new Error("read failed");
+      return getTask(taskId);
+    };
+    const run = captureWarnings(() => executeA2AJsonRpc(
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "SendMessage",
+        params: { message: { role: "ROLE_USER", parts: [{ text: "complete me" }], messageId: "tck-complete-task-read-fails" } },
+      },
+      {
+        broker: h.broker,
+        agentCard: createBrokerAgentCard({ serviceName: "test-broker", publicBaseUrl: "https://broker.test/" }),
+        publicBaseUrl: "https://broker.test",
+        requesterIdentity: null,
+        enforceRequesterIdentity: false,
+        defaultAgentNodeId: "default-agent",
+        responseShape: "spec",
+      },
+    ));
+    failReads = false;
+    const error = rpcError(run.result);
+    assert.equal(error.code, -32012, "the budget refusal, not the read error");
+    assert.match(error.message, /canceling the task failed \(status unknown\)/);
+    const metadata = error.data?.[0]?.metadata ?? {};
+    assert.equal(metadata.budgetReason, "budget_exhausted");
+    assert.deepEqual(named(run.events, "broker.budget.convention_cancel_failed"), [
+      { event: "broker.budget.convention_cancel_failed", taskId: metadata.taskId, taskStatus: "unknown" },
+    ]);
+    assert.equal(h.broker.getTask(metadata.taskId!)?.status, "queued", "left queued (documented); named in the error data");
+  } finally {
+    h.close();
+  }
+});
+
+test("#2520 5d: the claim pre-check takes the request the create uses, normalized as createTask does", () => {
+  const h = harness("hints", "on");
+  try {
+    completePeriod(h);
+    const prechecked: CreateTaskRequest[] = [];
+    const created: CreateTaskRequest[] = [];
+    const precheck = h.broker.assertClaimBudgetAllowed.bind(h.broker);
+    h.broker.assertClaimBudgetAllowed = (request) => {
+      prechecked.push(structuredClone(request));
+      precheck(request);
+    };
+    const create = h.broker.createTask.bind(h.broker);
+    h.broker.createTask = (request) => {
+      created.push(structuredClone(request));
+      return create(request);
+    };
+    rpcResult(sendConvention(h, "tck-complete-task-same-request"));
+    assert.equal(prechecked.length, 1);
+    const { exchangeId, ...rest } = created[0]!;
+    assert.ok(exchangeId);
+    assert.deepEqual(prechecked[0], rest, "the same request (only the exchange id differs)");
+    // The goal scope comes from the normalized request: a normalization that
+    // links a goal makes the pre-check read that goal's budget.
+    h.broker.createGoal({ id: "goal-1", title: "Goal one", requester: OPERATOR });
+    budget(h, { id: "b-goal", scopeType: "goal", scopeId: "goal-1", limitTokens: 10 });
+    seedSpend(h, spendRow(h, "r-g", { goalId: "goal-1", inputTokens: 50 }));
+    const normalize = (h.broker as unknown as { normalizeCreateTaskRequest(request: CreateTaskRequest): { request: CreateTaskRequest } })
+      .normalizeCreateTaskRequest.bind(h.broker);
+    const linked = mock.method(h.broker as unknown as { normalizeCreateTaskRequest: typeof normalize }, "normalizeCreateTaskRequest", (request: CreateTaskRequest) => {
+      const result = normalize(request);
+      return { ...result, request: { ...result.request, goalId: "goal-1" } };
+    });
+    try {
+      const tasksBefore = h.broker.listTasks().length;
+      const error = rpcError(sendConvention(h, "tck-complete-task-goal-linked"));
+      assert.equal(error.code, -32012);
+      assert.equal(error.data?.[0]?.metadata?.budgetReason, "budget_exhausted");
+      assert.equal(h.broker.listTasks().length, tasksBefore, "refused by the pre-check: nothing created");
+    } finally {
+      linked.mock.restore();
+    }
+  } finally {
+    h.close();
+  }
+});
+
+test("#2520 JSON-RPC inline claim: claim errors other than a budget refusal pass through unchanged (no cancel)", () => {
+  for (const thrown of [
+    new BrokerError("invalid_transition", "task is not claimable"),
+    new BrokerError("policy_denied", "worker class denied", { reason: "worker_class_denied" }),
+  ]) {
+    const h = harness("hints", "on");
+    try {
+      let canceled = 0;
+      h.broker.cancelTask = () => {
+        canceled += 1;
+        throw new Error("must not cancel");
+      };
+      h.broker.claimTask = () => {
+        throw thrown;
+      };
+      const error = rpcError(sendConvention(h, `tck-complete-task-${thrown.code}`));
+      assert.equal(error.message, thrown.message, "the claim error's message, unchanged");
+      const metadata = error.data?.[0]?.metadata ?? {};
+      assert.equal(metadata.brokerCode, thrown.code);
+      assert.equal(metadata.budgetReason, undefined);
+      assert.equal(metadata.taskId, undefined, "not decorated with the task id");
+      assert.equal(canceled, 0);
+    } finally {
+      h.close();
+    }
   }
 });
 
@@ -2073,6 +2516,89 @@ test("5j (worker-thread): gen1 lands, gen2 fails: gen2's audit event goes, gen1'
     assert.equal(proxy.latestQueuedWrite(), undefined);
   } finally {
     console.error = originalError;
+    await handle.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- #2520: worker-thread insert races ------------------------------------------------------
+
+test("#2520 (worker-thread): a budget insert that races another writer's row for the same scope fails its queued write; the resync drops it, and a goal it limited is resumed", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-budget-race-"));
+  const dbFile = join(dir, "state.sqlite");
+  const exec = (sql: string) => {
+    const db = new DatabaseSync(dbFile);
+    try {
+      db.exec(sql);
+    } finally {
+      db.close();
+    }
+  };
+  const handle = createWorkerThreadPersistence({ dbFile, loadSource: "hot-tables", queueCapacity: 256 });
+  const originalError = console.error;
+  try {
+    const proxy = handle.stateStore;
+    const broker = quiet(() => new InMemoryA2ABroker(proxy, proxy.load(), { budgetPeriodTimeZone: "UTC", budgetEnforcementMode: "on" }));
+    broker.createGoal({ id: "goal-1", title: "Goal one", requester: OPERATOR });
+    await proxy.awaitDurablePersistenceAck();
+    // Another writer inserted a budget for the same scope after this broker loaded its budgets.
+    exec(`INSERT INTO broker_budgets (id, scope_type, scope_id, period, limit_usd, limit_tokens, warn_pct, enforce, created_by, created_at)
+          VALUES ('b-other', 'goal', 'goal-1', 'month', NULL, 1000000, 80, 'refuse', 'other', '2026-11-01T00:00:00.000Z')`);
+    broker.createBudget({ id: "b-goal", scopeType: "goal", scopeId: "goal-1", period: "month", limitTokens: 10, createdBy: "o" });
+    const generation = broker.getBudgetWriteGeneration("b-goal");
+    assert.ok(generation !== undefined, "queued");
+    proxy.saveHotEntities({
+      spendEvents: [{
+        taskId: "r-g", recordedAt: new Date().toISOString(), periodKey: broker.budgetPeriodKey(), agentId: "worker-a",
+        lane: "analyze", goalId: "goal-1", costUsd: 0, inputTokens: 50, outputTokens: 0, costKnown: false,
+      }],
+    });
+    console.error = () => {};
+    await assert.rejects(() => proxy.awaitDurablePersistenceAck(), /UNIQUE/);
+    console.error = originalError;
+    await new Promise((resolve) => setImmediate(resolve));
+    exec("UPDATE broker_metadata SET value = '2000-01' WHERE key = 'spend_ledger_first_period'");
+    // Until the route resyncs, the in-memory budget limits the goal.
+    assert.deepEqual(quiet(() => broker.applyGoalBudgetLimits())?.limited, ["goal-1"]);
+    await proxy.awaitDurablePersistenceAck();
+    broker.reloadBudgetFromStore("b-goal", generation);
+    assert.equal(broker.getBudget("b-goal"), undefined, "the write did not land: dropped from memory");
+    assert.deepEqual(broker.listAuditEvents({ action: "budget.created" }), [], "and its audit event");
+    assert.deepEqual(quiet(() => broker.applyGoalBudgetLimits())?.resumed, ["goal-1"], "the goal it limited is not left budget_limited");
+    await proxy.awaitDurablePersistenceAck();
+    assert.equal(broker.getGoal("goal-1")?.status, "pursuing");
+  } finally {
+    console.error = originalError;
+    await handle.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#2520 (worker-thread): a goal insert that races a row written after the duplicate check is a 409 with no audit event and no change", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-goal-race-"));
+  const dbFile = join(dir, "state.sqlite");
+  const handle = createWorkerThreadPersistence({ dbFile, loadSource: "hot-tables", queueCapacity: 256 });
+  try {
+    const proxy = handle.stateStore;
+    const broker = quiet(() => new InMemoryA2ABroker(proxy, proxy.load(), { budgetPeriodTimeZone: "UTC", budgetEnforcementMode: "on" }));
+    broker.createGoal({ id: "g-race", title: "first", requester: OPERATOR });
+    await proxy.awaitDurablePersistenceAck();
+    // The duplicate check misses the row (it lands between the check and the insert).
+    const readGoal = mock.method(proxy as unknown as { readGoal(id: string): GoalRecord | undefined }, "readGoal", () => undefined);
+    let error: unknown;
+    try {
+      broker.createGoal({ id: "g-race", title: "second", requester: OPERATOR });
+    } catch (caught) {
+      error = caught;
+    } finally {
+      readGoal.mock.restore();
+    }
+    assert.ok(error instanceof BrokerError, `expected a BrokerError, got ${String(error)}`);
+    assert.equal(error.code, "invalid_transition");
+    await proxy.awaitDurablePersistenceAck();
+    assert.equal(broker.getGoal("g-race")?.title, "first", "the stored row is unchanged");
+    assert.equal(broker.listAuditEvents({ action: "goal.created" }).length, 1, "no audit event for the losing insert");
+  } finally {
     await handle.close();
     rmSync(dir, { recursive: true, force: true });
   }
