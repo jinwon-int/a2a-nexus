@@ -63,9 +63,13 @@ Usage reaches the broker only as `task.result.output.executionTelemetry`
 | Claude analysis | yes | yes (`total_cost_usd` → `costUsd`) | `analysis-execution-telemetry.mjs:87-104` |
 | Piri analysis | only when the run emits a usage marker | same | `analysis-execution-telemetry.mjs:106-173` |
 | Danso analysis | yes | no, by design | `analysis-execution-telemetry.mjs:193-213` |
-| Codex analysis | no | no | model name only |
-| Hermes analysis | no | no | model name only |
-| Claude patch / docker-runner | turns only (`budget.used`) | no | artifact manifest |
+| Codex analysis | yes (#2518) | no: `codex exec --json` carries no price | `codexExecutionTelemetry` (`turn.completed.usage`) |
+| Hermes analysis | yes (#2518) | yes when every session row is `actual`/`estimated` (Hermes' own figure); `included`/`unknown` stay unknown | `hermesExecutionTelemetry` (state.db `sessions` row) |
+| Claude patch / docker-runner | yes (#2518) | yes (`total_cost_usd`, summed over the run's CLI invocations; unknown if one has no envelope) | `artifacts/execution-telemetry.json` → artifact manifest → `result.output` / `bridgeFailure` |
+
+(#2518 updated the last three rows; before it, Codex and Hermes reported model name
+only and patch lanes reported turns only. The new rows take effect only after a worker
+artifact rollout and, for docker-runner patch lanes, a runner and image rollout.)
 
 Conclusions:
 

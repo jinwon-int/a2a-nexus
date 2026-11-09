@@ -44,6 +44,8 @@ interface MaxTurnRunFixture {
   checkpoint?: boolean;
   mutateCheckpoint?: (checkpoint: MaxTurnCheckpointFixture) => void;
   fileMutation?: "hardlink-diff" | "symlink-status" | "missing-status";
+  /** #2518: extra files seeded into artifacts/ (name -> content). */
+  extraArtifacts?: Record<string, string>;
 }
 
 async function runMaxTurnFixture(options: MaxTurnRunFixture = {}) {
@@ -65,6 +67,9 @@ async function runMaxTurnFixture(options: MaxTurnRunFixture = {}) {
   writeFileSync(stderrPath, `${stderrLines.join("\n")}\n`);
   if (options.diagnosticArtifact !== false) {
     writeFileSync(join(artifactsDir, "claude-turn-budget.json"), JSON.stringify(diagnostic));
+  }
+  for (const [name, content] of Object.entries(options.extraArtifacts ?? {})) {
+    writeFileSync(join(artifactsDir, name), content);
   }
 
   if (options.checkpoint) {
@@ -2207,4 +2212,45 @@ test("#2373 option 2 runTask blocks with claude_oauth_token_window when the toke
   assert.deepEqual(readdirSyncSafe(rootDir), [], "no workDir or host refresh state is created");
   assert.throws(() => statSync(refreshMarker), "the host refresh command is never invoked");
   assert.equal(JSON.stringify(result).includes("TEST-ONLY"), false, "token value never appears");
+});
+
+// ── #2518: usage telemetry from the contained bridge ──────────────────────
+const bridgeUsageTelemetry = {
+  schemaVersion: "a2a.analysis-execution-telemetry.v1",
+  source: "claude_cli_envelope",
+  elapsedMs: 90000,
+  modelRequests: 40,
+  inputTokens: 40,
+  outputTokens: 3000,
+  cacheReadInputTokens: 200000,
+  cacheCreationInputTokens: 9000,
+  costUsd: 4.5,
+} as const;
+
+test("#2518 a budget_limited run carries the bridge's execution-telemetry artifact into manifest, summary and result", async () => {
+  const result = await runMaxTurnFixture({
+    extraArtifacts: { "execution-telemetry.json": JSON.stringify({ ...bridgeUsageTelemetry, extra: "dropped" }) },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.artifactManifest?.status, "budget_limited");
+  assert.deepEqual(result.artifactManifest?.executionTelemetry, bridgeUsageTelemetry);
+  assert.deepEqual(result.resultSummary?.executionTelemetry, bridgeUsageTelemetry);
+  assert.deepEqual(result.executionTelemetry, bridgeUsageTelemetry);
+});
+
+test("#2518 without the artifact the bridge's stderr telemetry line is used; malformed telemetry is dropped", async () => {
+  const fromStderr = await runMaxTurnFixture({
+    stderrLines: [
+      `claude_turn_budget=${JSON.stringify(validMaxTurnDiagnostic)}`,
+      `a2a_execution_telemetry=${JSON.stringify(bridgeUsageTelemetry)}`,
+      "terminal_reason=max_turns",
+    ],
+  });
+  assert.deepEqual(fromStderr.executionTelemetry, bridgeUsageTelemetry);
+
+  const malformed = await runMaxTurnFixture({
+    extraArtifacts: { "execution-telemetry.json": JSON.stringify({ ...bridgeUsageTelemetry, inputTokens: -1 }) },
+  });
+  assert.equal(malformed.executionTelemetry, undefined);
+  assert.equal(malformed.artifactManifest?.executionTelemetry, undefined);
 });

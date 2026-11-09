@@ -4,6 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, st
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { codexExecutionTelemetry } from "./lib/analysis-execution-telemetry.mjs";
 
 const bridgePath = new URL("./codex-a2a-analysis-bridge.mjs", import.meta.url).pathname;
 const sourceAuth = {
@@ -278,4 +279,150 @@ test("#2533 Codex error-event JSON cut never splits a surrogate pair", () => {
   assert.equal(result.stderr.includes("\uFFFD"), false, "no replacement character from a split pair");
   assert.equal(CODEX_LONE_SURROGATE.test(result.stderr), false);
   assert.ok(result.stderr.includes(`error: ${eventLine.slice(0, 499)}\n`), "backs off exactly the split pair");
+});
+
+// ---------------------------------------------------------------------------
+// #2518: usage telemetry. Fixture lines follow the codex-cli 0.159
+// `codex exec --json` event schema (thread.started / turn.started /
+// item.completed / turn.completed{usage} / turn.failed{error}); usage fields
+// are input_tokens (includes cached), cached_input_tokens,
+// cache_write_input_tokens, output_tokens (includes reasoning),
+// reasoning_output_tokens. The stream carries no price.
+// ---------------------------------------------------------------------------
+const CODEX_USAGE_TURN = {
+  type: "turn.completed",
+  usage: { input_tokens: 24763, cached_input_tokens: 24448, cache_write_input_tokens: 0, output_tokens: 122, reasoning_output_tokens: 64 },
+};
+
+test("#2518 codexExecutionTelemetry maps exec JSONL usage onto the telemetry contract (uncached input, no cost)", () => {
+  const stdout = [
+    { type: "thread.started", thread_id: "t-1" },
+    { type: "turn.started" },
+    { type: "item.completed", item: { id: "i0", type: "reasoning", text: "thinking" } },
+    { type: "item.completed", item: { id: "i1", type: "command_execution", command: "ls", aggregated_output: "", exit_code: 0, status: "completed" } },
+    { type: "item.completed", item: { id: "i2", type: "agent_message", text: "{}" } },
+    CODEX_USAGE_TURN,
+    { type: "turn.completed", usage: { input_tokens: 1000, cached_input_tokens: 600, cache_write_input_tokens: 100, output_tokens: 50, reasoning_output_tokens: 0 } },
+  ].map((event) => JSON.stringify(event)).join("\n") + "\nnot json\n";
+  assert.deepEqual(codexExecutionTelemetry(stdout, 1234.7), {
+    schemaVersion: "a2a.analysis-execution-telemetry.v1",
+    source: "codex_exec_jsonl",
+    elapsedMs: 1234,
+    inputTokens: (24763 - 24448) + (1000 - 600 - 100),
+    outputTokens: 172,
+    cacheReadInputTokens: 24448 + 600,
+    cacheCreationInputTokens: 100,
+    toolCalls: 1,
+  });
+});
+
+test("#2518 codexExecutionTelemetry omits tokens when no turn completed (turn.failed carries no usage)", () => {
+  const stdout = [
+    JSON.stringify({ type: "thread.started", thread_id: "t-2" }),
+    JSON.stringify({ type: "turn.failed", error: { message: "The requested model is not supported." } }),
+  ].join("\n");
+  const telemetry = codexExecutionTelemetry(stdout, 50);
+  assert.deepEqual(telemetry, { schemaVersion: "a2a.analysis-execution-telemetry.v1", source: "codex_exec_jsonl", elapsedMs: 50, toolCalls: 0 });
+  assert.equal("costUsd" in telemetry, false);
+  // Hostile numbers never become negative or fractional tokens.
+  const hostile = codexExecutionTelemetry(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 10, cached_input_tokens: 99, output_tokens: -5 } }), 0);
+  assert.equal(hostile.inputTokens, 0);
+  assert.equal(hostile.cacheReadInputTokens, 10);
+  assert.equal(hostile.outputTokens, 0);
+});
+
+function writeUsageFakeCodex(dir, lines, exitCode = 0) {
+  const fakeCodex = join(dir, "fake-codex.mjs");
+  writeFileSync(fakeCodex, [
+    "#!/usr/bin/env node",
+    "import { readFileSync } from 'node:fs';",
+    "readFileSync(0, 'utf8');",
+    ...lines.map((line) => `console.log(${JSON.stringify(typeof line === "string" ? line : JSON.stringify(line))});`),
+    `process.exitCode = ${exitCode};`,
+  ].join("\n"));
+  chmodSync(fakeCodex, 0o755);
+  return fakeCodex;
+}
+
+function runCodexBridge(dir, fakeCodex) {
+  const configDir = join(dir, "codex-dir");
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(join(configDir, "auth.json"), JSON.stringify(sourceAuth), { mode: 0o600 });
+  return spawnSync(bridgePath, bridgeArgs("Return JSON only. Payload JSON:\n" + JSON.stringify({ sourceOnly: true, noLive: true })), {
+    encoding: "utf8",
+    env: { ...process.env, A2A_CODEX_BIN: fakeCodex, A2A_CODEX_ANALYSIS_CONFIG_DIR: configDir },
+  });
+}
+
+function bridgeErrorRecords(stderr) {
+  return stderr.split("\n").filter((line) => line.startsWith("A2A_BRIDGE_ERROR=")).map((line) => JSON.parse(line.slice("A2A_BRIDGE_ERROR=".length)));
+}
+
+const CODEX_ANALYSIS = { status: "done", summary: "usage telemetry", findings: ["f"], risks: [], recommendations: [], evidenceRefs: ["embedded:codex-usage-test"] };
+
+test("#2518 Codex bridge success carries the exec usage as executionTelemetry (tokens, cost unknown)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "codex-a2a-bridge-usage-"));
+  try {
+    const fakeCodex = writeUsageFakeCodex(dir, [
+      { type: "thread.started", thread_id: "t" },
+      { type: "item.completed", item: { type: "agent_message", text: JSON.stringify(CODEX_ANALYSIS) } },
+      CODEX_USAGE_TURN,
+    ]);
+    const result = runCodexBridge(dir, fakeCodex);
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
+    assert.equal(payload.executionTelemetry.source, "codex_exec_jsonl");
+    assert.equal(payload.executionTelemetry.inputTokens, 315);
+    assert.equal(payload.executionTelemetry.cacheReadInputTokens, 24448);
+    assert.equal(payload.executionTelemetry.outputTokens, 122);
+    assert.equal(payload.executionTelemetry.costUsd, undefined, "codex exposes no price");
+    assert.ok(Number.isInteger(payload.executionTelemetry.elapsedMs));
+    assert.equal(bridgeErrorRecords(result.stderr).length, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#2518 Codex bridge failure carries the spent usage on one structured A2A_BRIDGE_ERROR line", () => {
+  const dir = mkdtempSync(join(tmpdir(), "codex-a2a-bridge-usage-fail-"));
+  try {
+    const fakeCodex = writeUsageFakeCodex(dir, [
+      { type: "thread.started", thread_id: "t" },
+      CODEX_USAGE_TURN,
+      { type: "turn.failed", error: { message: "stream disconnected before completion" } },
+    ], 1);
+    const result = runCodexBridge(dir, fakeCodex);
+    assert.notEqual(result.status, 0);
+    const records = bridgeErrorRecords(result.stderr);
+    assert.equal(records.length, 1, result.stderr);
+    assert.equal(records[0].code, "analysis_bridge_provider_failure");
+    assert.equal(records[0].adapterClass, "codex");
+    assert.equal(records[0].stage, "invoke");
+    assert.equal(records[0].executionTelemetry.source, "codex_exec_jsonl");
+    assert.equal(records[0].executionTelemetry.inputTokens, 315);
+    assert.equal(records[0].executionTelemetry.outputTokens, 122);
+    assert.match(result.stderr, /Codex exited with 1/);
+    assert.match(result.stderr, /turn\.failed: stream disconnected/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#2518 Codex bridge keeps the shared core's invalid-JSON classification and adds the usage to it", () => {
+  const dir = mkdtempSync(join(tmpdir(), "codex-a2a-bridge-usage-badjson-"));
+  try {
+    const fakeCodex = writeUsageFakeCodex(dir, [
+      { type: "item.completed", item: { type: "agent_message", text: "no json here at all" } },
+      CODEX_USAGE_TURN,
+    ]);
+    const result = runCodexBridge(dir, fakeCodex);
+    assert.notEqual(result.status, 0);
+    const records = bridgeErrorRecords(result.stderr);
+    assert.equal(records.length, 1, result.stderr);
+    assert.equal(records[0].code, "analysis_bridge_invalid_json");
+    assert.equal(records[0].adapterClass, "claude_code", "the inner record is kept as is");
+    assert.equal(records[0].executionTelemetry.inputTokens, 315);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -53,6 +53,10 @@ RUN set -eux; \
   install -m 0755 packages/broker/scripts/finalizer-tool-policy.mjs /opt/a2a-broker/scripts/finalizer-tool-policy.mjs; \
   install -m 0755 packages/broker/scripts/lib/claude-runtime-flags.mjs /opt/a2a-broker/scripts/lib/claude-runtime-flags.mjs; \
   install -m 0755 packages/broker/scripts/lib/claude-model-telemetry.mjs /opt/a2a-broker/scripts/lib/claude-model-telemetry.mjs; \
+  install -m 0755 packages/broker/scripts/lib/claude-session-isolation.mjs /opt/a2a-broker/scripts/lib/claude-session-isolation.mjs; \
+  install -m 0755 packages/broker/scripts/lib/analysis-lane-skill-hints.mjs /opt/a2a-broker/scripts/lib/analysis-lane-skill-hints.mjs; \
+  install -m 0755 packages/broker/scripts/lib/utf8-byte-budget.mjs /opt/a2a-broker/scripts/lib/utf8-byte-budget.mjs; \
+  install -m 0755 packages/broker/scripts/lib/analysis-execution-telemetry.mjs /opt/a2a-broker/scripts/lib/analysis-execution-telemetry.mjs; \
   node --input-type=module -e "import('/opt/a2a-broker/scripts/claude-a2a-patch-bridge.mjs')"; \
   rm -rf /tmp/a2a-nexus
 

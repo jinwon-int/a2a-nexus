@@ -25,8 +25,14 @@ import {
   withCodexCredentialRuntime,
 } from "./codex-credential-refresh.js";
 import { checkEgressProxyReady, egressEnabled, egressNotReadyMessage, prepareEgressRunCredentials } from "./egress-runtime.js";
+import {
+  EXECUTION_TELEMETRY_ARTIFACT,
+  extractExecutionTelemetryLine,
+  isRunnerExecutionTelemetry,
+  normalizeRunnerExecutionTelemetry,
+} from "./execution-telemetry.js";
 export { RESULT_STREAM_LIMIT, redactAndBound, redactSecrets } from "./redaction.js";
-import type { ArtifactEvidencePart, ArtifactManifest, ArtifactManifestEntry, ArtifactManifestStatus, CleanupRehearsalEvidence, GitHubCommentProjection, GitHubCommentProjectionKind, NormalizedRunnerTask, ResultSummary, RunnerBudgetEvidence, RunnerClaudeTurnBudgetDiagnostic, RunnerConfig, RunnerContainedSubagentRole, RunnerContinuationEvidence, RunnerDiffHygieneEvidence, RunnerEvidenceHints, RunnerPostPatchVerificationEvidence, RunnerReceiptTrace, RunnerReproducibilityMetadata, RunnerResult, RunnerSubagentReport, RunnerTask, SourcePublicApprovalDecision, SourcePublicApprovalPacket, SourcePublicApprovalRehearsal, SourcePublicExecutionPreflight } from "./types.js";
+import type { ArtifactEvidencePart, ArtifactManifest, ArtifactManifestEntry, ArtifactManifestStatus, CleanupRehearsalEvidence, GitHubCommentProjection, GitHubCommentProjectionKind, NormalizedRunnerTask, ResultSummary, RunnerBudgetEvidence, RunnerClaudeTurnBudgetDiagnostic, RunnerConfig, RunnerContainedSubagentRole, RunnerContinuationEvidence, RunnerDiffHygieneEvidence, RunnerEvidenceHints, RunnerExecutionTelemetry, RunnerPostPatchVerificationEvidence, RunnerReceiptTrace, RunnerReproducibilityMetadata, RunnerResult, RunnerSubagentReport, RunnerTask, SourcePublicApprovalDecision, SourcePublicApprovalPacket, SourcePublicApprovalRehearsal, SourcePublicExecutionPreflight } from "./types.js";
 
 export interface StructuredSubagentReportOptions {
   maxCount: number;
@@ -376,8 +382,9 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
   const evidenceAssemblyStartedAt = Date.now();
   // #2083: the five evidence reads are mutually independent — run them
   // concurrently instead of serially awaiting each one.
-  const [claudeTurnBudgetArtifact, artifactEntries, postPatchVerification, diffHygiene, reproducibility] = await Promise.all([
+  const [claudeTurnBudgetArtifact, executionTelemetryArtifact, artifactEntries, postPatchVerification, diffHygiene, reproducibility] = await Promise.all([
     readArtifactJson<RunnerClaudeTurnBudgetDiagnostic>(workDir, "claude-turn-budget.json", isClaudeTurnBudgetDiagnostic),
+    readArtifactJson<RunnerExecutionTelemetry>(workDir, EXECUTION_TELEMETRY_ARTIFACT, isRunnerExecutionTelemetry, 64 * 1024),
     listArtifacts(workDir),
     readArtifactJson<RunnerPostPatchVerificationEvidence>(workDir, "post-patch-verification.json", isPostPatchVerificationEvidence),
     readArtifactJson<RunnerDiffHygieneEvidence>(workDir, "diff-hygiene.json", isDiffHygieneEvidence),
@@ -388,6 +395,11 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
   const evidenceAssemblyMs = Math.max(0, Math.round(Date.now() - evidenceAssemblyStartedAt));
   const claudeTurnBudget = claudeTurnBudgetArtifact
     ?? extractClaudeTurnBudgetDiagnostic(completed.stderr);
+  // #2518: same precedence as the turn budget — the artifact, else the
+  // bridge's stderr line. Recorded on every outcome (done, failed,
+  // budget_limited): the tokens were spent either way.
+  const executionTelemetry = normalizeRunnerExecutionTelemetry(executionTelemetryArtifact)
+    ?? extractExecutionTelemetryLine(completed.stderr);
   const maxTurnsStopped = (
     claudeTurnBudget?.outcome === "failure"
     && claudeTurnBudget.failureReason === "max_turns"
@@ -443,6 +455,7 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     diffHygiene,
     reproducibility,
     claudeTurnBudget,
+    executionTelemetry,
     checkpointRef,
     ...(budgetStop ? budgetStop : {}),
     artifactSizes: new Map(artifactEntries.map((entry) => [entry.path, entry.sizeBytes])),
@@ -482,6 +495,7 @@ export async function runTask(config: RunnerConfig, task: RunnerTask): Promise<R
     ...(prUrlCandidates.length > 0 ? { prUrlCandidates } : {}),
     ...(pushedBranch ? { pushedBranch } : {}),
     ...(claudeTurnBudget ? { claudeTurnBudget } : {}),
+    ...(executionTelemetry ? { executionTelemetry } : {}),
     ...(maxTurnsStopped ? { terminalReason: "max_turns" as const } : {}),
     ...(checkpointRef ? { checkpointRef } : {}),
     error: maxTurnsStopped
@@ -1380,6 +1394,7 @@ export function buildResultSummary(
     status: manifest.status,
     ...(manifest.budget ? { budget: manifest.budget } : {}),
     ...(manifest.claudeTurnBudget ? { claudeTurnBudget: manifest.claudeTurnBudget } : {}),
+    ...(manifest.executionTelemetry ? { executionTelemetry: manifest.executionTelemetry } : {}),
     ...(manifest.claudeTurnBudget?.failureReason === "max_turns" ? { terminalReason: "max_turns" as const } : {}),
     ...(manifest.checkpointRef ? { checkpointRef: manifest.checkpointRef } : {}),
     ...(manifest.receiptTrace ? { receiptTrace: manifest.receiptTrace } : {}),
@@ -1691,6 +1706,7 @@ export interface ArtifactManifestContext {
   prUrl?: string;
   budget?: RunnerBudgetEvidence;
   claudeTurnBudget?: RunnerClaudeTurnBudgetDiagnostic;
+  executionTelemetry?: RunnerExecutionTelemetry;
   checkpointRef?: "artifacts/claude-max-turn-checkpoint.json";
   receiptTrace?: RunnerReceiptTrace;
   continuation?: RunnerContinuationEvidence;
@@ -1736,6 +1752,7 @@ export async function buildArtifactManifest(workDir: string, artifacts: string[]
     artifacts: entries,
     ...(context.budget ? { budget: context.budget } : {}),
     ...(context.claudeTurnBudget ? { claudeTurnBudget: context.claudeTurnBudget } : {}),
+    ...(context.executionTelemetry ? { executionTelemetry: context.executionTelemetry } : {}),
     ...(context.checkpointRef ? { checkpointRef: context.checkpointRef } : {}),
     ...(context.receiptTrace ? { receiptTrace: context.receiptTrace } : {}),
     ...(context.continuation ? { continuation: context.continuation } : {}),

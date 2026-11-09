@@ -35,6 +35,33 @@ test("Claude Code cccb runner image bakes required patch bridge and tools (#1030
   assert.match(claudeCodeDockerfile, /org\.openclaw\.a2a-docker-runner\.harness="claude-code"/);
 });
 
+// #2518: the image's build step imports the bridge to prove its module
+// closure; every relative import the bridge reaches (transitively) must be
+// installed, or the image build fails (the #2425 imports were missing).
+test("Claude Code runner image installs the patch bridge's whole relative import closure (#2518)", () => {
+  const scriptsRoot = new URL("../../broker/scripts/", import.meta.url);
+  const pending = ["claude-a2a-patch-bridge.mjs"];
+  const closure = new Set<string>();
+  while (pending.length > 0) {
+    const rel = pending.pop()!;
+    if (closure.has(rel)) continue;
+    closure.add(rel);
+    const source = readFileSync(new URL(rel, scriptsRoot), "utf8");
+    const dir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/") + 1) : "";
+    for (const match of source.matchAll(/^\s*(?:import|export)\b[^;]*?\bfrom\s+["'](\.\/[^"']+)["']/gm)) {
+      pending.push(`${dir}${match[1].slice(2)}`);
+    }
+  }
+  assert.ok(closure.has("lib/analysis-execution-telemetry.mjs"));
+  for (const rel of closure) {
+    assert.match(
+      claudeCodeDockerfile,
+      new RegExp(`install -m 0755 packages/broker/scripts/${rel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} /opt/a2a-broker/scripts/`),
+      `${rel} is installed into the image`,
+    );
+  }
+});
+
 test("Claude Code cccb runner image keeps credentials runtime-mounted only (#1030)", () => {
   assert.doesNotMatch(claudeCodeDockerfile, /COPY\s+.*\.claude/i);
   assert.doesNotMatch(claudeCodeDockerfile, /ADD\s+.*\.claude/i);

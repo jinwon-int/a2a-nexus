@@ -5,6 +5,7 @@ import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { analysisCompletionMarker, buildAnalysisHarness } from "./lib/analysis-harness-fingerprint.mjs";
+import { hermesExecutionTelemetry } from "./lib/analysis-execution-telemetry.mjs";
 import { HERMES_FINALIZER_TOOLSETS } from "./finalizer-tool-policy.mjs";
 
 import {
@@ -1035,6 +1036,64 @@ function recoverHermesAnalysisJsonFromStateDb(child, env) {
   }
 }
 
+// #2518: usage telemetry. Hermes persists per-session token counts and its
+// cost figure in state.db (`sessions` row, keyed by the `session_id:` line it
+// prints on exit). Each attempt is its own session; a mid-run compression
+// continues in a child session whose `parent_session_id` points back, so the
+// parent chain is followed (bounded, and only rows that started during this
+// bridge run, so an unrelated older session is never counted).
+const HERMES_USAGE_MAX_CHAIN = 8;
+const HERMES_USAGE_CLOCK_SKEW_SEC = 5;
+const ANALYSIS_BRIDGE_ERROR_PREFIX = "A2A_BRIDGE_ERROR=";
+
+function readHermesSessionUsageRows(sessionIds, env, startedAtMs) {
+  const ids = [...new Set((sessionIds || []).filter(Boolean))];
+  if (ids.length === 0) return [];
+  const stateDb = hermesStateDbPath(env);
+  if (!stateDb || !existsSync(stateDb)) return [];
+  const notBefore = startedAtMs / 1000 - HERMES_USAGE_CLOCK_SKEW_SEC;
+  const rows = [];
+  const seen = new Set();
+  let db;
+  try {
+    db = new DatabaseSync(stateDb, { readOnly: true });
+    const select = db.prepare("SELECT * FROM sessions WHERE id = ?");
+    for (const id of ids) {
+      let current = id;
+      for (let depth = 0; current && depth < HERMES_USAGE_MAX_CHAIN; depth += 1) {
+        if (seen.has(current)) break;
+        seen.add(current);
+        const row = select.get(current);
+        if (!row || !(Number(row.started_at) >= notBefore)) break;
+        rows.push(row);
+        current = typeof row.parent_session_id === "string" ? row.parent_session_id : "";
+      }
+    }
+  } catch {
+    // A missing table/column or a locked db leaves the lane unmetered.
+  } finally {
+    try { db?.close(); } catch {}
+  }
+  return rows;
+}
+
+function hermesTelemetryFor(sessionIds, env, startedAtMs) {
+  const rows = readHermesSessionUsageRows(sessionIds, env, startedAtMs);
+  return rows.length > 0 ? hermesExecutionTelemetry(rows, Date.now() - startedAtMs) : undefined;
+}
+
+// #2518: a failed lane still spent tokens; carry them on the #1725 structured
+// failure line (the handler projects it into error.details.bridgeFailure).
+// Only emitted when there is telemetry, so failures without usage keep the
+// pre-#2518 plain-stderr shape.
+function dieWithTelemetry(message, telemetry, { code, stage, failureShape }) {
+  if (telemetry) {
+    const record = { code, stage, failureShape, adapterClass: "hermes", executionTelemetry: telemetry };
+    process.stderr.write(`${ANALYSIS_BRIDGE_ERROR_PREFIX}${JSON.stringify(record)}\n`);
+  }
+  die(message);
+}
+
 const warnedEnvNames = new Set();
 
 function positiveIntegerEnv(value, fallback, name) {
@@ -1117,21 +1176,33 @@ function runHermes(prompt, flags, env) {
   const timeoutSec = Math.max(1, Number(flags.timeout || env.A2A_HERMES_ANALYSIS_TIMEOUT_SEC || DEFAULT_TIMEOUT_SEC));
   const maxAttempts = Math.max(1, Number(env.A2A_HERMES_ANALYSIS_MAX_ATTEMPTS || DEFAULT_HERMES_MAX_ATTEMPTS));
   let lastChild;
+  // #2518: every attempt's session spent tokens, including the retried ones.
+  const sessionIds = [];
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const child = runHermesOnce(hermesBin, args, timeoutSec, env);
+    let child;
+    try {
+      child = runHermesOnce(hermesBin, args, timeoutSec, env);
+    } catch (error) {
+      error.sessionIds = sessionIds;
+      throw error;
+    }
     lastChild = child;
-    if (child.status === 0) return { stdout: child.stdout, recoverySource: attempt > 1 ? "retry_stdout" : "direct_stdout" };
-    if (hasUsableHermesAnalysisJson(child.stdout)) return { stdout: child.stdout, recoverySource: attempt > 1 ? "retry_stdout" : "abort_stdout" };
+    const sessionId = extractHermesSessionId(`${child.stderr || ""}\n${child.stdout || ""}`);
+    if (sessionId) sessionIds.push(sessionId);
+    if (child.status === 0) return { stdout: child.stdout, recoverySource: attempt > 1 ? "retry_stdout" : "direct_stdout", sessionIds };
+    if (hasUsableHermesAnalysisJson(child.stdout)) return { stdout: child.stdout, recoverySource: attempt > 1 ? "retry_stdout" : "abort_stdout", sessionIds };
     const savedAnalysis = recoverHermesAnalysisJsonFromStateDb(child, env);
     if (savedAnalysis.stdout) {
-      return { stdout: savedAnalysis.stdout, recoverySource: attempt > 1 ? "retry_state_db" : savedAnalysis.recoverySource };
+      return { stdout: savedAnalysis.stdout, recoverySource: attempt > 1 ? "retry_state_db" : savedAnalysis.recoverySource, sessionIds };
     }
     if (attempt < maxAttempts && isRecoverableHermesNoJsonAbort(child)) continue;
     break;
   }
   const output = truncateUtf16Safe(safeText(lastChild?.stderr, lastChild?.stdout), 4000);
   const signal = lastChild?.signal ? ` signal=${lastChild.signal}` : "";
-  throw new Error(`Hermes exited with ${lastChild?.status}${signal}: ${output}`);
+  const error = new Error(`Hermes exited with ${lastChild?.status}${signal}: ${output}`);
+  error.sessionIds = sessionIds;
+  throw error;
 }
 
 function normalizeResponse(parsed, diagnostics = {}) {
@@ -1190,23 +1261,36 @@ function main() {
     return;
   }
 
+  const startedAtMs = Date.now();
   let hermesResult;
   try {
     hermesResult = runHermes(promptBundle.prompt, flags, process.env);
   } catch (error) {
-    die(error.message);
+    dieWithTelemetry(error.message, hermesTelemetryFor(error.sessionIds, process.env, startedAtMs), {
+      code: "analysis_bridge_provider_failure",
+      stage: "invoke",
+      failureShape: "provider_or_model_failure",
+    });
   }
+  // Read once, after the last attempt: success and the recovered (`partial`)
+  // abort/state_db paths report the same usage.
+  const executionTelemetry = hermesTelemetryFor(hermesResult.sessionIds, process.env, startedAtMs);
 
   let parsed;
   try {
     parsed = extractJsonFromLooseText(hermesResult.stdout);
   } catch (error) {
-    die(`Hermes analysis bridge response did not contain valid JSON: ${error.message}`);
+    dieWithTelemetry(`Hermes analysis bridge response did not contain valid JSON: ${error.message}`, executionTelemetry, {
+      code: "analysis_bridge_invalid_json",
+      stage: "extract",
+      failureShape: "no_json",
+    });
   }
 
   let response;
   try {
     response = normalizeResponse(parsed, { recoverySource: hermesResult.recoverySource });
+    if (executionTelemetry) response.executionTelemetry = executionTelemetry;
     if (promptBundle.sourceProjection) {
       const reportedSourceProjection = response.sourceProjection && typeof response.sourceProjection === "object" && !Array.isArray(response.sourceProjection)
         ? response.sourceProjection
@@ -1232,7 +1316,11 @@ function main() {
     });
     response.completion = analysisCompletionMarker(response.status, response.recoverySource);
   } catch (error) {
-    die(`invalid Hermes analysis JSON schema: ${error.message}`);
+    dieWithTelemetry(`invalid Hermes analysis JSON schema: ${error.message}`, executionTelemetry, {
+      code: "analysis_bridge_invalid_shape",
+      stage: "validate",
+      failureShape: "schema_invalid",
+    });
   }
 
   process.stdout.write(JSON.stringify({ payloads: [{ text: JSON.stringify(response) }] }));

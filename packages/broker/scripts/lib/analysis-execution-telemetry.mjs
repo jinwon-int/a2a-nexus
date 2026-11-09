@@ -212,10 +212,208 @@ export function dansoExecutionTelemetry(stderr, elapsedMs) {
   });
 }
 
+/**
+ * #2518: `codex exec --json` reports usage on each `turn.completed` event as
+ * `usage: { input_tokens, cached_input_tokens, cache_write_input_tokens,
+ * output_tokens, reasoning_output_tokens }` (codex-cli 0.159 exec event
+ * schema). OpenAI semantics: `input_tokens` INCLUDES the cached and
+ * cache-write tokens (the CLI's own `total_tokens` is input + output) and
+ * `output_tokens` includes reasoning. The telemetry contract wants uncached
+ * input in `inputTokens`, so the cached part moves to `cacheReadInputTokens`
+ * and the cache-write part to `cacheCreationInputTokens` (the broker adds
+ * that back to input). The exec stream carries no price, so costUsd is never
+ * set. Tokens are omitted (not zeroed) when no usage event was seen — a
+ * failed turn (`turn.failed`) carries no usage, and absence must stay
+ * distinguishable from a free run.
+ */
+const CODEX_TOOL_ITEM_TYPES = new Set(["command_execution", "mcp_tool_call", "web_search", "file_change"]);
+
+export function codexExecutionTelemetry(stdout, elapsedMs) {
+  let turns = 0;
+  let toolCalls = 0;
+  let input = 0;
+  let cached = 0;
+  let cacheWrite = 0;
+  let output = 0;
+  let truncated = false;
+  let events = 0;
+  const text = String(stdout ?? "");
+  const bounded = text.length > MAX_PROGRESS_BYTES ? text.slice(0, MAX_PROGRESS_BYTES) : text;
+  if (bounded.length < text.length) truncated = true;
+  for (const line of bounded.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    if (events >= MAX_PROGRESS_EVENTS) {
+      truncated = true;
+      break;
+    }
+    let event;
+    try {
+      event = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    events += 1;
+    if (event?.type === "item.completed" && CODEX_TOOL_ITEM_TYPES.has(event?.item?.type)) toolCalls += 1;
+    if (event?.type !== "turn.completed") continue;
+    const usage = event.usage && typeof event.usage === "object" && !Array.isArray(event.usage) ? event.usage : null;
+    if (!usage) continue;
+    const turnInput = nonNegativeInteger(usage.input_tokens) ?? 0;
+    const turnCached = Math.min(nonNegativeInteger(usage.cached_input_tokens) ?? 0, turnInput);
+    const turnCacheWrite = Math.min(nonNegativeInteger(usage.cache_write_input_tokens) ?? 0, turnInput - turnCached);
+    turns += 1;
+    input += turnInput;
+    cached += turnCached;
+    cacheWrite += turnCacheWrite;
+    output += nonNegativeInteger(usage.output_tokens) ?? 0;
+  }
+  return compact({
+    schemaVersion: ANALYSIS_EXECUTION_TELEMETRY_VERSION,
+    source: "codex_exec_jsonl",
+    elapsedMs: nonNegativeInteger(elapsedMs) ?? 0,
+    ...(turns > 0
+      ? {
+          inputTokens: input - cached - cacheWrite,
+          outputTokens: output,
+          cacheReadInputTokens: cached,
+          cacheCreationInputTokens: cacheWrite > 0 ? cacheWrite : undefined,
+        }
+      : {}),
+    toolCalls,
+    truncated: truncated ? true : undefined,
+  });
+}
+
+/**
+ * #2518: Hermes keeps per-session usage in its state.db `sessions` row
+ * (`input_tokens` = uncached input, plus `cache_read_tokens`,
+ * `cache_write_tokens`, `output_tokens`, `api_call_count`, `tool_call_count`,
+ * `estimated_cost_usd` / `actual_cost_usd` with `cost_status` in
+ * actual|estimated|included|unknown). The rows are the sessions this bridge
+ * run produced (one per attempt, plus compression continuations). Cost is
+ * Hermes' own figure — actual when reported, else its estimate — and is
+ * carried only when EVERY row has an actual or estimated status with a
+ * finite amount; `included` (subscription) and `unknown` leave cost unknown
+ * rather than claiming the run was free. A row without the usage columns
+ * (older Hermes) contributes no tokens.
+ */
+export function hermesExecutionTelemetry(rows, elapsedMs) {
+  const list = Array.isArray(rows) ? rows.filter((row) => row && typeof row === "object" && !Array.isArray(row)) : [];
+  let tokenRows = 0;
+  const sums = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, requests: 0, tools: 0 };
+  let costTotal = 0;
+  let costKnown = list.length > 0;
+  for (const row of list) {
+    const input = nonNegativeInteger(row.input_tokens);
+    const output = nonNegativeInteger(row.output_tokens);
+    if (input !== undefined || output !== undefined) tokenRows += 1;
+    sums.input += input ?? 0;
+    sums.output += output ?? 0;
+    sums.cacheRead += nonNegativeInteger(row.cache_read_tokens) ?? 0;
+    sums.cacheWrite += nonNegativeInteger(row.cache_write_tokens) ?? 0;
+    sums.requests += nonNegativeInteger(row.api_call_count) ?? 0;
+    sums.tools += nonNegativeInteger(row.tool_call_count) ?? 0;
+    const status = typeof row.cost_status === "string" ? row.cost_status : "";
+    const amount = status === "actual"
+      ? finiteNonNegative(row.actual_cost_usd) ?? finiteNonNegative(row.estimated_cost_usd)
+      : status === "estimated"
+        ? finiteNonNegative(row.estimated_cost_usd)
+        : undefined;
+    if (amount === undefined) costKnown = false;
+    else costTotal += amount;
+  }
+  return compact({
+    schemaVersion: ANALYSIS_EXECUTION_TELEMETRY_VERSION,
+    source: "hermes_state_db",
+    elapsedMs: nonNegativeInteger(elapsedMs) ?? 0,
+    ...(tokenRows > 0
+      ? {
+          modelRequests: sums.requests,
+          inputTokens: sums.input,
+          outputTokens: sums.output,
+          cacheReadInputTokens: sums.cacheRead,
+          cacheCreationInputTokens: sums.cacheWrite,
+          toolCalls: sums.tools,
+        }
+      : {}),
+    costUsd: costKnown && tokenRows > 0 ? costTotal : undefined,
+  });
+}
+
+const SUMMABLE_TELEMETRY_FIELDS = [
+  "elapsedMs",
+  "modelRequests",
+  "inputTokens",
+  "outputTokens",
+  "cacheReadInputTokens",
+  "cacheCreationInputTokens",
+  "toolCalls",
+];
+
+/**
+ * #2518: one telemetry object for a lane that made several runtime
+ * invocations (patch single-shot + corrective retry). Counts are summed over
+ * the invocations that reported them. Cost is known only when every
+ * invocation produced telemetry with a cost — an invocation without an
+ * envelope (spawn error, kill) makes the sum a lower bound, so the cost is
+ * left unknown instead of under-reporting a "known" figure. `null` entries
+ * stand for invocations that produced no telemetry.
+ */
+export function sumExecutionTelemetry(items, source) {
+  if (!Array.isArray(items) || items.length === 0) return undefined;
+  const present = items.map((item) => normalizeAnalysisExecutionTelemetry(item)).filter(Boolean);
+  if (present.length === 0) return undefined;
+  const summed = {};
+  for (const field of SUMMABLE_TELEMETRY_FIELDS) {
+    const values = present.map((item) => item[field]).filter((value) => value !== undefined);
+    if (values.length > 0) summed[field] = values.reduce((total, value) => total + value, 0);
+  }
+  const allCosted = present.length === items.length && present.every((item) => item.costUsd !== undefined);
+  return compact({
+    schemaVersion: ANALYSIS_EXECUTION_TELEMETRY_VERSION,
+    source: source ?? present[0].source,
+    ...summed,
+    costUsd: allCosted ? present.reduce((total, item) => total + item.costUsd, 0) : undefined,
+    truncated: present.some((item) => item.truncated === true) ? true : undefined,
+  });
+}
+
+/**
+ * #2518: stderr side channel for bridges whose terminal result is assembled
+ * by another process (docker runner, host patch handler): one
+ * `a2a_execution_telemetry=<json>` line written by the bridge itself, never
+ * by the model. The last well-formed line wins; the value is normalized.
+ */
+export const EXECUTION_TELEMETRY_STDERR_PREFIX = "a2a_execution_telemetry=";
+
+export function parseExecutionTelemetryLine(stderr) {
+  const lines = String(stderr ?? "").split("\n");
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index].trim();
+    if (!line.startsWith(EXECUTION_TELEMETRY_STDERR_PREFIX)) continue;
+    try {
+      const normalized = normalizeAnalysisExecutionTelemetry(JSON.parse(line.slice(EXECUTION_TELEMETRY_STDERR_PREFIX.length)));
+      if (normalized) return normalized;
+    } catch {
+      // keep scanning older lines
+    }
+  }
+  return undefined;
+}
+
+/** Producer sources accepted by the normalizer (mirrored in broker task-stats). */
+export const ANALYSIS_EXECUTION_TELEMETRY_SOURCES = Object.freeze([
+  "claude_cli_envelope",
+  "piri_progress_file",
+  "danso_cli_usage",
+  "codex_exec_jsonl",
+  "hermes_state_db",
+]);
+
 export function normalizeAnalysisExecutionTelemetry(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   if (value.schemaVersion !== ANALYSIS_EXECUTION_TELEMETRY_VERSION) return undefined;
-  if (!["claude_cli_envelope", "piri_progress_file", "danso_cli_usage"].includes(value.source)) return undefined;
+  if (!ANALYSIS_EXECUTION_TELEMETRY_SOURCES.includes(value.source)) return undefined;
   return compact({
     schemaVersion: ANALYSIS_EXECUTION_TELEMETRY_VERSION,
     source: value.source,

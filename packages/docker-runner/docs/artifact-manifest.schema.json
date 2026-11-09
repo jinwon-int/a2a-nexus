@@ -76,6 +76,24 @@
         "checkpointRef": { "const": "artifacts/claude-max-turn-checkpoint.json" }
       }
     },
+    "executionTelemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "source"],
+      "properties": {
+        "schemaVersion": { "const": "a2a.analysis-execution-telemetry.v1" },
+        "source": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+        "elapsedMs": { "type": "integer", "minimum": 0 },
+        "modelRequests": { "type": "integer", "minimum": 0 },
+        "inputTokens": { "type": "integer", "minimum": 0 },
+        "outputTokens": { "type": "integer", "minimum": 0 },
+        "cacheReadInputTokens": { "type": "integer", "minimum": 0 },
+        "cacheCreationInputTokens": { "type": "integer", "minimum": 0 },
+        "costUsd": { "type": "number", "minimum": 0 },
+        "toolCalls": { "type": "integer", "minimum": 0 },
+        "truncated": { "const": true }
+      }
+    },
     "checkpointRef": { "const": "artifacts/claude-max-turn-checkpoint.json" },
     "receiptTrace": {
       "type": "object",

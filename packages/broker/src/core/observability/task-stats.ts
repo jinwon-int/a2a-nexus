@@ -644,6 +644,9 @@ export const WORKER_RECEIPT_TELEMETRY_SOURCES = Object.freeze([
   "piri_progress_file",
   "claude_cli_envelope",
   "danso_cli_usage",
+  // #2518: Codex (exec JSONL usage) and Hermes (state.db session usage).
+  "codex_exec_jsonl",
+  "hermes_state_db",
 ] as const);
 
 export type WorkerReceiptTelemetrySource = (typeof WORKER_RECEIPT_TELEMETRY_SOURCES)[number];

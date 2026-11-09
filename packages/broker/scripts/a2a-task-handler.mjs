@@ -16,7 +16,7 @@ import {
 } from "./worker-model-policy.mjs";
 import { sourceCarrierStats } from "./lib/source-carriers.mjs";
 import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
-import { normalizeAnalysisExecutionTelemetry } from "./lib/analysis-execution-telemetry.mjs";
+import { normalizeAnalysisExecutionTelemetry, parseExecutionTelemetryLine } from "./lib/analysis-execution-telemetry.mjs";
 import { analysisHarnessPreflight } from "./lib/analysis-harness-fingerprint.mjs";
 import { ENV_WARNING_LINE_RE, normalizePromptViewTelemetry } from "./lib/analysis-source-bundle.mjs";
 import { evaluateDeclaredWriteSetGate } from "../dist/core/dispatch/runtime-safety-gates.js";
@@ -2446,7 +2446,43 @@ function jsonForPrompt(value, limit = 24000) {
   return `${kept}\n...\n[truncated ${text.length - kept.length} chars]`;
 }
 
+// #2518: patch lanes (host bridge and docker runner) spend model usage on every
+// outcome, so the usage the bridge reported is attached to whatever the
+// lane returns: `result.output.executionTelemetry` on success, else
+// `error.details.bridgeFailure.executionTelemetry` (the carrier the broker's
+// spend row reads on a failed task). An existing structured bridgeFailure or
+// a result that already carries telemetry is left untouched.
+function attachPatchLaneTelemetry(outcome, telemetry, adapterClass) {
+  if (!telemetry || !outcome || typeof outcome !== "object") return outcome;
+  if (outcome.result && typeof outcome.result === "object") {
+    const output = outcome.result.output && typeof outcome.result.output === "object" ? outcome.result.output : null;
+    if (!output || output.executionTelemetry !== undefined) return outcome;
+    return { ...outcome, result: { ...outcome.result, output: { ...output, executionTelemetry: telemetry } } };
+  }
+  if (outcome.error && typeof outcome.error === "object") {
+    const details = outcome.error.details && typeof outcome.error.details === "object" && !Array.isArray(outcome.error.details)
+      ? outcome.error.details
+      : {};
+    if (details.bridgeFailure !== undefined) return outcome;
+    const bridgeFailure = normalizeAnalysisBridgeFailure({
+      code: safeText(outcome.error.code, "patch_lane_failed"),
+      stage: "patch_lane",
+      adapterClass,
+      executionTelemetry: telemetry,
+    });
+    return bridgeFailure
+      ? { ...outcome, error: { ...outcome.error, details: { ...details, bridgeFailure } } }
+      : outcome;
+  }
+  return outcome;
+}
+
 function runOpenClawBridge(task, env = process.env) {
+  const spend = {};
+  return attachPatchLaneTelemetry(runOpenClawBridgeCore(task, env, spend), spend.telemetry, "claude_patch_bridge");
+}
+
+function runOpenClawBridgeCore(task, env, spend) {
   const payload = taskPayload(task);
   const repo = safeText(payload.repo, "");
   const issue = extractIssueNumber(task);
@@ -2515,6 +2551,8 @@ function runOpenClawBridge(task, env = process.env) {
     timeout: watchdogMs,
     killSignal: "SIGKILL",
   });
+  // #2518: the bridge's own `a2a_execution_telemetry=` stderr line.
+  spend.telemetry = parseExecutionTelemetryLine(child.stderr);
 
   if (child.error) {
     const isTimeout = child.error.code === "ETIMEDOUT";
@@ -2727,7 +2765,30 @@ function maxTurnFailureEvidence(parsed, ...streams) {
   };
 }
 
+// #2518: usage from the docker runner result — the runner copies the bridge's
+// telemetry into the result, the result summary and the artifact manifest;
+// an older runner has none of them, so the bridge's stderr line (bounded,
+// redacted copy in the runner result) is the last resort.
+function dockerRunnerExecutionTelemetry(parsed) {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+  const candidates = [
+    parsed.executionTelemetry,
+    parsed.resultSummary?.executionTelemetry,
+    parsed.artifactManifest?.executionTelemetry,
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeAnalysisExecutionTelemetry(candidate);
+    if (normalized) return normalized;
+  }
+  return parseExecutionTelemetryLine(typeof parsed.stderr === "string" ? parsed.stderr : "");
+}
+
 function runDockerRunner(task, env = process.env) {
+  const spend = {};
+  return attachPatchLaneTelemetry(runDockerRunnerCore(task, env, spend), spend.telemetry, "docker_runner");
+}
+
+function runDockerRunnerCore(task, env, spend) {
   // docker-first readiness guard: explicit docker mode or all-github scope requires
   // A2A_DOCKER_RUNNER_BIN to be set so the operator has consciously chosen a runner path.
   // Without it we return a clear config error instead of a confusing ENOENT spawn failure.
@@ -2769,6 +2830,7 @@ function runDockerRunner(task, env = process.env) {
     const stdout = safeText(child.stdout, "");
     const stderr = safeText(child.stderr, "");
     const parsed = stdout ? JSON.parse(stdout) : undefined;
+    spend.telemetry = dockerRunnerExecutionTelemetry(parsed);
 
     // timeout detection: runner status, signal, or non-zero exit
     const isTimeout =
@@ -3209,6 +3271,8 @@ export const __test = Object.freeze({
   jsonForPrompt,
   bridgeFailureMessage,
   maxTurnFailureEvidence,
+  attachPatchLaneTelemetry,
+  dockerRunnerExecutionTelemetry,
   analysisHarnessPreflightError,
   normalizeAnalysisHarness,
   withUnmarkedCompletion,

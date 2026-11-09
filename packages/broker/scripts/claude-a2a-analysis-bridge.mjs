@@ -205,6 +205,8 @@ const SAFE_CHILD_ENV_KEYS = new Set([
   "A2A_CODEX_REASONING_EFFORT",
   "A2A_CODEX_ANALYSIS_CONFIG_DIR",
   "A2A_CODEX_ANALYSIS_TIMEOUT_SEC",
+  // #2518: wrapper-owned temp file the codex adapter writes its usage to.
+  "A2A_CODEX_TELEMETRY_PATH",
   // Termux/Android native workers: Claude Code (and its subprocess shebangs)
   // resolve `/usr/bin/env` only through termux-exec, which is injected via
   // LD_PRELOAD. Dropping these from the session-isolation env (#1129) breaks the

@@ -478,6 +478,112 @@ test("runtimes without cost or tokens: tokens-only rows are cost-unknown, no tel
   }
 });
 
+test("#2518: Codex, Hermes and patch-lane telemetry make the rows metered on success, failure and partial", () => {
+  const h = harness();
+  try {
+    // Codex analysis: tokens from the exec JSONL, never a price.
+    runToRunning(h.broker, taskRequest("task-codex-usage"));
+    h.broker.completeTask("task-codex-usage", "worker-a", {
+      summary: "codex",
+      output: {
+        executionTelemetry: {
+          schemaVersion: TELEMETRY_SCHEMA,
+          source: "codex_exec_jsonl",
+          elapsedMs: 900,
+          inputTokens: 1_200,
+          cacheReadInputTokens: 8_000,
+          cacheCreationInputTokens: 300,
+          outputTokens: 210,
+          toolCalls: 2,
+        },
+      },
+    });
+    // Hermes analysis, recovered (`partial`) from state.db: tokens plus Hermes' own cost.
+    runToRunning(h.broker, taskRequest("task-hermes-partial"));
+    h.broker.completeTask("task-hermes-partial", "worker-a", {
+      summary: "hermes",
+      output: {
+        completion: { marked: true, status: "partial" },
+        recoverySource: "state_db",
+        executionTelemetry: {
+          schemaVersion: TELEMETRY_SCHEMA,
+          source: "hermes_state_db",
+          elapsedMs: 4_000,
+          modelRequests: 3,
+          inputTokens: 500,
+          outputTokens: 80,
+          cacheReadInputTokens: 2_000,
+          cacheCreationInputTokens: 0,
+          costUsd: 0.0123,
+        },
+      },
+    });
+    // Hermes failure: the structured failure line carries the usage.
+    runToRunning(h.broker, taskRequest("task-hermes-fail"));
+    h.broker.failTask("task-hermes-fail", "worker-a", {
+      code: "openclaw_analysis_failed",
+      message: "Hermes exited with 1",
+      details: {
+        bridgeFailure: {
+          code: "analysis_bridge_provider_failure",
+          adapterClass: "hermes",
+          executionTelemetry: { schemaVersion: TELEMETRY_SCHEMA, source: "hermes_state_db", inputTokens: 40, outputTokens: 0 },
+        },
+      },
+    });
+    // Docker-runner patch lane stopped at max turns: the handler projects the
+    // runner's telemetry into bridgeFailure.
+    runToRunning(h.broker, taskRequest("task-patch-max-turns"));
+    h.broker.failTask("task-patch-max-turns", "worker-a", {
+      code: "docker_runner_max_turns",
+      message: "max turns",
+      details: {
+        terminalReason: "max_turns",
+        bridgeFailure: {
+          code: "docker_runner_max_turns",
+          stage: "patch_lane",
+          adapterClass: "docker_runner",
+          executionTelemetry: claudeTelemetry({ inputTokens: 64, outputTokens: 9_000, cacheCreationInputTokens: 1_000, costUsd: 1.75 }),
+        },
+      },
+    });
+    // Docker-runner patch lane that opened a PR.
+    runToRunning(h.broker, taskRequest("task-patch-done"));
+    h.broker.completeTask("task-patch-done", "worker-a", {
+      summary: "docker runner completed",
+      output: { runner: { status: "completed" }, executionTelemetry: claudeTelemetry({ costUsd: 0.9 }) },
+    });
+
+    const codex = h.row("task-codex-usage");
+    assert.equal(codex?.cost_known, 0, "codex exposes no price");
+    assert.equal(codex?.input_tokens, 1_500, "uncached input + cache creation");
+    assert.equal(codex?.output_tokens, 210);
+    const hermes = h.row("task-hermes-partial");
+    assert.equal(hermes?.cost_known, 1);
+    assert.equal(hermes?.cost_usd, 0.0123);
+    assert.equal(hermes?.input_tokens, 500);
+    assert.equal(hermes?.output_tokens, 80);
+    const hermesFail = h.row("task-hermes-fail");
+    assert.equal(hermesFail?.cost_known, 0);
+    assert.equal(hermesFail?.input_tokens, 40);
+    const patchFail = h.row("task-patch-max-turns");
+    assert.equal(patchFail?.cost_known, 1);
+    assert.equal(patchFail?.cost_usd, 1.75);
+    assert.equal(patchFail?.input_tokens, 1_064);
+    assert.equal(patchFail?.output_tokens, 9_000);
+    const patchDone = h.row("task-patch-done");
+    assert.equal(patchDone?.cost_known, 1);
+    assert.equal(patchDone?.cost_usd, 0.9);
+
+    const totals = h.broker.readSpendTotals({ periodKey: codex!.period_key });
+    assert.equal(totals?.total.taskCount, 5);
+    assert.equal(totals?.total.unmeteredTaskCount, 0, "every lane reported tokens");
+    assert.equal(totals?.total.costUnknownTaskCount, 2, "codex and the tokens-only hermes failure");
+  } finally {
+    h.close();
+  }
+});
+
 test("malformed telemetry never throws: the row is unmetered and one content-free warning is logged per task", () => {
   const h = harness();
   try {
