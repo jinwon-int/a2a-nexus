@@ -309,6 +309,12 @@ function captureStderr(fn) {
 	return captured;
 }
 
+function sharedEnvWarningLineRe() {
+	const re = sourceBundleModule.ENV_WARNING_LINE_RE;
+	assert.ok(re instanceof RegExp, "the env-warning line shape is exported once from the lib (#2535)");
+	return re;
+}
+
 function resetEnvWarnings() {
 	assert.equal(typeof sourceBundleModule.__resetEnvWarningsForTest, "function", "test-only warn-once reset is exported");
 	sourceBundleModule.__resetEnvWarningsForTest();
@@ -352,7 +358,8 @@ test("positiveIntegerEnv stays silent for blank/unset values and when no name is
 // #2533 review item 3: the warning prefix names the reporting bridge. The
 // line must keep the shape the task handler moves after the real failure.
 test("positiveIntegerEnv uses the { source } prefix for its warning, default a2a-analysis-source-bundle (#2533)", () => {
-	const HANDLER_ENV_WARNING_LINE_RE = /^[\w.-]+: ignoring [A-Z0-9_]+ \(not a positive integer\)/;
+	// #2535: the shared line shape the task handler also imports, not a copy.
+	const ENV_WARNING_LINE_RE = sharedEnvWarningLineRe();
 	resetEnvWarnings();
 	const out = captureStderr(() => {
 		assert.equal(positiveIntegerEnv("junk", 30, "A2A_TEST_SOURCE_A", { source: "danso-a2a-analysis-bridge" }), 30);
@@ -366,7 +373,7 @@ test("positiveIntegerEnv uses the { source } prefix for its warning, default a2a
 		"a2a-analysis-source-bundle: ignoring A2A_TEST_SOURCE_B (not a positive integer); falling back to the default 31",
 		"a2a-analysis-source-bundle: ignoring A2A_TEST_SOURCE_C (not a positive integer); falling back to the default 32",
 	]);
-	for (const line of lines) assert.match(line, HANDLER_ENV_WARNING_LINE_RE);
+	for (const line of lines) assert.match(line, ENV_WARNING_LINE_RE);
 	resetEnvWarnings();
 });
 
@@ -386,5 +393,89 @@ test("collectSourceBundle warns with the prefixed name when set, else the A2A_HE
 	assert.equal(hermesOnly.includes("0.5"), false);
 	const silent = captureStderr(() => collectSourceBundle({}, { A2A_DANSO_ANALYSIS_MAX_FILES: "4" }, { prefix: "A2A_DANSO_ANALYSIS" }));
 	assert.equal(silent, "");
+	resetEnvWarnings();
+});
+
+// #2535 item 1: the warning prefix is validated against the same character
+// class the shared line regex uses; anything else falls back to the default
+// prefix instead of producing a line the task handler would not recognise.
+test("positiveIntegerEnv falls back to the default prefix for an invalid source and accepts a null options argument (#2535)", () => {
+	resetEnvWarnings();
+	const invalidSources = ["a b", "x:y", "", 42, "line\nbreak", "tab\there", null, {}];
+	const out = captureStderr(() => {
+		invalidSources.forEach((source, index) => {
+			assert.equal(positiveIntegerEnv("junk", 5, `A2A_TEST_BAD_SOURCE_${index}`, { source }), 5);
+		});
+		assert.doesNotThrow(() => positiveIntegerEnv("junk", 6, "A2A_TEST_NULL_OPTIONS", null));
+		assert.equal(positiveIntegerEnv("junk", 7, "A2A_TEST_UNDEFINED_OPTIONS", undefined), 7);
+		assert.equal(positiveIntegerEnv("8", 9, "A2A_TEST_NULL_OPTIONS_OK", null), 8, "accepted value with null options");
+	});
+	const lines = out.split("\n").filter(Boolean);
+	assert.deepEqual(lines, [
+		...invalidSources.map((_, index) => `a2a-analysis-source-bundle: ignoring A2A_TEST_BAD_SOURCE_${index} (not a positive integer); falling back to the default 5`),
+		"a2a-analysis-source-bundle: ignoring A2A_TEST_NULL_OPTIONS (not a positive integer); falling back to the default 6",
+		"a2a-analysis-source-bundle: ignoring A2A_TEST_UNDEFINED_OPTIONS (not a positive integer); falling back to the default 7",
+	]);
+	resetEnvWarnings();
+});
+
+test("every line positiveIntegerEnv writes matches the shared env-warning regex (#2535)", () => {
+	const ENV_WARNING_LINE_RE = sharedEnvWarningLineRe();
+	assert.equal(sourceBundleModule.ENV_WARNING_DEFAULT_SOURCE, "a2a-analysis-source-bundle");
+	assert.ok(sourceBundleModule.ENV_WARNING_SOURCE_RE instanceof RegExp, "the source pattern is exported");
+	resetEnvWarnings();
+	const validSources = ["a2a-analysis-source-bundle", "danso-a2a-analysis-bridge", "x.y_z-9", "A"];
+	const out = captureStderr(() => {
+		validSources.forEach((source, index) => positiveIntegerEnv("junk", 3, `A2A_TEST_GOOD_SOURCE_${index}`, { source }));
+		positiveIntegerEnv("junk", 3, "A2A_TEST_DEFAULT_SOURCE");
+		positiveIntegerEnv("junk", 3, "A2A_TEST_FALLBACK_SOURCE", { source: "not valid" });
+	});
+	const lines = out.split("\n").filter(Boolean);
+	assert.equal(lines.length, validSources.length + 2, out);
+	validSources.forEach((source, index) => {
+		assert.ok(lines[index].startsWith(`${source}: ignoring A2A_TEST_GOOD_SOURCE_${index} `), lines[index]);
+		assert.ok(sourceBundleModule.ENV_WARNING_SOURCE_RE.test(source), `${source} is a valid prefix`);
+	});
+	for (const line of lines) assert.match(line, ENV_WARNING_LINE_RE);
+	// The formatter is the single writer of the line shape.
+	assert.equal(typeof sourceBundleModule.formatEnvWarningLine, "function");
+	assert.equal(
+		sourceBundleModule.formatEnvWarningLine("x.y_z-9", "A2A_TEST_FORMAT", 4),
+		"x.y_z-9: ignoring A2A_TEST_FORMAT (not a positive integer); falling back to the default 4",
+	);
+	assert.equal(
+		sourceBundleModule.formatEnvWarningLine("x:y", "A2A_TEST_FORMAT", 4),
+		"a2a-analysis-source-bundle: ignoring A2A_TEST_FORMAT (not a positive integer); falling back to the default 4",
+	);
+	// Prefixes outside the class never match, so they can never be produced.
+	for (const source of ["a b", "x:y", ""]) {
+		assert.equal(sourceBundleModule.ENV_WARNING_SOURCE_RE.test(source), false, JSON.stringify(source));
+		assert.equal(ENV_WARNING_LINE_RE.test(`${source}: ignoring A2A_TEST_X (not a positive integer)`), false, JSON.stringify(source));
+	}
+	resetEnvWarnings();
+});
+
+// #2535 item 2: collectSourceBundle passes an optional { source } to its limit
+// warnings so a bridge sees one prefix for all of its env warnings.
+test("collectSourceBundle names the given { source } in its limit warnings, default a2a-analysis-source-bundle (#2535)", () => {
+	resetEnvWarnings();
+	const named = captureStderr(() => {
+		const bundle = collectSourceBundle({}, { A2A_DANSO_ANALYSIS_MAX_FILES: "zero", A2A_HERMES_ANALYSIS_MAX_TOTAL_BYTES: "0.5" }, {
+			prefix: "A2A_DANSO_ANALYSIS",
+			source: "danso-a2a-analysis-bridge",
+		});
+		assert.equal(bundle.limits.maxFiles, 16);
+	});
+	assert.equal(named, [
+		"danso-a2a-analysis-bridge: ignoring A2A_DANSO_ANALYSIS_MAX_FILES (not a positive integer); falling back to the default 16",
+		"danso-a2a-analysis-bridge: ignoring A2A_HERMES_ANALYSIS_MAX_TOTAL_BYTES (not a positive integer); falling back to the default 163840",
+		"",
+	].join("\n"));
+	resetEnvWarnings();
+	const unnamed = captureStderr(() => collectSourceBundle({}, { A2A_DANSO_ANALYSIS_MAX_FILES: "zero" }, { prefix: "A2A_DANSO_ANALYSIS" }));
+	assert.equal(unnamed, "a2a-analysis-source-bundle: ignoring A2A_DANSO_ANALYSIS_MAX_FILES (not a positive integer); falling back to the default 16\n");
+	resetEnvWarnings();
+	const invalid = captureStderr(() => collectSourceBundle({}, { A2A_DANSO_ANALYSIS_MAX_FILES: "zero" }, { prefix: "A2A_DANSO_ANALYSIS", source: "bad source" }));
+	assert.equal(invalid, "a2a-analysis-source-bundle: ignoring A2A_DANSO_ANALYSIS_MAX_FILES (not a positive integer); falling back to the default 16\n");
 	resetEnvWarnings();
 });

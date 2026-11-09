@@ -1474,6 +1474,37 @@ test("#2393 harness fingerprint is deterministic and moves with model, skills an
   }
 });
 
+// #2535 item 3: an invalid bridge pin and a mismatching skills pin are free
+// text in the preflight failure; their 64-unit cut (#2533) must not leave a
+// lone surrogate when index 63 is the high half of a pair.
+test("#2535 harness preflight cuts invalid bridge and skills pins without splitting a surrogate pair", () => {
+  const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-harness-2535-"));
+  try {
+    const bridgeFile = join(tempDir, "bridge.mjs");
+    writeFileSync(bridgeFile, "// v1\n");
+    const registry = join(tempDir, "registry.json");
+    writeFileSync(registry, JSON.stringify({ skills: [{ name: "x", tree_sha256: "1".repeat(64) }] }));
+    const pin = `${"x".repeat(63)}😀`;
+    assert.equal(pin.length, 65, "index 63 is the high surrogate");
+    for (const env of [
+      { A2A_BRIDGE_PIN_SHA256: pin, A2A_SKILLS_TREE_SHA256_PIN: pin, A2A_SKILLS_REGISTRY_PATH: registry },
+      { A2A_BRIDGE_PIN_SHA256: pin, A2A_SKILLS_TREE_SHA256_PIN: pin }, // registry unavailable: the other remedy branch
+    ]) {
+      const result = analysisHarnessPreflight({ bridgeFile, env });
+      assert.equal(result.ok, false);
+      assert.deepEqual(result.failures.map((failure) => failure.check), ["bridge_pin", "skills_tree_pin"]);
+      for (const failure of result.failures) {
+        assert.ok(failure.expected.length <= 64, `${failure.check}: expected is at most 64 units`);
+        assert.equal(LONE_SURROGATE.test(failure.expected), false, `${failure.check}: no lone surrogate`);
+        assert.equal(failure.expected, "x".repeat(63), `${failure.check}: backs off exactly the split pair`);
+      }
+    }
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("#2426 harness fingerprint moves with the Claude lane isolation mode and is deterministic per mode", async () => {
   const { normalizeHarnessIsolation, LANE_SKILL_STATES } = await import("./lib/analysis-harness-fingerprint.mjs");
   const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-harness-2426-"));

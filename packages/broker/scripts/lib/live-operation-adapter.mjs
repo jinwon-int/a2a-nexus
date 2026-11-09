@@ -42,7 +42,11 @@ function loadCapabilities(env) {
   }
 }
 
-function assertRootOwnedImmutableFile(path, label, { executable = false } = {}) {
+// #2535: `ownerUid` is the uid the file must be owned by. It is 0 (root)
+// everywhere except the runbook manifest and runbook command, which take the
+// code-only `dependencies.trustedOwnerUid` of runLiveOperationTask (default 0)
+// so the adapter tests can run on non-root CI. No other check depends on it.
+function assertRootOwnedImmutableFile(path, label, { executable = false, ownerUid = 0 } = {}) {
   if (!canonicalText(path, 4096) || !isAbsolute(path)) {
     throw new Error(`${label} path must be canonical and absolute`);
   }
@@ -50,19 +54,21 @@ function assertRootOwnedImmutableFile(path, label, { executable = false } = {}) 
   if (!stat.isFile() || stat.isSymbolicLink() || realpathSync(path) !== path) {
     throw new Error(`${label} must be a regular non-symlink file`);
   }
-  if (stat.uid !== 0 || (stat.mode & 0o022) !== 0) {
-    throw new Error(`${label} must be root-owned and not group/other writable`);
+  if (stat.uid !== ownerUid || (stat.mode & 0o022) !== 0) {
+    throw new Error(ownerUid === 0
+      ? `${label} must be root-owned and not group/other writable`
+      : `${label} must be owned by the trusted owner uid and not group/other writable`);
   }
   if (executable && (stat.mode & 0o111) === 0) {
     throw new Error(`${label} must be executable`);
   }
 }
 
-function loadRunbook(manifestPath, runbookId, target) {
+function loadRunbook(manifestPath, runbookId, target, ownerUid) {
   if (!ALLOWED_RUNBOOK_IDS.has(runbookId)) {
     throw Object.assign(new Error(`runbook ${runbookId} is not allowlisted`), { code: "runbook_not_allowed" });
   }
-  assertRootOwnedImmutableFile(manifestPath, "live runbook manifest");
+  assertRootOwnedImmutableFile(manifestPath, "live runbook manifest", { ownerUid });
   let document;
   try {
     document = JSON.parse(readFileSync(manifestPath, "utf8"));
@@ -85,7 +91,7 @@ function loadRunbook(manifestPath, runbookId, target) {
   if (!target.startsWith(runbook.targetPrefix)) {
     throw new Error(`runbook ${runbookId} does not allow target ${target}`);
   }
-  assertRootOwnedImmutableFile(runbook.command, `runbook ${runbookId} command`, { executable: true });
+  assertRootOwnedImmutableFile(runbook.command, `runbook ${runbookId} command`, { executable: true, ownerUid });
   return runbook;
 }
 
@@ -285,8 +291,23 @@ function verifyTaskAgainstBroker(task, operation, receipt, nodeId, env, spawnSyn
   }
 }
 
+/**
+ * `dependencies` is set by code only (the task handler passes none):
+ * - spawnSync: process runner (default node:child_process spawnSync).
+ * - trustedOwnerUid (#2535): the uid the runbook manifest and runbook command
+ *   must be owned by; default 0 (root). It must be a non-negative safe
+ *   integer, otherwise the task fails closed before anything runs. It is never
+ *   read from env or the task, and /usr/bin/curl is always checked against 0.
+ */
 export function runLiveOperationTask(task, env = process.env, dependencies = {}) {
   const spawnSync = dependencies.spawnSync ?? nodeSpawnSync;
+  // Own property only, so a polluted Object.prototype cannot supply it.
+  const trustedOwnerUid = Object.hasOwn(dependencies, "trustedOwnerUid") && dependencies.trustedOwnerUid !== undefined
+    ? dependencies.trustedOwnerUid
+    : 0;
+  if (!Number.isSafeInteger(trustedOwnerUid) || trustedOwnerUid < 0) {
+    return fail("invalid_live_operation", "trustedOwnerUid must be a non-negative safe integer");
+  }
   try {
     const capabilities = loadCapabilities(env);
     if (!capabilities || capabilities.canPromoteLive !== true) {
@@ -298,7 +319,7 @@ export function runLiveOperationTask(task, env = process.env, dependencies = {})
     const { operation, receipt, nodeId } = parseTask(task, env);
     verifyTaskAgainstBroker(task, operation, receipt, nodeId, env, spawnSync);
     const manifestPath = String(env.A2A_LIVE_RUNBOOKS_FILE ?? "").trim();
-    const runbook = loadRunbook(manifestPath, operation.runbookId, operation.target);
+    const runbook = loadRunbook(manifestPath, operation.runbookId, operation.target, trustedOwnerUid);
     const phases = operation.action === "promote_to_live_apply"
       ? ["preflight", "apply", "verify"]
       : ["rollback", "verify"];

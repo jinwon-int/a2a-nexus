@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
+// Namespace view: a lib export that does not exist yet fails only the test that needs it.
+import * as sourceBundleModule from "./lib/analysis-source-bundle.mjs";
 
 const bridgePath = new URL("./hermes-a2a-analysis-bridge.mjs", import.meta.url).pathname;
 
@@ -1740,6 +1742,10 @@ test("Hermes A2A analysis bridge warns once per rejected limit env name without 
       assert.equal(mine.length, 1, `exactly one warning for ${name}: ${lines.join(" | ")}`);
       assert.match(mine[0], new RegExp(`\\(not a positive integer\\); falling back to the default ${fallback} before any other caps$`), `${name}: wording and exact default`);
     }
+    // #2535: the hermes line keeps the shared shape the task handler moves
+    // after the real failure (the regex is imported from the lib, not copied).
+    assert.ok(sourceBundleModule.ENV_WARNING_LINE_RE instanceof RegExp, "the lib exports the shared env-warning line regex");
+    for (const line of lines) assert.match(line, sourceBundleModule.ENV_WARNING_LINE_RE);
     assert.equal(linesFor(lines, "A2A_HERMES_ANALYSIS_MAX_FILE_BYTES").length, 0, "valid value: no warning");
     assert.equal(lines.length, Object.keys(expected).length, `only the rejected names warn: ${lines.join(" | ")}`);
     assert.ok(lines.every((line) => !line.includes(SECRETISH) && !line.includes("0.5") && !line.includes("-1")), "the rejected value is never echoed");

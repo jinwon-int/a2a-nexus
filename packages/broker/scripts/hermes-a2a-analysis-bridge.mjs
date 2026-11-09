@@ -14,7 +14,7 @@ import {
 } from "./lib/source-carriers.mjs";
 import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
 // #2303 item 5: content-free prompt/source byte counters for the telemetry.
-import { promptViewTelemetry } from "./lib/analysis-source-bundle.mjs";
+import { formatEnvWarningLine, promptViewTelemetry } from "./lib/analysis-source-bundle.mjs";
 import { byteBudget, readUtf8FilePrefix, sliceUtf8AtBoundary, truncateUtf16Safe, truncateUtf8ToBytesSafe } from "./lib/utf8-byte-budget.mjs";
 
 const BRIDGE_FILE = fileURLToPath(import.meta.url);
@@ -1046,7 +1046,9 @@ function positiveIntegerEnv(value, fallback, name) {
   // rejected value; an unset or blank value is not a rejection.
   if (name && String(value ?? "").trim() !== "" && !warnedEnvNames.has(name)) {
     warnedEnvNames.add(name);
-    process.stderr.write(`hermes-a2a-analysis-bridge: ignoring ${name} (not a positive integer); falling back to the default ${fallback} before any other caps\n`);
+    // #2535: the shared line shape (lib formatEnvWarningLine), plus the
+    // hermes-specific tail; the task handler matches it with ENV_WARNING_LINE_RE.
+    process.stderr.write(`${formatEnvWarningLine("hermes-a2a-analysis-bridge", name, fallback)} before any other caps\n`);
   }
   return fallback;
 }

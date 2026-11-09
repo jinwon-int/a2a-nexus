@@ -1,10 +1,23 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, chmodSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, chmodSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { runLiveOperationTask } from "./lib/live-operation-adapter.mjs";
+
+// #2535: the runbook fixtures live in a temp dir owned by whoever runs the
+// test. The adapter takes the expected owner uid of the runbook manifest and
+// command from code-only `dependencies.trustedOwnerUid` (default 0 = root), so
+// these tests pass the test process uid and run on non-root CI runners. Every
+// other check (regular non-symlink file, realpath, no group/other write,
+// executable command) stays real; /usr/bin/curl is always checked against uid 0.
+const OWNER_UID = process.getuid();
+const IS_ROOT = OWNER_UID === 0;
+
+function deps(spawnSync) {
+  return { spawnSync, trustedOwnerUid: OWNER_UID };
+}
 
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), "a2a-live-adapter-"));
@@ -111,7 +124,7 @@ test("deterministic live adapter executes only allowlisted preflight/apply/verif
   const fx = fixture();
   try {
     const calls = [];
-    const outcome = runLiveOperationTask(task(), env(fx.manifestPath), { spawnSync: successfulSpawn(calls) });
+    const outcome = runLiveOperationTask(task(), env(fx.manifestPath), deps(successfulSpawn(calls)));
     assert.equal(outcome.error, undefined);
     assert.deepEqual(calls.map((call) => call.command), [
       "/usr/bin/curl",
@@ -133,7 +146,7 @@ test("deterministic live adapter fails closed before execution without live capa
   const fx = fixture();
   try {
     const calls = [];
-    const outcome = runLiveOperationTask(task(), env(fx.manifestPath, { canPromoteLive: false }), { spawnSync: successfulSpawn(calls) });
+    const outcome = runLiveOperationTask(task(), env(fx.manifestPath, { canPromoteLive: false }), deps(successfulSpawn(calls)));
     assert.equal(outcome.error.code, "live_capability_required");
     assert.equal(calls.length, 0);
   } finally {
@@ -147,14 +160,14 @@ test("deterministic live adapter rejects prompt-derived command fields and unkno
     const calls = [];
     const base = task();
     base.payload.liveOperation.command = "sh -c 'touch /tmp/pwned'";
-    let outcome = runLiveOperationTask(base, env(fx.manifestPath), { spawnSync: successfulSpawn(calls) });
+    let outcome = runLiveOperationTask(base, env(fx.manifestPath), deps(successfulSpawn(calls)));
     assert.equal(outcome.error.code, "invalid_live_operation");
     assert.equal(calls.length, 0);
 
     const unknown = task();
     unknown.payload.liveOperation.runbookId = "operator-supplied";
     unknown.payload.approvalReceipt.runbookId = "operator-supplied";
-    outcome = runLiveOperationTask(unknown, env(fx.manifestPath), { spawnSync: successfulSpawn(calls, unknown) });
+    outcome = runLiveOperationTask(unknown, env(fx.manifestPath), deps(successfulSpawn(calls, unknown)));
     assert.equal(outcome.error.code, "runbook_not_allowed");
     assert.equal(calls.length, 1);
   } finally {
@@ -168,7 +181,7 @@ test("deterministic live adapter requires the local task to match the trusted br
     const calls = [];
     const canonical = task();
     canonical.payload.approvalReceipt.receiptMac = "b".repeat(64);
-    const outcome = runLiveOperationTask(task(), env(fx.manifestPath), { spawnSync: successfulSpawn(calls, canonical) });
+    const outcome = runLiveOperationTask(task(), env(fx.manifestPath), deps(successfulSpawn(calls, canonical)));
     assert.equal(outcome.error.code, "trusted_broker_confirmation_mismatch");
     assert.equal(calls.length, 1);
     assert.equal(calls[0].command, "/usr/bin/curl");
@@ -184,7 +197,7 @@ test("deterministic live adapter executes rollback and verify only for separatel
     const rollback = task({ intent: "rollback_live" });
     rollback.payload.liveOperation.action = "promote_to_live_rollback";
     rollback.payload.approvalReceipt.action = "promote_to_live_rollback";
-    const outcome = runLiveOperationTask(rollback, env(fx.manifestPath), { spawnSync: successfulSpawn(calls, rollback) });
+    const outcome = runLiveOperationTask(rollback, env(fx.manifestPath), deps(successfulSpawn(calls, rollback)));
     assert.equal(outcome.error, undefined);
     assert.deepEqual(calls.filter((call) => call.command === fx.commandPath).map((call) => call.args[1]), ["rollback", "verify"]);
     assert.equal(outcome.result.action, "promote_to_live_rollback");
@@ -198,13 +211,11 @@ test("deterministic live adapter rejects wrapper-only success without verify sen
   try {
     const calls = [];
     const spawn = successfulSpawn(calls);
-    const outcome = runLiveOperationTask(task(), env(fx.manifestPath), {
-      spawnSync(command, args, options) {
-        const result = spawn(command, args, options);
-        if (args[1] === "verify") result.stdout = JSON.stringify({ ok: true, phase: "verify" });
-        return result;
-      },
-    });
+    const outcome = runLiveOperationTask(task(), env(fx.manifestPath), deps((command, args, options) => {
+      const result = spawn(command, args, options);
+      if (args[1] === "verify") result.stdout = JSON.stringify({ ok: true, phase: "verify" });
+      return result;
+    }));
     assert.equal(outcome.error.code, "live_verification_failed");
     assert.equal(calls.length, 4);
   } finally {
@@ -226,7 +237,7 @@ test("failed runbook phase stderr excerpt never splits a surrogate pair", () => 
       // index 1999 is the high half of the emoji
       return { status: 1, signal: null, stdout: "", stderr: `${"r".repeat(1999)}😀tail` };
     };
-    const outcome = runLiveOperationTask(task(), env(fx.manifestPath), { spawnSync: spawn });
+    const outcome = runLiveOperationTask(task(), env(fx.manifestPath), deps(spawn));
     assert.equal(outcome.error?.code, "live_runbook_phase_failed");
     const stderr = outcome.error.details.stderr;
     assert.ok(stderr.length <= 2000);
@@ -234,5 +245,115 @@ test("failed runbook phase stderr excerpt never splits a surrogate pair", () => 
     assert.equal(LONE_SURROGATE.test(stderr), false);
   } finally {
     fx.cleanup();
+  }
+});
+
+// #2535: the owner-uid seam is code-only and validated; it never relaxes the
+// file-type, symlink, realpath, mode or executable checks.
+test("trustedOwnerUid must be a non-negative safe integer; anything else fails closed before any spawn (#2535)", () => {
+  const fx = fixture();
+  try {
+    for (const trustedOwnerUid of [-1, "0", String(OWNER_UID), 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1, null, true, {}, [0]]) {
+      const calls = [];
+      const outcome = runLiveOperationTask(task(), env(fx.manifestPath), { spawnSync: successfulSpawn(calls), trustedOwnerUid });
+      assert.equal(outcome.error?.code, "invalid_live_operation", `trustedOwnerUid ${String(trustedOwnerUid)} is rejected`);
+      assert.match(outcome.error.message, /trustedOwnerUid/);
+      assert.equal(calls.length, 0, `nothing runs for trustedOwnerUid ${String(trustedOwnerUid)}`);
+    }
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test("a trustedOwnerUid that is not the fixture owner rejects the runbook manifest; env and task cannot override it (#2535)", () => {
+  const fx = fixture();
+  try {
+    const calls = [];
+    const carrier = task({ trustedOwnerUid: OWNER_UID });
+    carrier.payload.trustedOwnerUid = OWNER_UID;
+    const carrierEnv = { ...env(fx.manifestPath), trustedOwnerUid: String(OWNER_UID), A2A_TRUSTED_OWNER_UID: String(OWNER_UID), A2A_LIVE_TRUSTED_OWNER_UID: String(OWNER_UID) };
+    const outcome = runLiveOperationTask(carrier, carrierEnv, { spawnSync: successfulSpawn(calls, carrier), trustedOwnerUid: OWNER_UID + 1 });
+    assert.equal(outcome.error?.code, "invalid_live_operation", JSON.stringify(outcome));
+    assert.match(outcome.error.message, /^live runbook manifest must be owned by the trusted owner uid and not group\/other writable$/);
+    assert.deepEqual(calls.map((call) => call.command), ["/usr/bin/curl"], "no runbook phase runs");
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test("without the dependency the default owner uid 0 is enforced even when env and task carry an owner uid (#2535)", {
+  skip: IS_ROOT ? "running as root: the temp fixture is owned by uid 0, so the default cannot be told apart here (the non-root CI run covers it)" : false,
+}, () => {
+  const fx = fixture();
+  try {
+    const calls = [];
+    const carrier = task({ trustedOwnerUid: OWNER_UID });
+    carrier.payload.trustedOwnerUid = OWNER_UID;
+    const carrierEnv = { ...env(fx.manifestPath), trustedOwnerUid: String(OWNER_UID), A2A_TRUSTED_OWNER_UID: String(OWNER_UID) };
+    for (const dependencies of [{ spawnSync: successfulSpawn(calls, carrier) }, { spawnSync: successfulSpawn(calls, carrier), trustedOwnerUid: undefined }]) {
+      const outcome = runLiveOperationTask(carrier, carrierEnv, dependencies);
+      assert.equal(outcome.error?.code, "invalid_live_operation", JSON.stringify(outcome));
+      assert.match(outcome.error.message, /^live runbook manifest must be root-owned and not group\/other writable$/);
+    }
+    assert.ok(calls.every((call) => call.command === "/usr/bin/curl"), "no runbook phase runs");
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test("with the owner-uid seam a group/other-writable manifest or command is still rejected (#2535)", () => {
+  for (const [target, mode, label] of [
+    ["manifestPath", 0o620, "live runbook manifest"],
+    ["manifestPath", 0o602, "live runbook manifest"],
+    ["commandPath", 0o770, "runbook ccc-node-3node-rollout-v1 command"],
+    ["commandPath", 0o707, "runbook ccc-node-3node-rollout-v1 command"],
+  ]) {
+    const fx = fixture();
+    try {
+      chmodSync(fx[target], mode);
+      const calls = [];
+      const outcome = runLiveOperationTask(task(), env(fx.manifestPath), deps(successfulSpawn(calls)));
+      assert.equal(outcome.error?.code, "invalid_live_operation", `${target} ${mode.toString(8)}`);
+      assert.match(outcome.error.message, new RegExp(`^${label} must be (?:root-owned|owned by the trusted owner uid) and not group/other writable$`));
+      assert.deepEqual(calls.map((call) => call.command), ["/usr/bin/curl"]);
+    } finally {
+      fx.cleanup();
+    }
+  }
+});
+
+test("with the owner-uid seam a symlinked manifest or command and a non-executable command are still rejected (#2535)", () => {
+  const cases = [
+    ["symlinked manifest", (fx) => {
+      const link = join(fx.dir, "runbooks-link.json");
+      symlinkSync(fx.manifestPath, link);
+      return link;
+    }, /^live runbook manifest must be a regular non-symlink file$/],
+    ["symlinked command", (fx) => {
+      const link = join(fx.dir, "rollout-link");
+      symlinkSync(fx.commandPath, link);
+      writeFileSync(fx.manifestPath, JSON.stringify({
+        schema: "a2a.live-runbooks.v1",
+        runbooks: { "ccc-node-3node-rollout-v1": { command: link, targetPrefix: "ccc-node:", timeoutSec: 900 } },
+      }));
+      return fx.manifestPath;
+    }, /^runbook ccc-node-3node-rollout-v1 command must be a regular non-symlink file$/],
+    ["non-executable command", (fx) => {
+      chmodSync(fx.commandPath, 0o600);
+      return fx.manifestPath;
+    }, /^runbook ccc-node-3node-rollout-v1 command must be executable$/],
+  ];
+  for (const [name, prepare, expected] of cases) {
+    const fx = fixture();
+    try {
+      const manifestPath = prepare(fx);
+      const calls = [];
+      const outcome = runLiveOperationTask(task(), env(manifestPath), deps(successfulSpawn(calls)));
+      assert.equal(outcome.error?.code, "invalid_live_operation", name);
+      assert.match(outcome.error.message, expected, name);
+      assert.deepEqual(calls.map((call) => call.command), ["/usr/bin/curl"], `${name}: no runbook phase runs`);
+    } finally {
+      fx.cleanup();
+    }
   }
 });

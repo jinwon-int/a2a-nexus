@@ -7,6 +7,8 @@ import test from "node:test";
 
 import { __test, handleTask, observeJevForOutcome, validateWorkerModelEnvCandidatesForPatchProfile } from "./a2a-task-handler.mjs";
 import { classifyEvidenceBundle } from "./a2ad-evidence-classifier.mjs";
+// Namespace view so a lib export that does not exist yet fails only the tests that need it.
+import * as sourceBundleModule from "./lib/analysis-source-bundle.mjs";
 import {
   ADVISORY_SIDECAR_ROUTING_POLICY,
   ALLOWED_WORKER_MODELS,
@@ -4487,6 +4489,104 @@ test("a danso MAX_TURNS env warning in patch-bridge stderr is not classified as 
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// #2535 item 1: the task handler classifies warning lines with the regex the
+// lib exports (no private copy), so a line the lib can write is always moved
+// and the two can no longer drift apart.
+test("bridgeFailureMessage moves exactly the lines the shared env-warning regex matches (#2535)", () => {
+  const ENV_WARNING_LINE_RE = sourceBundleModule.ENV_WARNING_LINE_RE;
+  assert.ok(ENV_WARNING_LINE_RE instanceof RegExp, "the lib exports the shared env-warning line regex");
+  assert.equal(typeof sourceBundleModule.formatEnvWarningLine, "function", "the lib exports the shared formatter");
+  const produced = ["a2a-analysis-source-bundle", "danso-a2a-analysis-bridge", "x.y_z-9", "not valid", "x:y"]
+    .map((source, index) => sourceBundleModule.formatEnvWarningLine(source, `A2A_TEST_LIMIT_${index}`, 7));
+  const corpus = [
+    ...produced,
+    ENV_WARN_B,
+    "dotted.name: ignoring A2A_X (not a positive integer)",
+    "under_score: ignoring A2A_X (not a positive integer)",
+    "dash-name: ignoring A2A_X (not a positive integer)",
+    "a b: ignoring A2A_X (not a positive integer)",
+    "x:y: ignoring A2A_X (not a positive integer)",
+    ": ignoring A2A_X (not a positive integer)",
+    "note: ignoring lowercase (not a positive integer)",
+    "plain failure line",
+  ];
+  for (const line of produced) assert.match(line, ENV_WARNING_LINE_RE, "every formatted line is a warning line");
+  for (const line of corpus) {
+    const moved = __test.bridgeFailureMessage({ stderr: `${line}\nreal failure\n`, stdout: "", status: 1 }) === `real failure\n${line}`;
+    assert.equal(moved, ENV_WARNING_LINE_RE.test(line), `handler and shared regex agree on ${JSON.stringify(line)}`);
+  }
+});
+
+// #2535 item 3: the decision-dialectic site uses bridgeFailureMessage too; a
+// warnings-only stderr must not hide the stdout failure text there either.
+test("decision-dialectic bridge failure message leads with stdout when stderr is only env warnings (#2535)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-decision-dialectic-env-warning-"));
+  const bin = join(dir, "failing-dialectic-bridge.mjs");
+  writeFileSync(bin, [
+    "#!/usr/bin/env node",
+    `process.stderr.write(${JSON.stringify(`${ENV_WARN_A}\n${ENV_WARN_B}\n`)});`,
+    "process.stdout.write('real dialectic failure\\n');",
+    "process.exit(1);",
+    "",
+  ].join("\n"));
+  chmodSync(bin, 0o755);
+  try {
+    const result = handleTask({
+      id: "task-decision-dialectic-env-warning",
+      intent: "analyze",
+      assignedWorkerId: "workerzeta",
+      message: "decision.dialectic thesis phase",
+      payload: {
+        promptSpec: { schemaName: "decisionDialectic.thesis.v1", phase: "thesis", systemPrompt: "Return JSON." },
+        execution: { phase: "thesis" },
+      },
+    }, {
+      PATH: process.env.PATH,
+      A2A_EXECUTOR_MODE: "builtin",
+      A2A_DECISION_DIALECTIC_BRIDGE_ENABLED: "1",
+      A2A_OPENCLAW_BRIDGE_ENABLED: "1",
+      A2A_OPENCLAW_ANALYSIS_BIN: bin,
+      A2A_DECISION_DIALECTIC_TIMEOUT_SEC: "5",
+      A2A_NODE_ID: "workerzeta",
+    });
+    assert.equal(result.error?.code, "decision_dialectic_bridge_failed", JSON.stringify(result.error));
+    const message = String(result.error?.message ?? "");
+    assert.ok(message.startsWith("real dialectic failure"), JSON.stringify(message));
+    assert.ok(message.endsWith(`${ENV_WARN_A}\n${ENV_WARN_B}`), "the warnings follow, in their original order");
+    assert.equal(result.error?.details?.exitCode, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// #2535 item 3: max-turn classification reads only the bridge's own
+// terminal_reason marker; a warning line that names a *_MAX_TURNS env var is
+// not evidence of max-turn exhaustion.
+test("maxTurnFailureEvidence ignores a MAX_TURNS env warning and classifies only the terminal_reason marker (#2535)", () => {
+  const evidence = __test.maxTurnFailureEvidence;
+  assert.equal(typeof evidence, "function", "maxTurnFailureEvidence is exported via __test");
+  const warning = "danso-a2a-analysis-bridge: ignoring A2A_DANSO_ANALYSIS_MAX_TURNS (not a positive integer); falling back to the default 80";
+  assert.equal(evidence(undefined, "", `${warning}\nanalysis bridge failed: provider error\n`), undefined);
+  assert.equal(evidence(undefined, `${warning}\n`, "ordinary error"), undefined, "on stdout as well");
+  assert.equal(evidence(undefined, "", "note: terminal_reason=max_turns appears mid-line"), undefined, "the marker must be on its own line");
+  assert.deepEqual(evidence(undefined, "", `${warning}\nterminal_reason=max_turns\n`), { terminalReason: "max_turns" });
+  assert.deepEqual(evidence(undefined, "terminal_reason=max_turns", ""), { terminalReason: "max_turns" });
+  assert.deepEqual(evidence({ terminalReason: "max_turns" }), { terminalReason: "max_turns" });
+});
+
+test("a danso MAX_TURNS env warning in analysis-bridge stderr is not reported as max_turns (#2535)", () => {
+  const warning = "danso-a2a-analysis-bridge: ignoring A2A_DANSO_ANALYSIS_MAX_TURNS (not a positive integer); falling back to the default 80";
+  const result = runFailingAnalysisBridge([
+    `process.stderr.write(${JSON.stringify(`${warning}\n`)});`,
+    "process.stderr.write('analysis bridge failed: provider error\\n');",
+  ].join("\n"));
+  assert.equal(result.error?.code, "openclaw_analysis_failed");
+  assert.equal(result.error?.details?.terminalReason, undefined);
+  const message = String(result.error?.message ?? "");
+  assert.ok(message.startsWith("analysis bridge failed: provider error"), JSON.stringify(message));
+  assert.ok(message.endsWith(warning));
 });
 
 // #2533 review item 6: bridge-pin preflight failures, harness settingSources
