@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da
+FROM node:22-bookworm-slim@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d
 
 ARG HERMES_REPO=https://github.com/NousResearch/hermes-agent.git
 ARG HERMES_REF=9de9c25f620ff7f1ce0fd5457d596052d5159596
