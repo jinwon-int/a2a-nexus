@@ -70,7 +70,12 @@ function countSchemaRetryReasons(reasons) {
     : undefined;
 }
 
+// #2543: only a number or a non-blank numeric string is a measurement.
+// `Number()` turns null, "", false and [] into 0 (and true into 1), which
+// recorded an unknown cost as a known 0 USD and let sumExecutionTelemetry
+// report a partial total as if every invocation had been priced.
 function finiteNonNegative(value) {
+  if (typeof value !== "number" && !(typeof value === "string" && value.trim() !== "")) return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
