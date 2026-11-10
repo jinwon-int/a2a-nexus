@@ -352,8 +352,23 @@ const SUMMABLE_TELEMETRY_FIELDS = [
   "outputTokens",
   "cacheReadInputTokens",
   "cacheCreationInputTokens",
+  "progressEvents",
   "toolCalls",
+  "autoRetries",
+  "schemaRetries",
 ];
+
+// #2545: schemaRetryReasons is a per-reason count map; merge it key by key over
+// the invocations that reported it, then re-apply the bounded-enum guard.
+function sumSchemaRetryReasons(present) {
+  const maps = present.map((item) => item.schemaRetryReasons).filter(Boolean);
+  if (maps.length === 0) return undefined;
+  const merged = {};
+  for (const map of maps) {
+    for (const [reason, count] of Object.entries(map)) merged[reason] = (merged[reason] ?? 0) + count;
+  }
+  return normalizeSchemaRetryReasons(merged);
+}
 
 /**
  * #2518: one telemetry object for a lane that made several runtime
@@ -379,6 +394,7 @@ export function sumExecutionTelemetry(items, source) {
     source: source ?? present[0].source,
     ...summed,
     costUsd: allCosted ? present.reduce((total, item) => total + item.costUsd, 0) : undefined,
+    schemaRetryReasons: sumSchemaRetryReasons(present),
     truncated: present.some((item) => item.truncated === true) ? true : undefined,
   });
 }
