@@ -136,6 +136,9 @@ async function main(): Promise<void> {
   if (command === "images") {
     // #2547: runner image retention. Dry-run unless --apply; never touches
     // images outside the a2a-docker-runner* repositories.
+    if (process.argv.includes("--apply") && process.argv.includes("--dry-run")) {
+      throw new Error("images: --dry-run and --apply are mutually exclusive (dry-run is already the default)");
+    }
     const env = loadCliEnv();
     const engineFlag = processFlag("--engine") ?? env.A2A_DOCKER_RUNNER_ENGINE ?? "docker";
     if (engineFlag !== "docker" && engineFlag !== "podman") throw new Error(`invalid --engine: ${engineFlag}`);
@@ -155,6 +158,7 @@ async function main(): Promise<void> {
       keepRollback,
       minAgeMs,
       keepRefs: processFlags("--keep"),
+      allowRepositories: processFlags("--repository"),
       envDir: processFlag("--env-dir") ?? DEFAULT_ENV_DIR,
       deployRecordDirs,
       isRoot: typeof process.getuid === "function" ? process.getuid() === 0 : undefined,
@@ -237,14 +241,17 @@ Usage:
     (lists <env-file>.* backup copies and the rotation plan: keep the newest --keep, prune the rest older than
      --max-age (0 = all beyond --keep). Dry-run unless --prune. --create <tag> first copies the live file to
      <env-file>.bak-<tag>-<UTC stamp> with mode 0600 — the helper deploy scripts should use)
-  a2a-docker-runner images [--apply] [--keep-rollback 1] [--min-age 72h] [--keep <image-ref>]... [--builder-cache]
-                           [--engine docker|podman] [--env-dir /etc/default] [--deploy-record-dir <dir>]...
+  a2a-docker-runner images [--apply] [--keep-rollback 1] [--min-age 72h] [--keep <image-ref>]... [--repository <repo>]...
+                           [--builder-cache] [--engine docker|podman] [--env-dir /etc/default] [--deploy-record-dir <dir>]...
     (#2547: lists a2a-docker-runner* image tags to remove. Keeps the image(s) in use — running worker env
-     (/proc/<pid>/environ), env files in --env-dir, any container incl. stopped, --keep — plus --keep-rollback
-     per repository (picked from env backups / --deploy-record-dir / ${DEPLOY_RECORD_DIRS_ENV}, else newest),
-     tags named *rollback*, and images younger than --min-age. Other images are never touched.
-     Dry-run unless --apply; --apply re-plans first, uses "image rm" without -f, and is refused (exit 2) without
-     in-use evidence or when not root. --builder-cache adds "docker builder prune -f".)
+     (/proc/<pid>/environ) and its systemd EnvironmentFile, env files in --env-dir, any container incl. stopped,
+     --keep — plus --keep-rollback per worker env file (its newest backup; --deploy-record-dir /
+     ${DEPLOY_RECORD_DIRS_ENV} top up), tags named *rollback*, and images built or loaded within --min-age.
+     A runner repository with no resolved in-use image is left alone unless named with --repository.
+     Other images are never touched. Dry-run unless --apply; --apply re-plans, re-checks each tag's id, uses
+     "image rm" without -f, and is refused (exit 2) when an in-use/--keep ref does not resolve, /proc is not fully
+     readable, or there is no in-use evidence. --builder-cache adds "docker builder prune -f --filter until=<min-age>"
+     (the engine's whole build cache older than that, not only runner builds).)
   a2a-docker-runner run <task.json>
   cat task.json | a2a-docker-runner run -
 `);

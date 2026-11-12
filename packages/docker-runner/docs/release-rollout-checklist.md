@@ -158,8 +158,11 @@ Excluded legacy target:
     a2a-docker-runner images            # dry-run: kept (in-use / container / rollback / recent) vs candidates
     ```
 
-    Check that the `rollback` tag is the image you would roll back to (the previous `A2A_DOCKER_RUNNER_IMAGE`,
-    normally found in the env backup taken before the switch). Deleting is a per-node operator decision:
+    Check that each worker's `rollback` tag is the image you would roll back to (the previous
+    `A2A_DOCKER_RUNNER_IMAGE`, normally found in the env backup taken before the switch — pass
+    `--deploy-record-dir` when backups are kept away from the live env file), that `plan.applyRefusals` and
+    `plan.skippedRepositories` are understood, and that the new image is not yet a candidate. Deleting is a
+    per-node operator decision:
     run `a2a-docker-runner images --apply` only with that node's approval, and record the removed tags/ids and
     the before/after `df` it prints.
 

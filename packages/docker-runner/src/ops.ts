@@ -38,7 +38,7 @@ import {
   type EgressInstallOptions,
   type EgressInstallReport,
 } from "./egress-runtime.js";
-import { checkRunnerImageDisk, type RunnerImageDiskCheckOptions } from "./runner-images.js";
+import { checkRunnerImageDisk, DEPLOY_RECORD_DIRS_ENV, type RunnerImageDiskCheckOptions } from "./runner-images.js";
 
 export type OpsStatus = "ok" | "warn" | "fail" | "skip";
 
@@ -79,7 +79,7 @@ export interface DoctorReport {
   workdirRetention: OpsCheck;
   /** #2395: present only when A2A_DOCKER_RUNNER_EGRESS_MODE is observe/enforce. */
   egressProxy?: OpsCheck;
-  /** #2547: free space on / (warn < 10% or < 5GiB) and stale runner image tags reclaimable (warn-only). */
+  /** #2547: free space on / and the engine root (warn < 10% or < 5GiB) and stale runner image tags reclaimable (warn-only). */
   runnerImageDisk: OpsCheck;
   /** #2268: `<envFile>.*` backup copies — broad perms fail, unbounded count/age warn. Present when the CLI passed envFile. */
   serviceEnvBackups?: OpsCheck;
@@ -873,6 +873,8 @@ export async function doctor(config: RunnerConfig, options: DoctorOptions = {}):
   const runnerImageDisk = await checkRunnerImageDisk({
     engine,
     engineReady: (engine === "docker" ? docker : podman).status === "ok",
+    isRoot: typeof process.getuid === "function" ? process.getuid() === 0 : undefined,
+    deployRecordDirs: (options.env?.[DEPLOY_RECORD_DIRS_ENV] ?? "").split(":").map((dir) => dir.trim()).filter(Boolean),
     ...options.runnerImageDisk,
   });
   checks.push(runnerImageDisk);

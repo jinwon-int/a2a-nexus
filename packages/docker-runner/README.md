@@ -593,26 +593,38 @@ node dist/cli.js images --keep-rollback 1 --min-age 72h --deploy-record-dir /pat
 node dist/cli.js images --apply               # only after reviewing the dry-run on that node
 ```
 
-Kept, per runner repository (`a2a-docker-runner` / `a2a-docker-runner-<flavor>` — no other image is ever touched):
+Only `a2a-docker-runner` / `a2a-docker-runner-<flavor>` repositories are planned (registry aliases such as
+`docker.io/` and podman's `localhost/` are normalized); no other image is ever touched. Kept:
 
-- **in use** — the `A2A_*IMAGE` value in a running process's environ (`/proc/<pid>/environ`, with the
-  systemd unit when known), in a live env file under `--env-dir` (default `/etc/default`), or passed with
+- **in use** — the `A2A_*IMAGE` value in a running process's environ (`/proc/<pid>/environ`), the systemd
+  `EnvironmentFile=` of that process's unit, live env files under `--env-dir` (default `/etc/default`), and
   `--keep <image-ref>`;
 - **any container's image**, running or stopped (e.g. an egress proxy still on an older tag);
-- **rollback** — `--keep-rollback` (default 1) tags, taken from the newest deploy record first (env backups
-  next to the live file such as `<env>.bak-<tag>-<stamp>`, `--deploy-record-dir`, or the colon-separated
-  `A2A_DOCKER_RUNNER_DEPLOY_RECORD_DIRS`), else the newest-created unused tag;
-- tags whose name contains `rollback`, and images younger than `--min-age` (default 72h — a fleet rollout can
-  still be in flight).
+- **rollback** — `--keep-rollback` (default 1) per worker env file, from that file's newest backup
+  (`<env>.bak-<tag>-<stamp>` and similar = the previous deploy); topped up per repository from
+  `--deploy-record-dir` / colon-separated `A2A_DOCKER_RUNNER_DEPLOY_RECORD_DIRS`, else the newest image built
+  before the in-use one. Backups whose live file is gone are never used to pick a rollback;
+- tags whose name contains `rollback`, and images built **or loaded/tagged** within `--min-age` (default 72h;
+  `docker load` keeps the build time, so docker's `LastTagTime` counts too).
 
-Everything else in those repositories is a candidate; the report also shows the evidence each decision used,
-the bytes freed (an image counts only when all its tags go), and `df` for `/` and the engine root.
-`--apply` re-plans immediately before deleting, runs `image rm` without `-f` (the engine refuses an image a
-container still uses), records before/after disk, and is **refused (exit 2)** when no process or env file
-names an in-use image or when `/proc` could not be read completely (run as root). `--builder-cache` adds
-`docker builder prune -f`. Only `A2A_*IMAGE` keys are parsed out of env files; no other value is read into
-the report. `doctor` reports `runnerImageDisk`: `warn` below 10% or 5GiB free on `/`, with the stale tag
-count and reclaimable size (warn-only; it never fails doctor).
+A runner repository with no resolved in-use image is left alone (`plan.skippedRepositories`) unless named with
+`--repository <repo>`. Everything else in the planned repositories is a candidate; the report shows the evidence
+behind each decision, the bytes freed (an image counts only when all its tags go; shared-id tags are untag-only),
+and `df` for `/` and the engine root.
+
+`--apply` is **refused (exit 2)** when an in-use or `--keep` reference does not resolve to a local image, when
+`/proc` could not be read completely (run as root), or when no process or env file names an image at all. It then
+re-plans immediately before deleting (and stops if that re-check is refused), confirms each tag still points at
+the planned image id, runs `image rm` without `-f` (the engine refuses an image a container still uses), and
+records removed tags/ids and before/after disk. `--dry-run` together with `--apply` is an error. `--builder-cache`
+adds `docker builder prune -f --filter until=<min-age>` — the engine's whole build cache older than that, not
+only runner builds (skipped on podman). Only `A2A_*IMAGE` keys are parsed out of env files and environs, and
+engine inspect calls request only the fields used (never `Config.Env`). If the node builds runner images,
+protect the base tag with `--keep`.
+
+`doctor` reports `runnerImageDisk` (warn-only; it never fails doctor): `warn` below 10% or 5GiB free on `/` or
+the engine root, with the stale tag count and reclaimable size; the inventory is bounded by a 10s timeout and is
+marked `evidenceIncomplete` when doctor is not root.
 
 ### Service env file drift (#2267)
 
