@@ -102,6 +102,7 @@ export type KeepReason =
   | "rollback"
   | "rollback-tag"
   | "recent"
+  | "newer-than-in-use"
   | "unverified-repository";
 
 export interface PlannedTag {
@@ -190,6 +191,21 @@ function couldBeRunnerImage(ref: string): boolean {
   return value.startsWith("sha256:") || SHORT_ID.test(value) || isRunnerRepository(value);
 }
 
+/**
+ * Every local image id a reference points at. A normalized tag can match more
+ * than one image (e.g. `localhost/x:1` from a podman build and `x:1` from a
+ * docker-archive load); protection must cover all of them.
+ */
+export function resolveRefAll(ref: string, images: readonly EngineImage[]): string[] {
+  const wanted = normalizeRef(ref);
+  if (!wanted) return [];
+  if (wanted.startsWith("sha256:") || SHORT_ID.test(wanted) || wanted.includes("@")) {
+    const id = resolveRef(ref, images);
+    return id ? [id] : [];
+  }
+  return images.filter((image) => image.repoTags.some((tag) => normalizeRef(tag) === wanted)).map((image) => image.id);
+}
+
 /** Image id a reference points at, or undefined when no local image matches. */
 export function resolveRef(ref: string, images: readonly EngineImage[]): string | undefined {
   const wanted = normalizeRef(ref);
@@ -236,8 +252,8 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
   const blockingUnresolved: string[] = [];
   const protect = (refs: readonly ImageRef[], reason: KeepReason): void => {
     for (const ref of refs) {
-      const id = resolveRef(ref.ref, images);
-      if (!id) {
+      const ids = resolveRefAll(ref.ref, images);
+      if (ids.length === 0) {
         if (!unresolvedRefs.some((seen) => seen.ref === ref.ref)) unresolvedRefs.push(ref);
         // An in-use or --keep reference we cannot map to a local image might be
         // exactly the image a candidate would delete: never guess.
@@ -246,7 +262,7 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
         }
         continue;
       }
-      if (!protectedIds.has(id)) protectedIds.set(id, { reason, why: `${ref.ref} (${ref.source})` });
+      for (const id of ids) if (!protectedIds.has(id)) protectedIds.set(id, { reason, why: `${ref.ref} (${ref.source})` });
     }
   };
   protect(inventory.live.refs, "in-use");
@@ -260,11 +276,12 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
   // Which worker env file uses which image id (for per-worker rollback).
   const workerFilesById = new Map<string, Set<string>>();
   for (const ref of inventory.configured) {
-    const id = resolveRef(ref.ref, images);
-    if (!id || !ref.file) continue;
-    const files = workerFilesById.get(id) ?? new Set<string>();
-    files.add(ref.file);
-    workerFilesById.set(id, files);
+    if (!ref.file) continue;
+    for (const id of resolveRefAll(ref.ref, images)) {
+      const files = workerFilesById.get(id) ?? new Set<string>();
+      files.add(ref.file);
+      workerFilesById.set(id, files);
+    }
   }
 
   // Group runner tags by (normalized) repository.
@@ -355,7 +372,12 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
       const why = rollback.get(tag.id);
       if (why) keep.push({ ...tag, reason: "rollback", why });
       else if (isRecent(tag)) keep.push({ ...tag, reason: "recent", why: `built/loaded ${tag.effectiveTime}` });
-      else remove.push(tag);
+      // An image built after the one in use is most likely the next rollout,
+      // loaded but not switched to yet. The load time is not known on every
+      // engine (podman has no LastTagTime), so never remove it.
+      else if (Number.isFinite(newestInUseMs) && Date.parse(tag.created) > newestInUseMs) {
+        keep.push({ ...tag, reason: "newer-than-in-use", why: `built ${tag.created}, after the in-use image` });
+      } else remove.push(tag);
     }
     repositories.push({ repository, inUseEvidence, keep, remove });
   }
@@ -474,10 +496,20 @@ export const defaultUnitEnvFiles: UnitEnvFilesFn = (unit) =>
  */
 export function isEnvBackupName(name: string, siblings: ReadonlySet<string>): boolean {
   if (name.endsWith("~")) return true;
+  if (backupOwnerName(name, siblings)) return true;
   const dot = name.indexOf(".");
   if (dot <= 0) return false;
-  if (siblings.has(name.slice(0, dot))) return true;
   return /(^|[.-])(bak|backup|orig|old|save|pre|prev|dpkg-old|dpkg-dist|dpkg-new|rpmsave|rpmnew)([.-]|$)|\d{8}/i.test(name.slice(dot + 1));
+}
+
+/** The live file a backup belongs to: the longest sibling `<sibling>.<suffix>` / `<sibling>~` prefix of `name`. */
+export function backupOwnerName(name: string, siblings: ReadonlySet<string>): string | undefined {
+  let best: string | undefined;
+  for (const sibling of siblings) {
+    if (sibling === name || !sibling) continue;
+    if ((name.startsWith(`${sibling}.`) || name === `${sibling}~`) && (!best || sibling.length > best.length)) best = sibling;
+  }
+  return best;
 }
 
 /**
@@ -513,9 +545,8 @@ export async function scanEnvDir(
       addLive(path, parsed.values);
       continue;
     }
-    const dot = name.indexOf(".");
-    const ownerName = dot > 0 ? name.slice(0, dot) : name.replace(/~$/, "");
-    const owner = nameSet.has(ownerName) ? join(envDir, ownerName) : undefined;
+    const ownerName = backupOwnerName(name, nameSet);
+    const owner = ownerName ? join(envDir, ownerName) : undefined;
     for (const { key, value } of parsed.values) {
       deployRecords.push({ ref: value, source: `${path} ${key}`, file: path, mtimeMs: parsed.mtimeMs, owner, orphan: !owner });
     }
@@ -623,6 +654,8 @@ export interface CollectOptions {
   deployRecordDirs?: readonly string[];
   keepRefs?: readonly string[];
   unitEnvFiles?: UnitEnvFilesFn;
+  /** env files the operator named explicitly (`--env-file` / A2A_DOCKER_RUNNER_ENV_FILE): always live evidence. */
+  extraLiveFiles?: readonly string[];
 }
 
 export async function collectRunnerImageInventory(options: CollectOptions): Promise<RunnerImageInventory> {
@@ -634,7 +667,7 @@ export async function collectRunnerImageInventory(options: CollectOptions): Prom
     scanDeployRecordDirs(options.deployRecordDirs ?? []),
   ]);
   const unitEnvFiles = options.unitEnvFiles ?? defaultUnitEnvFiles;
-  const liveFiles = (await Promise.all(live.units.map((unit) => unitEnvFiles(unit)))).flat();
+  const liveFiles = [...(options.extraLiveFiles ?? []), ...(await Promise.all(live.units.map((unit) => unitEnvFiles(unit)))).flat()];
   const envDir = await scanEnvDir(options.envDir, liveFiles);
   return {
     engine: options.engine,
@@ -645,6 +678,47 @@ export async function collectRunnerImageInventory(options: CollectOptions): Prom
     deployRecords: [...envDir.deployRecords, ...extraRecords],
     keep: (options.keepRefs ?? []).map((ref) => ({ ref, source: "--keep" })),
   };
+}
+
+// ── CLI arguments ────────────────────────────────────────────────────────────
+
+export interface ImagesArgs {
+  apply: boolean;
+  builderCache: boolean;
+  values: Record<string, string[]>;
+}
+
+const IMAGES_BOOLEAN_FLAGS = new Set(["--apply", "--dry-run", "--builder-cache"]);
+const IMAGES_VALUE_FLAGS = new Set(["--keep", "--repository", "--keep-rollback", "--min-age", "--engine", "--env-dir", "--deploy-record-dir", "--env-file"]);
+
+/**
+ * Strict parser for `images` (deletion is involved, so nothing is guessed):
+ * `--flag value` and `--flag=value` are accepted, a value flag without a value
+ * and any unknown flag are errors, and --dry-run with --apply is an error.
+ */
+export function parseImagesArgs(argv: readonly string[]): ImagesArgs {
+  const values: Record<string, string[]> = {};
+  const seen = new Set<string>();
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+    if (!token.startsWith("--")) throw new Error(`images: unexpected argument '${token}'`);
+    const eq = token.indexOf("=");
+    const name = eq >= 0 ? token.slice(0, eq) : token;
+    if (IMAGES_BOOLEAN_FLAGS.has(name)) {
+      if (eq >= 0) throw new Error(`images: ${name} takes no value`);
+      seen.add(name);
+      continue;
+    }
+    if (!IMAGES_VALUE_FLAGS.has(name)) throw new Error(`images: unknown flag ${name}`);
+    const value = eq >= 0 ? token.slice(eq + 1) : argv[index + 1];
+    if (value === undefined || value === "" || value.startsWith("--")) throw new Error(`images: ${name} needs a value`);
+    if (eq < 0) index += 1;
+    (values[name] ??= []).push(value);
+  }
+  if (seen.has("--apply") && seen.has("--dry-run")) {
+    throw new Error("images: --dry-run and --apply are mutually exclusive (dry-run is already the default)");
+  }
+  return { apply: seen.has("--apply"), builderCache: seen.has("--builder-cache"), values };
 }
 
 // ── disk ─────────────────────────────────────────────────────────────────────

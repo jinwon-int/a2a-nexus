@@ -13,6 +13,7 @@ import {
   listEngineContainers,
   normalizeRef,
   parseImageEnv,
+  parseImagesArgs,
   planRunnerImagePrune,
   pruneRunnerImages,
   resolveRef,
@@ -149,6 +150,21 @@ test("#2547 fallback rollback is never a newer, not-yet-switched image (review F
   assert.equal(reasonOf(plan, "previous"), "rollback");
 });
 
+test("#2547 an image built after the in-use one is never removed, even with no load time (podman) (round-2 major)", () => {
+  // podman: no LastTagTime, so a 4-day-old build loaded today looks old by age alone.
+  const images = [image("aaa", [`${R}:current`], 10), image("nnn", [`${R}:next-rollout`], 4), image("ooo", [`${R}:previous`], 20), image("ppp", [`${R}:ancient`], 30)];
+  const plan = planRunnerImagePrune(inventory({ engine: "podman", images, ...inUse(`${R}:current`) }), { nowMs: NOW, isRoot: true });
+  assert.equal(reasonOf(plan, "next-rollout"), "newer-than-in-use");
+  assert.deepEqual(tagsOf(plan.candidates), [`${R}:ancient`]);
+});
+
+test("#2547 a reference matching several image ids protects all of them (round-2 minor)", () => {
+  const images = [image("aaa", [`localhost/${R}:x`], 5), image("bbb", [`${R}:x`], 5), image("ccc", [`${R}:old`], 30)];
+  const plan = planRunnerImagePrune(inventory({ images, ...inUse(`${R}:x`) }), { nowMs: NOW, isRoot: true, keepRollback: 0 });
+  assert.equal(plan.repositories[0].keep.filter((tag) => tag.reason === "in-use").length, 2);
+  assert.deepEqual(tagsOf(plan.candidates), [`${R}:old`]);
+});
+
 test("#2547 --keep-rollback 0, rollback-named tags and --keep refs", () => {
   const images = [...IMAGES, image("ggg", [`${R}:rollback-2.1.304`], 40), image("hhh", [`${R}:pinned`], 50)];
   const plan = planRunnerImagePrune(inventory({ images, keep: [{ ref: `${R}:pinned`, source: "--keep" }] }), { nowMs: NOW, isRoot: true, keepRollback: 0 });
@@ -258,6 +274,17 @@ test("#2547 env dir: live files, owned backups, orphans, ~ / .dpkg-old, and syst
     await rm(dir, { recursive: true, force: true });
   }
   assert.equal(isEnvBackupName("a2a-hermes-worker-secondary", new Set()), false);
+  // a dotted live env file keeps its own backups (owner = longest sibling prefix)
+  const dotted = await mkdtemp(join(tmpdir(), "a2a-images-dotted-"));
+  try {
+    await writeFile(join(dotted, "a2a-worker"), "A2A_DOCKER_RUNNER_IMAGE=r:plain\n");
+    await writeFile(join(dotted, "a2a-worker.env"), "A2A_DOCKER_RUNNER_IMAGE=r:live\n");
+    await writeFile(join(dotted, "a2a-worker.env.bak-1"), "A2A_DOCKER_RUNNER_IMAGE=r:prev\n");
+    const scannedDotted = await scanEnvDir(dotted, [join(dotted, "a2a-worker.env")]);
+    assert.equal(scannedDotted.deployRecords.find((ref) => ref.ref === "r:prev")?.owner, join(dotted, "a2a-worker.env"));
+  } finally {
+    await rm(dotted, { recursive: true, force: true });
+  }
   assert.equal(isEnvBackupName("foo.20261112", new Set()), true);
   assert.equal(isEnvBackupName("foo.prev", new Set()), true);
 });
@@ -473,6 +500,31 @@ test("#2547 systemd EnvironmentFile of a running worker counts as live wherever 
   });
 });
 
+test("#2547 an explicitly named env file is live evidence wherever it lives", async () => {
+  await withNode(async (paths) => {
+    const named = join(paths.envDir, "..", "named-worker.env");
+    await writeFile(named, `A2A_DOCKER_RUNNER_IMAGE=${R}:666becb-claude-2.1.322\n`);
+    const { exec } = fakeEngine(IMAGES);
+    const report = await run(exec, paths, { extraLiveFiles: [named] });
+    assert.equal(reasonOf(report.plan, "666becb"), "in-use");
+  });
+});
+
+test("#2547 images argument parser: --flag value and --flag=value, unknown or value-less flags are errors", () => {
+  const parsed = parseImagesArgs(["--keep", "a:1", "--keep=b:2", "--repository=r", "--apply", "--min-age", "0"]);
+  assert.deepEqual(parsed.values["--keep"], ["a:1", "b:2"]);
+  assert.deepEqual(parsed.values["--repository"], ["r"]);
+  assert.equal(parsed.apply, true);
+  assert.equal(parseImagesArgs([]).apply, false, "dry-run is the default");
+  assert.throws(() => parseImagesArgs(["--keep"]), /--keep needs a value/);
+  assert.throws(() => parseImagesArgs(["--keep", "--apply"]), /--keep needs a value/);
+  assert.throws(() => parseImagesArgs(["--keep="]), /--keep needs a value/);
+  assert.throws(() => parseImagesArgs(["--aply"]), /unknown flag --aply/);
+  assert.throws(() => parseImagesArgs(["--apply=yes"]), /takes no value/);
+  assert.throws(() => parseImagesArgs(["stray"]), /unexpected argument/);
+  assert.throws(() => parseImagesArgs(["--dry-run", "--apply"]), /mutually exclusive/);
+});
+
 // ── doctor ───────────────────────────────────────────────────────────────────
 
 test("#2547 doctor probe warns below 10% / 5GiB on / or the engine root, never hangs on a stuck engine", async () => {
@@ -505,14 +557,16 @@ test("#2547 doctor probe warns below 10% / 5GiB on / or the engine root, never h
 
 // ── CLI ──────────────────────────────────────────────────────────────────────
 
-test("#2547 CLI: images --dry-run --apply is rejected before touching the engine", async () => {
+test("#2547 CLI: --dry-run --apply and a value-less --keep are rejected before touching the engine", async () => {
   const cli = fileURLToPath(new URL("./cli.js", import.meta.url));
-  await assert.rejects(
-    promisify(execFile)(process.execPath, [cli, "images", "--dry-run", "--apply"], { timeout: 60_000 }),
-    (error: { code?: number; stderr?: string }) => {
-      assert.equal(error.code, 1);
-      assert.match(error.stderr ?? "", /mutually exclusive/);
-      return true;
-    },
-  );
+  for (const [argv, pattern] of [[["--dry-run", "--apply"], /mutually exclusive/], [["--keep", "--apply"], /--keep needs a value/]] as const) {
+    await assert.rejects(
+      promisify(execFile)(process.execPath, [cli, "images", ...argv], { timeout: 60_000 }),
+      (error: { code?: number; stderr?: string }) => {
+        assert.equal(error.code, 1);
+        assert.match(error.stderr ?? "", pattern);
+        return true;
+      },
+    );
+  }
 });

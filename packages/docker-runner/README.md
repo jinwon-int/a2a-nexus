@@ -597,15 +597,18 @@ Only `a2a-docker-runner` / `a2a-docker-runner-<flavor>` repositories are planned
 `docker.io/` and podman's `localhost/` are normalized); no other image is ever touched. Kept:
 
 - **in use** — the `A2A_*IMAGE` value in a running process's environ (`/proc/<pid>/environ`), the systemd
-  `EnvironmentFile=` of that process's unit, live env files under `--env-dir` (default `/etc/default`), and
-  `--keep <image-ref>`;
+  `EnvironmentFile=` of that process's unit, live env files under `--env-dir` (default `/etc/default`), an env
+  file named with `--env-file` / `A2A_DOCKER_RUNNER_ENV_FILE`, and `--keep <image-ref>` (a reference matching
+  several local images protects all of them);
 - **any container's image**, running or stopped (e.g. an egress proxy still on an older tag);
 - **rollback** — `--keep-rollback` (default 1) per worker env file, from that file's newest backup
   (`<env>.bak-<tag>-<stamp>` and similar = the previous deploy); topped up per repository from
   `--deploy-record-dir` / colon-separated `A2A_DOCKER_RUNNER_DEPLOY_RECORD_DIRS`, else the newest image built
   before the in-use one. Backups whose live file is gone are never used to pick a rollback;
 - tags whose name contains `rollback`, and images built **or loaded/tagged** within `--min-age` (default 72h;
-  `docker load` keeps the build time, so docker's `LastTagTime` counts too).
+  `docker load` keeps the build time, so docker's `LastTagTime` counts too);
+- any image **built after the in-use image** of its repository — most likely the next rollout, loaded but not
+  switched to yet (this also covers podman, which has no load time).
 
 A runner repository with no resolved in-use image is left alone (`plan.skippedRepositories`) unless named with
 `--repository <repo>`. Everything else in the planned repositories is a candidate; the report shows the evidence
@@ -616,7 +619,8 @@ and `df` for `/` and the engine root.
 `/proc` could not be read completely (run as root), or when no process or env file names an image at all. It then
 re-plans immediately before deleting (and stops if that re-check is refused), confirms each tag still points at
 the planned image id, runs `image rm` without `-f` (the engine refuses an image a container still uses), and
-records removed tags/ids and before/after disk. `--dry-run` together with `--apply` is an error. `--builder-cache`
+records removed tags/ids and before/after disk. Arguments are parsed strictly: `--flag value` or `--flag=value`;
+an unknown flag, a flag without a value, or `--dry-run` together with `--apply` is an error. `--builder-cache`
 adds `docker builder prune -f --filter until=<min-age>` — the engine's whole build cache older than that, not
 only runner builds (skipped on podman). Only `A2A_*IMAGE` keys are parsed out of env files and environs, and
 engine inspect calls request only the fields used (never `Config.Env`). If the node builds runner images,
