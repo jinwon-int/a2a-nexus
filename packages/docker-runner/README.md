@@ -165,6 +165,7 @@ npm run build
 node dist/cli.js doctor
 node dist/cli.js install
 node dist/cli.js cleanup --ttl 24h --dry-run
+node dist/cli.js images            # stale runner image tags (dry-run)
 node dist/cli.js run examples/task.canonical.json
 node dist/cli.js run examples/task.github.json
 node dist/cli.js run examples/task.github-evidence.json
@@ -579,6 +580,39 @@ node dist/cli.js cleanup --root /var/lib/openclaw-a2a/tasks --ttl 14d --dry-run
 
 `cleanup` only resolves the task root (`--root` > `A2A_DOCKER_RUNNER_ROOT` > default); it does **not** run the full
 runner config validation, so a stale or profile-mismatched env file cannot block pruning (#2267).
+
+### Runner image retention (#2547)
+
+Every runner image rollout loads a new `a2a-docker-runner-*` tag and switches the worker's
+`A2A_DOCKER_RUNNER_IMAGE`; nothing removed the previous tags, and a 48G worker node reached 100% disk on
+2026-11-12. `images` lists which runner tags can go and why the others stay. It is a dry-run unless `--apply`:
+
+```bash
+node dist/cli.js images                       # dry-run: JSON plan, nothing is deleted
+node dist/cli.js images --keep-rollback 1 --min-age 72h --deploy-record-dir /path/to/env-backups
+node dist/cli.js images --apply               # only after reviewing the dry-run on that node
+```
+
+Kept, per runner repository (`a2a-docker-runner` / `a2a-docker-runner-<flavor>` — no other image is ever touched):
+
+- **in use** — the `A2A_*IMAGE` value in a running process's environ (`/proc/<pid>/environ`, with the
+  systemd unit when known), in a live env file under `--env-dir` (default `/etc/default`), or passed with
+  `--keep <image-ref>`;
+- **any container's image**, running or stopped (e.g. an egress proxy still on an older tag);
+- **rollback** — `--keep-rollback` (default 1) tags, taken from the newest deploy record first (env backups
+  next to the live file such as `<env>.bak-<tag>-<stamp>`, `--deploy-record-dir`, or the colon-separated
+  `A2A_DOCKER_RUNNER_DEPLOY_RECORD_DIRS`), else the newest-created unused tag;
+- tags whose name contains `rollback`, and images younger than `--min-age` (default 72h — a fleet rollout can
+  still be in flight).
+
+Everything else in those repositories is a candidate; the report also shows the evidence each decision used,
+the bytes freed (an image counts only when all its tags go), and `df` for `/` and the engine root.
+`--apply` re-plans immediately before deleting, runs `image rm` without `-f` (the engine refuses an image a
+container still uses), records before/after disk, and is **refused (exit 2)** when no process or env file
+names an in-use image or when `/proc` could not be read completely (run as root). `--builder-cache` adds
+`docker builder prune -f`. Only `A2A_*IMAGE` keys are parsed out of env files; no other value is read into
+the report. `doctor` reports `runnerImageDisk`: `warn` below 10% or 5GiB free on `/`, with the stale tag
+count and reclaimable size (warn-only; it never fails doctor).
 
 ### Service env file drift (#2267)
 

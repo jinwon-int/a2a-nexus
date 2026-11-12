@@ -21,6 +21,13 @@ import {
   installCleanupTimer,
   rotateServiceEnvBackups,
 } from "./ops.js";
+import {
+  DEFAULT_ENV_DIR,
+  DEFAULT_KEEP_ROLLBACK,
+  DEFAULT_MIN_AGE_MS,
+  DEPLOY_RECORD_DIRS_ENV,
+  pruneRunnerImages,
+} from "./runner-images.js";
 import { runTask } from "./runner.js";
 import type { RunnerTask } from "./types.js";
 
@@ -126,6 +133,38 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "images") {
+    // #2547: runner image retention. Dry-run unless --apply; never touches
+    // images outside the a2a-docker-runner* repositories.
+    const env = loadCliEnv();
+    const engineFlag = processFlag("--engine") ?? env.A2A_DOCKER_RUNNER_ENGINE ?? "docker";
+    if (engineFlag !== "docker" && engineFlag !== "podman") throw new Error(`invalid --engine: ${engineFlag}`);
+    const keepRollbackFlag = processFlag("--keep-rollback");
+    const keepRollback = keepRollbackFlag === undefined ? DEFAULT_KEEP_ROLLBACK : Number(keepRollbackFlag);
+    if (!Number.isInteger(keepRollback) || keepRollback < 0) throw new Error(`invalid --keep-rollback: ${keepRollbackFlag}`);
+    const minAgeFlag = processFlag("--min-age");
+    const minAgeMs = minAgeFlag === undefined ? DEFAULT_MIN_AGE_MS : minAgeFlag === "0" ? 0 : parseTtlMs(minAgeFlag);
+    const deployRecordDirs = [
+      ...processFlags("--deploy-record-dir"),
+      ...(env[DEPLOY_RECORD_DIRS_ENV] ?? "").split(":").map((dir) => dir.trim()).filter(Boolean),
+    ];
+    const report = await pruneRunnerImages({
+      engine: engineFlag,
+      apply: process.argv.includes("--apply"),
+      builderCache: process.argv.includes("--builder-cache"),
+      keepRollback,
+      minAgeMs,
+      keepRefs: processFlags("--keep"),
+      envDir: processFlag("--env-dir") ?? DEFAULT_ENV_DIR,
+      deployRecordDirs,
+      isRoot: typeof process.getuid === "function" ? process.getuid() === 0 : undefined,
+    });
+    console.log(JSON.stringify(report, null, 2));
+    if (report.mode === "apply" && !report.plan.applyAllowed) process.exitCode = 2;
+    else if (!report.ok) process.exitCode = 1;
+    return;
+  }
+
   throw new Error(`unknown command: ${command}`);
 }
 
@@ -141,6 +180,16 @@ function processFlag(name: string, fallback?: string): string | undefined {
     return value?.startsWith("--") ? undefined : value;
   }
   return fallback?.startsWith("--") ? undefined : fallback;
+}
+
+/** Every value of a repeatable flag (`--keep a --keep b`). */
+function processFlags(name: string): string[] {
+  const values: string[] = [];
+  process.argv.forEach((token, index) => {
+    const value = process.argv[index + 1];
+    if (token === name && value && !value.startsWith("--")) values.push(value);
+  });
+  return values;
 }
 
 /** Service env file the CLI reads: `--env-file` > `A2A_DOCKER_RUNNER_ENV_FILE` > default. */
@@ -188,6 +237,14 @@ Usage:
     (lists <env-file>.* backup copies and the rotation plan: keep the newest --keep, prune the rest older than
      --max-age (0 = all beyond --keep). Dry-run unless --prune. --create <tag> first copies the live file to
      <env-file>.bak-<tag>-<UTC stamp> with mode 0600 — the helper deploy scripts should use)
+  a2a-docker-runner images [--apply] [--keep-rollback 1] [--min-age 72h] [--keep <image-ref>]... [--builder-cache]
+                           [--engine docker|podman] [--env-dir /etc/default] [--deploy-record-dir <dir>]...
+    (#2547: lists a2a-docker-runner* image tags to remove. Keeps the image(s) in use — running worker env
+     (/proc/<pid>/environ), env files in --env-dir, any container incl. stopped, --keep — plus --keep-rollback
+     per repository (picked from env backups / --deploy-record-dir / ${DEPLOY_RECORD_DIRS_ENV}, else newest),
+     tags named *rollback*, and images younger than --min-age. Other images are never touched.
+     Dry-run unless --apply; --apply re-plans first, uses "image rm" without -f, and is refused (exit 2) without
+     in-use evidence or when not root. --builder-cache adds "docker builder prune -f".)
   a2a-docker-runner run <task.json>
   cat task.json | a2a-docker-runner run -
 `);

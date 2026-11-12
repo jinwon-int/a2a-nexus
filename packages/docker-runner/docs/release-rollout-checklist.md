@@ -151,6 +151,17 @@ Excluded legacy target:
    Both checks must pass before sending real jobs to the target.
 8. Confirm the worker completion payload preserves runner evidence fields when present: `github.prUrl`, `github.doneCommentUrl`, and `github.blockCommentUrl`.
 9. Continue to the next active target only after the previous target reports healthy status and expected evidence output.
+10. **Runner image retention (#2547)** — after a target runs healthy on the new image, list the stale runner tags
+    on that node and keep the result with the rollout evidence:
+
+    ```bash
+    a2a-docker-runner images            # dry-run: kept (in-use / container / rollback / recent) vs candidates
+    ```
+
+    Check that the `rollback` tag is the image you would roll back to (the previous `A2A_DOCKER_RUNNER_IMAGE`,
+    normally found in the env backup taken before the switch). Deleting is a per-node operator decision:
+    run `a2a-docker-runner images --apply` only with that node's approval, and record the removed tags/ids and
+    the before/after `df` it prints.
 
 ## Chaos E2E release gate
 
@@ -193,6 +204,9 @@ Failure output is intentionally non-silent: each failed scenario includes the fa
 
 - Stop rollout immediately if CI, `doctor`, package bin smoke, or evidence reporting fails on any active target.
 - Revert the worker package/config on the affected target to the last known-good release or commit.
+- For a runner image rollback, restore the previous `A2A_DOCKER_RUNNER_IMAGE` from the env backup; `images`
+  keeps that tag as the rollback by default. If it was already removed, reload it (`docker load`) before the
+  worker restart.
 - Re-run `a2a-docker-runner doctor` and one smoke task on the reverted target.
 - Record the failed target, commit, command, and sanitized logs in the follow-up issue/PR. Do not include tokens, private key material, raw session dumps, or secret file contents.
 - Keep `workerDelta` excluded during rollback unless a separate operator-approved legacy task explicitly covers it.
