@@ -209,11 +209,16 @@ const bothInUse = (): Pick<RunnerImageInventory, "configured"> => ({
 
 test("#2550 a second worker whose backup is only in --deploy-record-dir still keeps its rollback", () => {
   const plan = planRunnerImagePrune(
-    inventory({ images: twoWorkers(), ...bothInUse(), deployRecords: [record(`${R}:a-previous`, ENV, 1), record(`${R}:b-previous`, undefined, 2)] }),
+    inventory({
+      images: twoWorkers(),
+      ...bothInUse(),
+      deployRecords: [record(`${R}:a-previous`, ENV, 1), record(`${R}:b-previous`, undefined, 2, { file: "/backups/runner-x/a2a-hermes-worker-secondary" })],
+    }),
     { nowMs: NOW, isRoot: true },
   );
   assert.equal(reasonOf(plan, "a-previous"), "rollback");
   assert.equal(reasonOf(plan, "b-previous"), "rollback");
+  assert.match(plan.repositories[0].keep.find((tag) => tag.tag.endsWith("b-previous"))?.why ?? "", /deploy record .*for \/etc\/default\/a2a-hermes-worker-secondary/);
   assert.deepEqual(tagsOf(plan.candidates), [`${R}:stale`]);
 });
 
@@ -250,13 +255,86 @@ test("#2550 backups next to a live env file outside --env-dir are that worker's 
     const live = join(other, "worker-b.env");
     await writeFile(live, "A2A_DOCKER_RUNNER_IMAGE=r:b-current\n");
     await writeFile(join(other, "worker-b.env.bak-20261110"), "A2A_DOCKER_RUNNER_IMAGE=r:b-previous\n");
+    await writeFile(join(other, "worker-b.env.example"), "A2A_DOCKER_RUNNER_IMAGE=r:example\n"); // not a backup name
     await writeFile(join(other, "unrelated.env"), "A2A_DOCKER_RUNNER_IMAGE=r:other\n");
-    const scanned = await scanEnvDir(envDir, [live]);
+    const scanned = await scanEnvDir(envDir, [join(other, ".", "worker-b.env")]); // unnormalized path
     assert.deepEqual(scanned.configured.map((ref) => ref.ref), ["r:b-current"]);
     assert.deepEqual(scanned.deployRecords.map((ref) => [ref.ref, ref.owner]), [["r:b-previous", live]]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("#2551 review: another worker's owner-less records never fill a worker's slot (T2 F1 scenario)", () => {
+  // A has no record; B's two history records are owner-less but carry B's env file name.
+  const images = twoWorkers([image("bo", [`${R}:b-older`], 20)]);
+  const bName = "/backups/runner-y/a2a-hermes-worker-secondary";
+  const plan = planRunnerImagePrune(
+    inventory({ images, ...bothInUse(), deployRecords: [record(`${R}:b-previous`, undefined, 1, { file: bName }), record(`${R}:b-older`, undefined, 10, { file: bName })] }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.equal(reasonOf(plan, "a-previous"), "rollback", "A keeps its own previous image via the fallback");
+  assert.equal(reasonOf(plan, "b-previous"), "rollback");
+  assert.deepEqual(tagsOf(plan.candidates), [`${R}:b-older`, `${R}:stale`]);
+});
+
+test("#2551 review: owner-less records are matched by env file name (T1 F2 scenario)", () => {
+  const images = twoWorkers([image("ao", [`${R}:a-older`], 13)]);
+  const deployRecords = [
+    record(`${R}:a-previous`, undefined, 1, { file: "/backups/r3/a2a-hermes-worker" }),
+    record(`${R}:a-older`, undefined, 4, { file: "/backups/r2/a2a-hermes-worker" }),
+    record(`${R}:b-previous`, undefined, 8, { file: "/backups/r1/a2a-hermes-worker-secondary" }),
+  ];
+  const plan = planRunnerImagePrune(inventory({ images, ...bothInUse(), deployRecords }), { nowMs: NOW, isRoot: true });
+  assert.equal(reasonOf(plan, "a-previous"), "rollback");
+  assert.equal(reasonOf(plan, "b-previous"), "rollback");
+  assert.deepEqual(tagsOf(plan.candidates), [`${R}:a-older`, `${R}:stale`]);
+});
+
+test("#2551 review: a record that matches no worker is kept and listed for review, never a rollback", () => {
+  const plan = planRunnerImagePrune(
+    inventory({ images: twoWorkers(), ...bothInUse(), deployRecords: [record(`${R}:stale`, undefined, 1, { file: "/backups/retired-worker" })] }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.equal(reasonOf(plan, "stale"), "unattributed-record");
+  assert.deepEqual(plan.recordsToReview, [`${R}:stale`]);
+  assert.deepEqual(plan.candidates, []);
+  assert.equal(plan.reclaimableIsUpperBound, true);
+});
+
+test("#2551 review: a recent image or one built after the in-use image never uses a rollback slot (T1 F8)", () => {
+  // Rolled back from N (loaded today) to O: the newest backup names N.
+  const images = [
+    image("ooo", [`${R}:current-o`], 10),
+    image("nnn", [`${R}:rolled-back-n`], 2),
+    image("ppp", [`${R}:previous-p`], 15),
+    image("qqq", [`${R}:older-q`], 25),
+  ];
+  const plan = planRunnerImagePrune(
+    inventory({ images, ...inUse(`${R}:current-o`), deployRecords: [record(`${R}:rolled-back-n`, ENV, 0.2), record(`${R}:previous-p`, ENV, 9)] }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.equal(reasonOf(plan, "rolled-back-n"), "recent");
+  assert.equal(reasonOf(plan, "previous-p"), "rollback");
+  assert.deepEqual(tagsOf(plan.candidates), [`${R}:older-q`]);
+});
+
+test("#2551 review: a unit whose EnvironmentFile= is a live env file is that worker; an unmapped unit is its own worker", () => {
+  const images = twoWorkers();
+  const liveRefs = [{ ref: `${R}:a-current`, source: "pid 10 a2a-hermes-worker.service A2A_DOCKER_RUNNER_IMAGE" }, { ref: `${R}:a-current`, source: "pid 20 a2a-shadow.service A2A_DOCKER_RUNNER_IMAGE" }];
+  const plan = planRunnerImagePrune(
+    inventory({
+      images,
+      configured: inUse(`${R}:a-current`).configured,
+      live: { refs: liveRefs, unreadable: 0, scanned: 40, units: ["a2a-hermes-worker.service", "a2a-shadow.service"] },
+      unitEnvFiles: { "a2a-hermes-worker.service": [ENV], "a2a-shadow.service": [] },
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  const whys = plan.repositories[0].keep.filter((tag) => tag.reason === "rollback").map((tag) => tag.why ?? "");
+  assert.equal(whys.length, 2, JSON.stringify(whys));
+  assert.ok(whys.some((why) => why.includes("unit:a2a-shadow.service")));
+  assert.ok(!whys.some((why) => why.includes("unit:a2a-hermes-worker.service")), "the mapped unit is merged into its env-file worker");
 });
 
 test("#2550 a repository that only a container or --keep references is skipped, not pruned", () => {

@@ -601,11 +601,14 @@ Only `a2a-docker-runner` / `a2a-docker-runner-<flavor>` repositories are planned
   file named with `--env-file` (repeatable) / `A2A_DOCKER_RUNNER_ENV_FILE`, and `--keep <image-ref>` (a reference
   matching several local images protects all of them);
 - **any container's image**, running or stopped (e.g. an egress proxy still on an older tag);
-- **rollback** — `--keep-rollback` (default 1) **per worker** (a live env file, or a running process whose image
-  no env file names, keyed by its systemd unit), taken in this order until each worker has N: its own newest
-  backups (`<env>.bak-<tag>-<stamp>` and similar, also next to an env file outside `--env-dir`), deploy records
-  without a known owner (`--deploy-record-dir` / colon-separated `A2A_DOCKER_RUNNER_DEPLOY_RECORD_DIRS`), then the
-  newest image built before that worker's in-use image. Backups whose live file is gone are never used;
+- **rollback** — `--keep-rollback` (default 1) **per worker** (a live env file; a running process whose systemd
+  unit loads none of them is its own worker), taken in this order until each worker has N, counting only images
+  built before that worker's in-use image and not already kept as recent: its own newest backups
+  (`<env>.bak-<tag>-<stamp>` and similar, also next to an env file outside `--env-dir`), deploy records without a
+  known owner (`--deploy-record-dir` / colon-separated `A2A_DOCKER_RUNNER_DEPLOY_RECORD_DIRS`) **whose file name is
+  that worker's env file name** (record directories keep the original name), then the newest image built before
+  that worker's in-use image. Backups whose live file is gone are never used. An owner-less record that matches no
+  worker never fills a slot; its image is kept and listed in `plan.recordsToReview`;
 - tags whose name contains `rollback`, and images built **or loaded/tagged** within `--min-age` (default 72h;
   `docker load` keeps the build time, so docker's `LastTagTime` counts too);
 - images **built at or after the in-use image** of its repository — most likely the next rollout, loaded but not

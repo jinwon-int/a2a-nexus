@@ -22,7 +22,7 @@
 // fields used here (never Config.Env).
 import { readdir, readFile, stat, statfs } from "node:fs/promises";
 import { execFile } from "node:child_process";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { defaultEgressExec, type EgressExec } from "./egress-runtime.js";
 import type { OpsCheck } from "./ops.js";
 import type { RunnerEngine } from "./types.js";
@@ -86,6 +86,8 @@ export interface ProcScan {
 }
 
 export interface RunnerImageInventory {
+  /** systemd unit → the env files it loads (EnvironmentFile=); ties a running process to its env-file worker. */
+  unitEnvFiles?: Record<string, string[]>;
   engine: RunnerEngine;
   images: EngineImage[];
   containers: EngineContainer[];
@@ -104,6 +106,7 @@ export type KeepReason =
   | "recent"
   | "newer-than-in-use"
   | "newer-to-review"
+  | "unattributed-record"
   | "unverified-repository";
 
 export interface PlannedTag {
@@ -139,6 +142,10 @@ export interface RunnerImagePlan {
   reclaimableBytes: number;
   /** images built after the in-use one beyond --keep-newer: kept, but listed for a manual decision (--include-newer). */
   newerToReview: string[];
+  /** always true: see reclaimableBytes. */
+  reclaimableIsUpperBound: true;
+  /** images named only by a deploy record that matches no worker: kept, listed for a manual decision. */
+  recordsToReview: string[];
   /** candidate tags whose image keeps another (non-runner or kept) tag — untag only, frees nothing. */
   untagOnly: string[];
   unresolvedRefs: ImageRef[];
@@ -308,9 +315,21 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
     }
   }
   for (const ref of inventory.live.refs) {
-    const ids = resolveRefAll(ref.ref, images).filter((id) => !fileIds.has(id));
-    if (ids.length === 0) continue; // same image as an env-file worker: that worker
+    const ids = resolveRefAll(ref.ref, images);
+    if (ids.length === 0) continue;
     const [, pid, unit] = ref.source.match(/^pid (\d+)(?: (\S+\.service))?/) ?? [];
+    // A unit whose EnvironmentFile= is a live env file is that file's worker;
+    // a unit known to load none of them is a worker of its own, even on the
+    // same image (e.g. Environment= in a drop-in).
+    const mapping = unit ? inventory.unitEnvFiles?.[unit] : undefined;
+    const ownFile = mapping?.find((file) => workers.has(file));
+    if (ownFile) {
+      for (const id of ids) workers.get(ownFile)?.ids.add(id);
+      continue;
+    }
+    // Without that mapping (no unit, or not collected) a process on an env-file
+    // worker's image cannot be told apart from it: treat it as that worker.
+    if (mapping === undefined && ids.every((id) => fileIds.has(id))) continue;
     const worker = workerOf(unit ? `unit:${unit}` : `pid:${pid ?? ref.source}`);
     for (const id of ids) worker.ids.add(id);
   }
@@ -339,6 +358,7 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
   const repositories: RepositoryPlan[] = [];
   const skippedRepositories: string[] = [];
   const newerToReview: string[] = [];
+  const recordsToReview: string[] = [];
   const resolvedRecords = inventory.deployRecords
     .filter((record) => !record.orphan)
     .map((record) => ({ record, id: resolveRef(record.ref, images) }))
@@ -379,20 +399,40 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
     const repoWorkers = [...workers.values()]
       .filter((worker) => [...worker.ids].some((id) => inUseIds.has(id)))
       .sort((a, b) => a.key.localeCompare(b.key));
+    const attributed = new Set<string>(); // owner-less records some worker of this repository could claim
     for (const worker of repoWorkers) {
       let picked = 0;
+      const workerInUseMs = Math.max(...[...worker.ids].filter((id) => inUseIds.has(id)).map(createdMs).filter(Number.isFinite), Number.NEGATIVE_INFINITY);
+      const builtBefore = (id: string): boolean => createdMs(id) < workerInUseMs;
+      const restTag = (id: string): PlannedTag | undefined => rest.find((tag) => tag.id === id);
+      // A rollback must be an image this worker ran before: built before its
+      // in-use image. Recent images are kept anyway and never use a slot.
       const take = (id: string, why: string): void => {
-        if (picked >= keepRollback || rollback.has(id) || !restIds.has(id)) return;
+        const tag = restTag(id);
+        if (picked >= keepRollback || rollback.has(id) || !tag || isRecent(tag) || !builtBefore(id)) return;
         rollback.set(id, why);
         picked += 1;
       };
+      // (1) its own backups
       for (const { record, id } of resolvedRecords) if (record.owner && worker.files.has(record.owner)) take(id, `previous deploy of ${record.owner} (${record.source})`);
-      for (const { record, id } of resolvedRecords) if (!record.owner) take(id, `deploy record ${record.source} (for ${worker.key})`);
-      const workerInUseMs = Math.max(...[...worker.ids].filter((id) => inUseIds.has(id)).map(createdMs).filter(Number.isFinite), Number.NEGATIVE_INFINITY);
-      const fallback = rest
-        .filter((tag) => !isRecent(tag) && Date.parse(tag.created) < workerInUseMs)
-        .sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
+      // (2) owner-less deploy records only when the file name is this worker's env file name (deploy-record
+      //     dirs keep the original name) — never another worker's history
+      const names = new Set([...worker.files].map((file) => basename(file)));
+      for (const { record, id } of resolvedRecords) {
+        if (record.owner || !record.file || !names.has(basename(record.file))) continue;
+        attributed.add(record.source);
+        take(id, `deploy record ${record.source} (for ${worker.key})`);
+      }
+      // (3) the newest non-recent image built before this worker's own in-use image
+      const fallback = rest.filter((tag) => builtBefore(tag.id)).sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
       for (const tag of fallback) take(tag.id, `newest image built before the in-use image of ${worker.key} (no deploy record)`);
+    }
+    // Owner-less records no worker of this repository claims: never fill a
+    // slot, never deleted here — kept and listed for a manual decision.
+    const unattributed = new Map<string, string>();
+    for (const { record, id } of resolvedRecords) {
+      if (record.owner || attributed.has(record.source) || !restIds.has(id) || rollback.has(id) || unattributed.has(id)) continue;
+      unattributed.set(id, `named by deploy record ${record.source}, which matches no worker env file name`);
     }
     if (repoWorkers.length === 0) {
       // --repository opt-in without any worker: keep N newest non-recent images.
@@ -419,6 +459,10 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
       const why = rollback.get(tag.id);
       if (why) keep.push({ ...tag, reason: "rollback", why });
       else if (isRecent(tag)) keep.push({ ...tag, reason: "recent", why: `built/loaded ${tag.effectiveTime}` });
+      else if (unattributed.has(tag.id)) {
+        keep.push({ ...tag, reason: "unattributed-record", why: unattributed.get(tag.id) });
+        recordsToReview.push(tag.tag);
+      }
       else if (newerKept.has(tag.id)) keep.push({ ...tag, reason: "newer-than-in-use", why: `built ${tag.created}, not before the in-use image` });
       else if (newerBeyond.has(tag.id) && !options.includeNewer) {
         keep.push({ ...tag, reason: "newer-to-review", why: `built after the in-use image, beyond --keep-newer ${keepNewer}; remove with --include-newer after review` });
@@ -460,6 +504,8 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
     unresolvedRefs,
     skippedRepositories,
     newerToReview,
+    recordsToReview,
+    reclaimableIsUpperBound: true,
     applyAllowed: applyRefusals.length === 0,
     applyRefusals,
   };
@@ -546,7 +592,12 @@ export function isEnvBackupName(name: string, siblings: ReadonlySet<string>): bo
   if (backupOwnerName(name, siblings)) return true;
   const dot = name.indexOf(".");
   if (dot <= 0) return false;
-  return /(^|[.-])(bak|backup|orig|old|save|pre|prev|dpkg-old|dpkg-dist|dpkg-new|rpmsave|rpmnew)([.-]|$)|\d{8}/i.test(name.slice(dot + 1));
+  return looksLikeBackupSuffix(name.slice(dot + 1));
+}
+
+/** `bak-…`, `orig`, `pre-…`, `dpkg-old`, a date stamp, … — the part after `<file>.` of a backup copy. */
+export function looksLikeBackupSuffix(suffix: string): boolean {
+  return /(^|[.-])(bak|backup|orig|old|save|pre|prev|dpkg-old|dpkg-dist|dpkg-new|rpmsave|rpmnew)([.-]|$)|\d{8}/i.test(suffix);
 }
 
 /** The live file a backup belongs to: the longest sibling `<sibling>.<suffix>` / `<sibling>~` prefix of `name`. */
@@ -578,7 +629,7 @@ export async function scanEnvDir(
     names = [];
   }
   const nameSet = new Set(names);
-  const live = new Set(liveFiles);
+  const live = new Set(liveFiles.map((file) => resolve(file)));
   const seen = new Set<string>();
   const addLive = (path: string, values: Array<{ key: string; value: string }>): void => {
     for (const { key, value } of values) configured.push({ ref: value, source: `${path} ${key}`, file: path });
@@ -612,7 +663,7 @@ export async function scanEnvDir(
       siblings = [];
     }
     for (const name of siblings) {
-      if (name === base || !(name.startsWith(`${base}.`) || name === `${base}~`)) continue;
+      if (name === base || !(name === `${base}~` || (name.startsWith(`${base}.`) && looksLikeBackupSuffix(name.slice(base.length + 1))))) continue;
       const backupPath = join(dir, name);
       if (live.has(backupPath)) continue;
       const backup = await readImageEnvFile(backupPath);
@@ -731,10 +782,13 @@ export async function collectRunnerImageInventory(options: CollectOptions): Prom
     scanProcessEnv(options.procRoot),
     scanDeployRecordDirs(options.deployRecordDirs ?? []),
   ]);
-  const unitEnvFiles = options.unitEnvFiles ?? defaultUnitEnvFiles;
-  const liveFiles = [...(options.extraLiveFiles ?? []), ...(await Promise.all(live.units.map((unit) => unitEnvFiles(unit)))).flat()];
+  const unitEnvFilesFn = options.unitEnvFiles ?? defaultUnitEnvFiles;
+  const unitEnvFiles: Record<string, string[]> = {};
+  for (const unit of live.units) unitEnvFiles[unit] = (await unitEnvFilesFn(unit)).map((file) => resolve(file));
+  const liveFiles = [...new Set([...(options.extraLiveFiles ?? []).map((file) => resolve(file)), ...Object.values(unitEnvFiles).flat()])];
   const envDir = await scanEnvDir(options.envDir, liveFiles);
   return {
+    unitEnvFiles,
     engine: options.engine,
     images,
     containers,
