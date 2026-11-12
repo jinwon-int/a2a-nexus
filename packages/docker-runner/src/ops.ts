@@ -38,6 +38,7 @@ import {
   type EgressInstallOptions,
   type EgressInstallReport,
 } from "./egress-runtime.js";
+import { checkRunnerImageDisk, DEPLOY_RECORD_DIRS_ENV, type RunnerImageDiskCheckOptions } from "./runner-images.js";
 
 export type OpsStatus = "ok" | "warn" | "fail" | "skip";
 
@@ -78,6 +79,8 @@ export interface DoctorReport {
   workdirRetention: OpsCheck;
   /** #2395: present only when A2A_DOCKER_RUNNER_EGRESS_MODE is observe/enforce. */
   egressProxy?: OpsCheck;
+  /** #2547: free space on / and the engine root (warn < 10% or < 5GiB) and stale runner image tags reclaimable (warn-only). */
+  runnerImageDisk: OpsCheck;
   /** #2268: `<envFile>.*` backup copies — broad perms fail, unbounded count/age warn. Present when the CLI passed envFile. */
   serviceEnvBackups?: OpsCheck;
   /** #2398: env-file-only A2A_* keys — doctor sees them, `run` (process env only) does not. Present when the CLI passed envFile and processEnv. */
@@ -680,6 +683,8 @@ export interface DoctorOptions {
   processEnv?: NodeJS.ProcessEnv;
   /** #2267 R2: override the systemd unit dir / probe for the workDir retention check (tests). */
   workdirRetention?: Pick<WorkdirRetentionCheckOptions, "unitDir" | "unitName" | "systemctl">;
+  /** #2547: override engine exec / statfs / scan roots for the runner image disk probe (tests). */
+  runnerImageDisk?: Omit<RunnerImageDiskCheckOptions, "engine" | "engineReady">;
 }
 
 export interface ServiceEnvFileCheckOptions {
@@ -864,6 +869,16 @@ export async function doctor(config: RunnerConfig, options: DoctorOptions = {}):
   const egressProxy = egressEnabled(config) ? await checkEgressProxy(config, options.egressExec) : undefined;
   if (egressProxy) checks.push(egressProxy);
 
+  // #2547: warn-only disk probe (low root free space + stale runner tags reclaimable).
+  const runnerImageDisk = await checkRunnerImageDisk({
+    engine,
+    engineReady: (engine === "docker" ? docker : podman).status === "ok",
+    isRoot: typeof process.getuid === "function" ? process.getuid() === 0 : undefined,
+    deployRecordDirs: (options.env?.[DEPLOY_RECORD_DIRS_ENV] ?? "").split(":").map((dir) => dir.trim()).filter(Boolean),
+    ...options.runnerImageDisk,
+  });
+  checks.push(runnerImageDisk);
+
   return {
     ok: engineReady && checks.every((check) => check.status !== "fail"),
     engine,
@@ -887,6 +902,7 @@ export async function doctor(config: RunnerConfig, options: DoctorOptions = {}):
     ...(runEnvParity ? { runEnvParity } : {}),
     workdirRetention,
     ...(egressProxy ? { egressProxy } : {}),
+    runnerImageDisk,
   };
 }
 

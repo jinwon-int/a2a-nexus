@@ -21,6 +21,14 @@ import {
   installCleanupTimer,
   rotateServiceEnvBackups,
 } from "./ops.js";
+import {
+  DEFAULT_ENV_DIR,
+  DEFAULT_KEEP_ROLLBACK,
+  DEFAULT_MIN_AGE_MS,
+  DEPLOY_RECORD_DIRS_ENV,
+  parseImagesArgs,
+  pruneRunnerImages,
+} from "./runner-images.js";
 import { runTask } from "./runner.js";
 import type { RunnerTask } from "./types.js";
 
@@ -126,6 +134,50 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "images") {
+    // #2547: runner image retention. Dry-run unless --apply; never touches
+    // images outside the a2a-docker-runner* repositories. Strict argument
+    // parsing: a mistyped or value-less flag is an error, never ignored.
+    const args = parseImagesArgs(process.argv.slice(3));
+    const single = (name: string): string | undefined => {
+      const list = args.values[name] ?? [];
+      if (list.length > 1) throw new Error(`images: ${name} given more than once`);
+      return list[0];
+    };
+    const explicitEnvFile = single("--env-file") ?? process.env.A2A_DOCKER_RUNNER_ENV_FILE;
+    const envFile = explicitEnvFile ?? DEFAULT_SERVICE_ENV_FILE;
+    const env = mergeRunnerEnvFile({ ...process.env }, envFile);
+    const engineFlag = single("--engine") ?? env.A2A_DOCKER_RUNNER_ENGINE ?? "docker";
+    if (engineFlag !== "docker" && engineFlag !== "podman") throw new Error(`invalid --engine: ${engineFlag}`);
+    const keepRollbackFlag = single("--keep-rollback");
+    const keepRollback = keepRollbackFlag === undefined ? DEFAULT_KEEP_ROLLBACK : Number(keepRollbackFlag);
+    if (!Number.isInteger(keepRollback) || keepRollback < 0) throw new Error(`invalid --keep-rollback: ${keepRollbackFlag}`);
+    const minAgeFlag = single("--min-age");
+    const minAgeMs = minAgeFlag === undefined ? DEFAULT_MIN_AGE_MS : minAgeFlag === "0" ? 0 : parseTtlMs(minAgeFlag);
+    const deployRecordDirs = [
+      ...(args.values["--deploy-record-dir"] ?? []),
+      ...(env[DEPLOY_RECORD_DIRS_ENV] ?? "").split(":").map((dir) => dir.trim()).filter(Boolean),
+    ];
+    const report = await pruneRunnerImages({
+      engine: engineFlag,
+      apply: args.apply,
+      builderCache: args.builderCache,
+      keepRollback,
+      minAgeMs,
+      keepRefs: args.values["--keep"] ?? [],
+      allowRepositories: args.values["--repository"] ?? [],
+      envDir: single("--env-dir") ?? DEFAULT_ENV_DIR,
+      deployRecordDirs,
+      // An env file the operator named is live evidence wherever it lives (the stale CLI default is not).
+      extraLiveFiles: explicitEnvFile ? [explicitEnvFile] : [],
+      isRoot: typeof process.getuid === "function" ? process.getuid() === 0 : undefined,
+    });
+    console.log(JSON.stringify(report, null, 2));
+    if (report.mode === "apply" && !report.plan.applyAllowed) process.exitCode = 2;
+    else if (!report.ok) process.exitCode = 1;
+    return;
+  }
+
   throw new Error(`unknown command: ${command}`);
 }
 
@@ -188,6 +240,20 @@ Usage:
     (lists <env-file>.* backup copies and the rotation plan: keep the newest --keep, prune the rest older than
      --max-age (0 = all beyond --keep). Dry-run unless --prune. --create <tag> first copies the live file to
      <env-file>.bak-<tag>-<UTC stamp> with mode 0600 — the helper deploy scripts should use)
+  a2a-docker-runner images [--apply] [--keep-rollback 1] [--min-age 72h] [--keep <image-ref>]... [--repository <repo>]...
+                           [--builder-cache] [--engine docker|podman] [--env-dir /etc/default] [--env-file <file>]
+                           [--deploy-record-dir <dir>]...
+    (#2547: lists a2a-docker-runner* image tags to remove. Keeps the image(s) in use — running worker env
+     (/proc/<pid>/environ) and its systemd EnvironmentFile, env files in --env-dir, any container incl. stopped,
+     --keep — plus --keep-rollback per worker env file (its newest backup; --deploy-record-dir /
+     ${DEPLOY_RECORD_DIRS_ENV} top up), tags named *rollback*, images built or loaded within --min-age, and
+     images built after the in-use one. An explicitly named --env-file / A2A_DOCKER_RUNNER_ENV_FILE counts as a
+     live env file. Flags take "--flag value" or "--flag=value"; an unknown or value-less flag is an error.
+     A runner repository with no resolved in-use image is left alone unless named with --repository.
+     Other images are never touched. Dry-run unless --apply; --apply re-plans, re-checks each tag's id, uses
+     "image rm" without -f, and is refused (exit 2) when an in-use/--keep ref does not resolve, /proc is not fully
+     readable, or there is no in-use evidence. --builder-cache adds "docker builder prune -f --filter until=<min-age>"
+     (the engine's whole build cache older than that, not only runner builds).)
   a2a-docker-runner run <task.json>
   cat task.json | a2a-docker-runner run -
 `);
