@@ -192,6 +192,123 @@ test("#2547 an unused tag sharing its image id with a kept tag is untag-only and
   assert.equal(plan.reclaimableBytes, 0);
 });
 
+// ── #2550: per-worker rollback, in-use-only gate, bounded newer ─────────────
+
+const SECOND = "/etc/default/a2a-hermes-worker-secondary";
+const twoWorkers = (extra: EngineImage[] = []): EngineImage[] => [
+  image("a1", [`${R}:a-current`], 5),
+  image("b1", [`${R}:b-current`], 6),
+  image("a0", [`${R}:a-previous`], 12),
+  image("b0", [`${R}:b-previous`], 14),
+  image("xx", [`${R}:stale`], 30),
+  ...extra,
+];
+const bothInUse = (): Pick<RunnerImageInventory, "configured"> => ({
+  configured: [...inUse(`${R}:a-current`).configured, ...inUse(`${R}:b-current`, SECOND).configured],
+});
+
+test("#2550 a second worker whose backup is only in --deploy-record-dir still keeps its rollback", () => {
+  const plan = planRunnerImagePrune(
+    inventory({ images: twoWorkers(), ...bothInUse(), deployRecords: [record(`${R}:a-previous`, ENV, 1), record(`${R}:b-previous`, undefined, 2)] }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.equal(reasonOf(plan, "a-previous"), "rollback");
+  assert.equal(reasonOf(plan, "b-previous"), "rollback");
+  assert.deepEqual(tagsOf(plan.candidates), [`${R}:stale`]);
+});
+
+test("#2550 a second worker with no deploy record gets the newest image built before its own in-use image", () => {
+  const plan = planRunnerImagePrune(inventory({ images: twoWorkers(), ...bothInUse(), deployRecords: [record(`${R}:a-previous`, ENV, 1)] }), { nowMs: NOW, isRoot: true });
+  assert.equal(reasonOf(plan, "a-previous"), "rollback");
+  assert.match(plan.repositories[0].keep.find((tag) => tag.tag.endsWith("b-previous"))?.why ?? "", /before the in-use image of \/etc\/default\/a2a-hermes-worker-secondary/);
+  assert.deepEqual(tagsOf(plan.candidates), [`${R}:stale`]);
+});
+
+test("#2550 a process-only worker (no env file names its image) gets its own rollback", () => {
+  const plan = planRunnerImagePrune(
+    inventory({
+      images: twoWorkers(),
+      live: { refs: [...inUse(`${R}:a-current`).live.refs, { ref: `${R}:b-current`, source: "pid 77 a2a-codex-worker.service A2A_DOCKER_RUNNER_IMAGE" }], unreadable: 0, scanned: 40, units: [] },
+      configured: inUse(`${R}:a-current`).configured,
+      deployRecords: [record(`${R}:a-previous`, ENV, 1)],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.match(plan.repositories[0].keep.find((tag) => tag.tag.endsWith("a-previous"))?.why ?? "", /previous deploy of \/etc\/default\/a2a-hermes-worker /);
+  assert.match(plan.repositories[0].keep.find((tag) => tag.tag.endsWith("b-previous"))?.why ?? "", /unit:a2a-codex-worker\.service/);
+  assert.deepEqual(tagsOf(plan.candidates), [`${R}:stale`]);
+  assert.equal(plan.applyAllowed, true);
+});
+
+test("#2550 backups next to a live env file outside --env-dir are that worker's deploy records", async () => {
+  const root = await mkdtemp(join(tmpdir(), "a2a-images-outside-"));
+  try {
+    const envDir = join(root, "default");
+    const other = join(root, "opt-worker");
+    await mkdir(envDir);
+    await mkdir(other);
+    const live = join(other, "worker-b.env");
+    await writeFile(live, "A2A_DOCKER_RUNNER_IMAGE=r:b-current\n");
+    await writeFile(join(other, "worker-b.env.bak-20261110"), "A2A_DOCKER_RUNNER_IMAGE=r:b-previous\n");
+    await writeFile(join(other, "unrelated.env"), "A2A_DOCKER_RUNNER_IMAGE=r:other\n");
+    const scanned = await scanEnvDir(envDir, [live]);
+    assert.deepEqual(scanned.configured.map((ref) => ref.ref), ["r:b-current"]);
+    assert.deepEqual(scanned.deployRecords.map((ref) => [ref.ref, ref.owner]), [["r:b-previous", live]]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("#2550 a repository that only a container or --keep references is skipped, not pruned", () => {
+  const codex = "a2a-docker-runner-codex";
+  const images = [...IMAGES, image("c01", [`${codex}:smoke`], 20), image("c02", [`${codex}:old`], 40), image("c03", [`${codex}:pinned`], 50)];
+  const plan = planRunnerImagePrune(
+    inventory({
+      images,
+      containers: [{ id: "k1", name: "codex-smoke", imageId: "sha256:c01", imageRef: `${codex}:smoke` }],
+      keep: [{ ref: `${codex}:pinned`, source: "--keep" }],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.ok(plan.skippedRepositories.includes(codex));
+  assert.equal(reasonOf(plan, "codex:smoke"), "container");
+  assert.equal(reasonOf(plan, "codex:old"), "unverified-repository");
+  assert.ok(!plan.candidates.some((tag) => tag.tag.startsWith(codex)));
+});
+
+test("#2550 a newer container or --keep image does not move the newer-than-in-use line (review T2 F7)", () => {
+  const images = [image("aaa", [`${R}:current`], 10), image("bbb", [`${R}:next-rollout`], 5), image("ccc", [`${R}:smoke`], 4), image("ooo", [`${R}:previous`], 20)];
+  const plan = planRunnerImagePrune(
+    inventory({ engine: "podman", images, ...inUse(`${R}:current`), containers: [{ id: "k1", name: "smoke", imageId: "sha256:ccc", imageRef: `${R}:smoke` }] }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.equal(reasonOf(plan, "next-rollout"), "newer-than-in-use");
+  assert.equal(reasonOf(plan, ":smoke"), "container");
+  assert.deepEqual(plan.candidates, []);
+});
+
+test("#2550 newer-than-in-use is bounded: beyond --keep-newer is listed for review, removed only with --include-newer", () => {
+  const images = [image("aaa", [`${R}:current`], 20), image("n1", [`${R}:newest`], 3.5), image("n2", [`${R}:failed-1`], 5), image("n3", [`${R}:failed-2`], 6), image("ooo", [`${R}:previous`], 25)];
+  const base = inventory({ images, ...inUse(`${R}:current`) });
+  const plan = planRunnerImagePrune(base, { nowMs: NOW, isRoot: true });
+  assert.equal(reasonOf(plan, "newest"), "newer-than-in-use");
+  assert.equal(reasonOf(plan, "failed-1"), "newer-to-review");
+  assert.deepEqual([...plan.newerToReview].sort(), [`${R}:failed-1`, `${R}:failed-2`]);
+  assert.deepEqual(plan.candidates, []);
+  const include = planRunnerImagePrune(base, { nowMs: NOW, isRoot: true, includeNewer: true });
+  assert.deepEqual(tagsOf(include.candidates), [`${R}:failed-1`, `${R}:failed-2`]);
+  const zero = planRunnerImagePrune(base, { nowMs: NOW, isRoot: true, keepNewer: 0 });
+  assert.equal(zero.newerToReview.length, 3);
+});
+
+test("#2550 an image with the same Created as the in-use one counts as newer (SOURCE_DATE_EPOCH builds)", () => {
+  const same = new Date(NOW - 10 * DAY).toISOString();
+  const images = [image("aaa", [`${R}:current`], 10, { created: same }), image("bbb", [`${R}:same-commit-next`], 10, { created: same }), image("ooo", [`${R}:previous`], 20)];
+  const plan = planRunnerImagePrune(inventory({ images, ...inUse(`${R}:current`) }), { nowMs: NOW, isRoot: true });
+  assert.equal(reasonOf(plan, "same-commit-next"), "newer-than-in-use");
+  assert.deepEqual(plan.candidates, []);
+});
+
 // ── fail-closed reference resolution (review F1) ────────────────────────────
 
 test("#2547 podman localhost/, tag@digest after docker load and short ids resolve to the in-use image", () => {
@@ -523,6 +640,10 @@ test("#2547 images argument parser: --flag value and --flag=value, unknown or va
   assert.throws(() => parseImagesArgs(["--apply=yes"]), /takes no value/);
   assert.throws(() => parseImagesArgs(["stray"]), /unexpected argument/);
   assert.throws(() => parseImagesArgs(["--dry-run", "--apply"]), /mutually exclusive/);
+  const more = parseImagesArgs(["--env-file", "/a.env", "--env-file=/b.env", "--keep-newer", "2", "--include-newer"]);
+  assert.deepEqual(more.values["--env-file"], ["/a.env", "/b.env"]);
+  assert.deepEqual(more.values["--keep-newer"], ["2"]);
+  assert.equal(more.includeNewer, true);
 });
 
 // ── doctor ───────────────────────────────────────────────────────────────────
@@ -534,7 +655,8 @@ test("#2547 doctor probe warns below 10% / 5GiB on / or the engine root, never h
     const warn = await checkRunnerImageDisk({ engine: "docker", engineReady: true, exec, ...paths, statfsFn: low, nowMs: NOW, isRoot: true, unitEnvFiles: noUnits });
     assert.equal(warn.status, "warn");
     assert.match(warn.message, /low disk: 2\.0GiB free on \//);
-    assert.match(warn.message, /2 stale runner image tag\(s\)/);
+    assert.match(warn.message, /2 stale runner image tag\(s\), up to /);
+    assert.equal(warn.detail?.reclaimableIsUpperBound, true);
 
     const engineRootLow: StatfsFn = async (path) => (path === "/" ? { blocks: 100, bavail: 50, bsize: GB } : { blocks: 100, bavail: 3, bsize: GB });
     const rootWarn = await checkRunnerImageDisk({ engine: "docker", engineReady: true, exec, ...paths, statfsFn: engineRootLow, nowMs: NOW, isRoot: true, unitEnvFiles: noUnits });
