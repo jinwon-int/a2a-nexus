@@ -3,12 +3,13 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, rm, unlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
   checkRunnerImageDisk,
+  imagesEnvFiles,
   isEnvBackupName,
   listEngineContainers,
   normalizeRef,
@@ -487,6 +488,99 @@ test("#2551 review: a unit whose EnvironmentFile= is a live env file is that wor
   assert.equal(whys.length, 2, JSON.stringify(whys));
   assert.ok(whys.some((why) => why.includes("unit:a2a-shadow.service")));
   assert.ok(!whys.some((why) => why.includes("unit:a2a-hermes-worker.service")), "the mapped unit is merged into its env-file worker");
+});
+
+// ── #2554: own record vs unattributed, reason texts, fail-closed Created ───────
+
+test("#2554 a worker's own backup wins over an unattributed record naming the same image", () => {
+  const plan = planRunnerImagePrune(
+    inventory({
+      deployRecords: [
+        record(`${R}:573ca08-claude-2.1.318`, ENV, 2),
+        record(`${R}:573ca08-claude-2.1.318`, undefined, 1, { file: "/backups/retired-worker" }),
+      ],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  const kept = plan.repositories[0].keep.find((tag) => tag.tag.endsWith("2.1.318"));
+  assert.equal(kept?.reason, "rollback");
+  assert.match(kept?.why ?? "", /previous deploy of \/etc\/default\/a2a-hermes-worker/);
+  assert.deepEqual(plan.recordsToReview, []);
+  // The fallback did not take the slot: the next older images are candidates.
+  assert.deepEqual(tagsOf(plan.candidates), [`${R}:573ca08-claude-2.1.322`, `${R}:666becb-claude-2.1.322`]);
+});
+
+test("#2554 a worker's own owner-less record (by env file name) also wins over an unattributed one", () => {
+  const plan = planRunnerImagePrune(
+    inventory({
+      deployRecords: [
+        record(`${R}:573ca08-claude-2.1.318`, undefined, 2, { file: "/backups/r1/a2a-hermes-worker" }),
+        record(`${R}:573ca08-claude-2.1.318`, undefined, 1, { file: "/backups/retired-worker" }),
+      ],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.equal(reasonOf(plan, "2.1.318"), "rollback");
+  assert.deepEqual(plan.recordsToReview, []);
+});
+
+test("#2554 a moved worker's backup says 'another repository' only when it really runs a runner image", () => {
+  const images = [...IMAGES, image("b1", [`${R}:b-current`], 6), image("a0", [`${R}:a-previous`], 12)];
+  const plan = planRunnerImagePrune(
+    inventory({
+      images,
+      live: { refs: [], unreadable: 0, scanned: 40, units: [] },
+      // ENV now names a non-runner image: no runner repository runs there.
+      configured: [...inUse("python:3.11").configured, ...inUse(`${R}:b-current`, SECOND).configured],
+      deployRecords: [record(`${R}:a-previous`, ENV, 5)],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  const why = plan.repositories.find((repo) => repo.repository === R)?.keep.find((tag) => tag.tag.endsWith("a-previous"))?.why ?? "";
+  assert.match(why, /names no running runner image/);
+  assert.doesNotMatch(why, /another repository/);
+});
+
+test("#2554 the fallback reason tells 'no deploy record' from 'no eligible deploy record left'", () => {
+  const none = planRunnerImagePrune(inventory(), { nowMs: NOW, isRoot: true });
+  assert.match(none.repositories[0].keep.find((tag) => tag.reason === "rollback")?.why ?? "", /\(no deploy record\)$/);
+  // The worker's only record names an image built after its in-use image: not eligible.
+  const images = [...IMAGES, image("nnn", [`${R}:next-rollout`], 4)];
+  const plan = planRunnerImagePrune(inventory({ images, deployRecords: [record(`${R}:next-rollout`, ENV, 1)] }), { nowMs: NOW, isRoot: true });
+  const rollback = plan.repositories[0].keep.find((tag) => tag.reason === "rollback");
+  assert.equal(rollback?.tag, `${R}:666becb-claude-2.1.322`);
+  assert.match(rollback?.why ?? "", /\(no eligible deploy record left\)$/);
+});
+
+test("#2554 apply is refused when a worker's in-use image has no parseable creation time", () => {
+  const images = IMAGES.map((entry) => (entry.id === "sha256:aaa" ? { ...entry, created: "not-a-date" } : entry));
+  const plan = planRunnerImagePrune(inventory({ images }), { nowMs: NOW, isRoot: true });
+  assert.equal(plan.applyAllowed, false);
+  assert.ok(plan.applyRefusals.some((reason) => /no parseable creation time/.test(reason)), plan.applyRefusals.join("; "));
+});
+
+test("#2554 a relative --env-dir yields absolute paths that match live files and backup owners", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "runner-images-reldir-"));
+  try {
+    await writeFile(join(dir, "a2a-hermes-worker"), `A2A_DOCKER_RUNNER_IMAGE=${R}:current\n`);
+    await writeFile(join(dir, "a2a-hermes-worker.bak-20261101"), `A2A_DOCKER_RUNNER_IMAGE=${R}:previous\n`);
+    const live = join(dir, "a2a-hermes-worker");
+    const scan = await scanEnvDir(relative(process.cwd(), dir), [live]);
+    assert.deepEqual(scan.configured.map((ref) => ref.file), [live]);
+    assert.equal(scan.deployRecords.length, 1);
+    assert.equal(scan.deployRecords[0].owner, live);
+    assert.ok(isAbsolute(scan.deployRecords[0].file ?? ""));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("#2554 every --env-file and A2A_DOCKER_RUNNER_ENV_FILE are live evidence; the first flag supplies settings", () => {
+  assert.deepEqual(imagesEnvFiles(["/a", "/b"], "/c"), { live: ["/a", "/b", "/c"], settings: "/a" });
+  assert.deepEqual(imagesEnvFiles(["/a"], "/a"), { live: ["/a"], settings: "/a" });
+  assert.deepEqual(imagesEnvFiles([], "/c"), { live: ["/c"], settings: "/c" });
+  assert.deepEqual(imagesEnvFiles([], "  "), { live: [], settings: undefined });
+  assert.deepEqual(imagesEnvFiles([], undefined), { live: [], settings: undefined });
 });
 
 test("#2550 a repository that only a container or --keep references is skipped, not pruned", () => {

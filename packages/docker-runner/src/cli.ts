@@ -26,6 +26,7 @@ import {
   DEFAULT_KEEP_ROLLBACK,
   DEFAULT_MIN_AGE_MS,
   DEPLOY_RECORD_DIRS_ENV,
+  imagesEnvFiles,
   parseImagesArgs,
   pruneRunnerImages,
 } from "./runner-images.js";
@@ -144,9 +145,11 @@ async function main(): Promise<void> {
       if (list.length > 1) throw new Error(`images: ${name} given more than once`);
       return list[0];
     };
-    // --env-file may repeat (several workers with env files outside --env-dir); the first one supplies CLI settings.
-    const explicitEnvFiles = args.values["--env-file"] ?? (process.env.A2A_DOCKER_RUNNER_ENV_FILE ? [process.env.A2A_DOCKER_RUNNER_ENV_FILE] : []);
-    const envFile = explicitEnvFiles[0] ?? DEFAULT_SERVICE_ENV_FILE;
+    // --env-file may repeat (several workers with env files outside --env-dir). Every --env-file and
+    // A2A_DOCKER_RUNNER_ENV_FILE is live evidence (#2554: a flag no longer hides the env var's file);
+    // the first --env-file, else A2A_DOCKER_RUNNER_ENV_FILE, supplies CLI settings.
+    const { live: explicitEnvFiles, settings } = imagesEnvFiles(args.values["--env-file"] ?? [], process.env.A2A_DOCKER_RUNNER_ENV_FILE);
+    const envFile = settings ?? DEFAULT_SERVICE_ENV_FILE;
     const env = mergeRunnerEnvFile({ ...process.env }, envFile);
     const engineFlag = single("--engine") ?? env.A2A_DOCKER_RUNNER_ENGINE ?? "docker";
     if (engineFlag !== "docker" && engineFlag !== "podman") throw new Error(`invalid --engine: ${engineFlag}`);
@@ -256,7 +259,8 @@ Usage:
      --env-dir; then --deploy-record-dir / ${DEPLOY_RECORD_DIRS_ENV}; else the newest image built before that
      worker's image), tags named *rollback*, images built or loaded within --min-age, and --keep-newer images
      built after the in-use one (more are listed in plan.newerToReview and only removed with --include-newer).
-     Explicitly named --env-file(s) / A2A_DOCKER_RUNNER_ENV_FILE count as live env files. Flags take
+     Every --env-file and A2A_DOCKER_RUNNER_ENV_FILE counts as a live env file (the first --env-file, else
+     A2A_DOCKER_RUNNER_ENV_FILE, supplies CLI settings). Flags take
      "--flag value" or "--flag=value"; an unknown or value-less flag is an error.
      A runner repository that no running process or live env file uses is left alone unless named with
      --repository (containers and --keep protect their images but do not open a repository).

@@ -335,6 +335,8 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
   }
   const keepNewer = options.keepNewer ?? DEFAULT_KEEP_NEWER;
   const createdMs = (id: string): number => Date.parse(byId.get(id)?.created ?? "");
+  const runsOtherRunner = (file: string): boolean =>
+    [...(workers.get(file)?.ids ?? [])].some((id) => byId.get(id)?.repoTags.some((tag) => isRunnerRepository(tag)) ?? false);
 
   // Group runner tags by (normalized) repository.
   const repoTags = new Map<string, PlannedTag[]>();
@@ -433,7 +435,9 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
       const tag = restTag(id);
       const count = foreignPicked.get(owner) ?? 0;
       if (!tag || rollback.has(id) || isRecent(tag) || count >= keepRollback) continue;
-      rollback.set(id, workers.has(owner)
+      // "another repository" only when the owner's env file really resolves to
+      // a runner image elsewhere; an unresolved or non-runner reference says so (#2554).
+      rollback.set(id, runsOtherRunner(owner)
         ? `previous deploy of ${owner} (${record.source}), which now runs another repository`
         : `previous deploy of ${owner} (${record.source}), whose env file names no running runner image`);
       foreignPicked.set(owner, count + 1);
@@ -455,21 +459,35 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
     // in-use image that is not already kept for another reason (a record image
     // kept as someone's rollback or as unattributed never uses this slot).
     const picked = new Map<Worker, number>();
-    const take = (worker: Worker, id: string, why: string): void => {
+    // `fromRecord`: the worker's own deploy record names this image. An
+    // unattributed record pointing at the same image does not outrank it — the
+    // worker's real previous deploy is its rollback, not a review item (#2554).
+    // Only a fallback pick must leave unattributed record images alone.
+    const take = (worker: Worker, id: string, why: string, fromRecord: boolean): void => {
       const tag = restTag(id);
       const count = picked.get(worker) ?? 0;
-      if (count >= keepRollback || rollback.has(id) || unattributed.has(id) || !tag || isRecent(tag) || !builtBefore(worker, id)) return;
+      if (count >= keepRollback || rollback.has(id) || (!fromRecord && unattributed.has(id)) || !tag || isRecent(tag) || !builtBefore(worker, id)) return;
       rollback.set(id, why);
+      unattributed.delete(id);
       picked.set(worker, count + 1);
     };
+    const hadOwnRecords = new Set<Worker>();
     for (const worker of repoWorkers) {
       const own = resolvedRecords.filter((entry) => recordWorker(entry.record) === worker);
-      for (const { record, id } of own) if (record.owner) take(worker, id, `previous deploy of ${record.owner} (${record.source})`);
-      for (const { record, id } of own) if (!record.owner) take(worker, id, `deploy record ${record.source} (for ${worker.key})`);
+      if (own.length > 0) hadOwnRecords.add(worker);
+      for (const { record, id } of own) if (record.owner) take(worker, id, `previous deploy of ${record.owner} (${record.source})`, true);
+      for (const { record, id } of own) if (!record.owner) take(worker, id, `deploy record ${record.source} (for ${worker.key})`, true);
     }
     for (const worker of repoWorkers) {
+      // A worker whose in-use image has no parseable creation time cannot tell
+      // which image it ran before: refuse --apply rather than keep no rollback (#2554).
+      if (!Number.isFinite(inUseMsOf.get(worker) ?? Number.NaN)) {
+        applyRefusals.push(`in-use image of ${worker.key} in ${repository} has no parseable creation time — cannot pick its rollback`);
+        continue;
+      }
       const fallback = rest.filter((tag) => builtBefore(worker, tag.id)).sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
-      for (const tag of fallback) take(worker, tag.id, `newest image built before the in-use image of ${worker.key} (no deploy record)`);
+      const note = hadOwnRecords.has(worker) ? "no eligible deploy record left" : "no deploy record";
+      for (const tag of fallback) take(worker, tag.id, `newest image built before the in-use image of ${worker.key} (${note})`, false);
     }
     if (repoWorkers.length === 0) {
       // --repository opt-in without any worker: keep N newest non-recent images
@@ -661,6 +679,9 @@ export async function scanEnvDir(
   envDir = DEFAULT_ENV_DIR,
   liveFiles: readonly string[] = [],
 ): Promise<{ configured: ImageRef[]; deployRecords: ImageRef[] }> {
+  // A relative --env-dir must give the same absolute paths the live file set
+  // (resolved) and the backup owners are compared against (#2554).
+  envDir = resolve(envDir);
   const configured: ImageRef[] = [];
   const deployRecords: ImageRef[] = [];
   let names: string[] = [];
@@ -847,6 +868,17 @@ export interface ImagesArgs {
   builderCache: boolean;
   includeNewer: boolean;
   values: Record<string, string[]>;
+}
+
+/**
+ * Env files of `images`: every `--env-file` and `A2A_DOCKER_RUNNER_ENV_FILE` are live
+ * evidence (a flag does not hide the env var's file, #2554); the first `--env-file`,
+ * else the env var, supplies CLI settings (undefined → the CLI default).
+ */
+export function imagesEnvFiles(flagFiles: readonly string[], envVarFile: string | undefined): { live: string[]; settings: string | undefined } {
+  const fromEnv = envVarFile?.trim() || undefined;
+  const live = [...new Set([...flagFiles, ...(fromEnv ? [fromEnv] : [])])];
+  return { live, settings: flagFiles[0] ?? fromEnv };
 }
 
 const IMAGES_BOOLEAN_FLAGS = new Set(["--apply", "--dry-run", "--builder-cache", "--include-newer"]);
