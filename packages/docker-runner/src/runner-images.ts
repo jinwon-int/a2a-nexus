@@ -157,6 +157,8 @@ export interface RunnerImagePlan {
   recordGaps: string[];
   /** tags kept only because of a record gap (unique images the gap pass added). */
   recordGapImages: string[];
+  /** tags kept only because their creation time carries no build order (sentinel / unparseable): review by hand. */
+  unknownOrderToReview: string[];
   /** candidate tags whose image keeps another (non-runner or kept) tag — untag only, frees nothing. */
   untagOnly: string[];
   unresolvedRefs: ImageRef[];
@@ -351,8 +353,10 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
   }
   const keepNewer = options.keepNewer ?? DEFAULT_KEEP_NEWER;
   // Build order matters whenever a rollback is kept or the newer-than-in-use
-  // line protects a staged rollout; only then may an unknown Created block (#2560 review).
-  const needOrder = keepRollback > 0 || (keepNewer > 0 && !options.includeNewer);
+  // line protects a staged rollout (kept up to --keep-newer, the rest listed
+  // for review even at --keep-newer 0); only then may an unknown Created
+  // block (#2560 review r1, r2).
+  const needOrder = keepRollback > 0 || !options.includeNewer;
   // Same floor as effectiveMs: docker's 0001-01-01 and a SOURCE_DATE_EPOCH=0
   // build (1970-01-01) carry no build order, so they count as unknown (#2554).
   const createdMs = (id: string): number => {
@@ -387,6 +391,7 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
   const recordsToReview: string[] = [];
   const recordGaps: string[] = [];
   const recordGapImages: string[] = [];
+  const unknownOrderToReview: string[] = [];
   const resolvedRecords = inventory.deployRecords
     .filter((record) => !record.orphan)
     .map((record) => ({ record, id: resolveRef(record.ref, images) }))
@@ -501,6 +506,10 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
       // The final rendering checks rollback first; the delete matters to the
       // "also named by …" pass below, so a taken record image never reads "not taken".
       unattributed.delete(id);
+      // An order-unknown image is kept as the record says, but uses no slot and
+      // is no safety-net floor: the slot (and the floor) still go to an ordered
+      // record or the fallback, so the real previous image is never pushed out (#2560 r2).
+      if (orderProvenByRecord) return;
       picked.set(worker, count + 1);
       if (fromRecord) recordPicks.set(worker, [...(recordPicks.get(worker) ?? []), id]);
     };
@@ -519,12 +528,12 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
     for (const worker of repoWorkers) {
       // A worker with ANY in-use image of unknown creation time (unparseable,
       // or a sentinel) cannot tell which image it ran before: refuse --apply,
-      // and report nothing of this repository as a candidate (#2554). Not
-      // needed with --keep-rollback 0, where no rollback is kept anyway.
+      // and report nothing of this repository as a candidate (#2554). Only
+      // when build order matters (needOrder: a rollback slot or the newer line).
       const unknownInUse = [...worker.ids].filter((id) => inUseIds.has(id) && !Number.isFinite(createdMs(id)));
       if (needOrder && unknownInUse.length > 0) {
         unknownWorkers.add(worker);
-        applyRefusals.push(`in-use image of ${worker.key} in ${repository} has no usable creation time — cannot pick its rollback`);
+        applyRefusals.push(`in-use image of ${worker.key} in ${repository} has no usable creation time — cannot ${keepRollback > 0 ? "pick its rollback" : "tell a staged rollout (newer-than-in-use line) apart"}`);
         rollbackUnknown = true;
         continue;
       }
@@ -644,7 +653,10 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
         recordsToReview.push(tag.tag);
       }
       else if (rollbackUnknown) keep.push({ ...tag, reason: "unverified-rollback", why: "an in-use image of this repository has no usable creation time — its rollback cannot be told apart, so nothing here is a candidate" });
-      else if (needOrder && !Number.isFinite(createdMs(tag.id))) keep.push({ ...tag, reason: "unknown-build-order", why: `creation time ${tag.created || "missing"} carries no build order (0001-01-01, epoch-0 or unparseable) — it may be a previous deploy or a staged rollout` });
+      else if (needOrder && !Number.isFinite(createdMs(tag.id))) {
+        keep.push({ ...tag, reason: "unknown-build-order", why: `creation time ${tag.created || "missing"} carries no build order (0001-01-01, epoch-0 or unparseable) — it may be a previous deploy or a staged rollout` });
+        unknownOrderToReview.push(tag.tag);
+      }
       else if (newerKept.has(tag.id)) keep.push({ ...tag, reason: "newer-than-in-use", why: `built ${tag.created}, not before the in-use image` });
       else if (newerBeyond.has(tag.id) && !options.includeNewer) {
         keep.push({ ...tag, reason: "newer-to-review", why: `built after the in-use image, beyond --keep-newer ${keepNewer}; remove with --include-newer after review` });
@@ -689,6 +701,7 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
     recordsToReview,
     recordGaps,
     recordGapImages,
+    unknownOrderToReview,
     reclaimableIsUpperBound: true,
     applyAllowed: applyRefusals.length === 0,
     applyRefusals,
@@ -1244,12 +1257,14 @@ export async function checkRunnerImageDisk(options: RunnerImageDiskCheckOptions)
         detail.recordGapReports = plan.recordGaps.length;
         detail.recordGapImages = plan.recordGapImages.length;
       }
+      if (plan.unknownOrderToReview.length > 0) detail.unknownOrderToReview = plan.unknownOrderToReview.length;
       if (!plan.applyAllowed) detail.evidenceIncomplete = plan.applyRefusals;
       if (plan.candidates.length > 0) {
         const note = plan.applyAllowed ? "" : " (evidence incomplete — list is indicative only)";
         reclaim = `; ${plan.candidates.length} stale runner image tag(s), up to ${formatBytes(plan.reclaimableBytes)} reclaimable${note} — review with: a2a-docker-runner images (dry-run)`;
       }
       if (plan.recordGaps.length > 0) reclaim += `; ${plan.recordGapImages.length} extra runner image(s) kept for ${plan.recordGaps.length} deploy record gap report(s) — review plan.recordGaps in: a2a-docker-runner images (dry-run)`;
+      if (plan.unknownOrderToReview.length > 0) reclaim += `; ${plan.unknownOrderToReview.length} runner image tag(s) kept because their creation time carries no build order — review plan.unknownOrderToReview in: a2a-docker-runner images (dry-run)`;
     } catch (error) {
       detail.inventoryError = error instanceof Error ? error.message : "runner image inventory failed";
     }

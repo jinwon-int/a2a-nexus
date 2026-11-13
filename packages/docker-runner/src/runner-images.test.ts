@@ -905,6 +905,42 @@ test("#2560 r1 an unattributed image also named by a worker with an unknown in-u
   assert.match(kept?.why ?? "", /not taken as its rollback \(its in-use creation time is unknown\)/);
 });
 
+// ── #2560 review r2: an order-unknown record image keeps no slot; the newer line needs order at --keep-newer 0 ──
+
+test("#2560 r2 an own record naming an epoch-0 image keeps it without taking the slot: the real previous image stays", () => {
+  const images = IMAGES.map((entry) => (entry.id === "sha256:ccc" ? { ...entry, created: "1970-01-01T00:00:00Z" } : entry));
+  const plan = planRunnerImagePrune(inventory({ images, deployRecords: [record(`${R}:573ca08-claude-2.1.322`, ENV, 2)] }), { nowMs: NOW, isRoot: true });
+  assert.equal(reasonOf(plan, "573ca08-claude-2.1.322"), "rollback"); // kept, as the record says
+  assert.equal(reasonOf(plan, "666becb"), "rollback"); // the slot still goes to the newest ordered previous image
+  assert.ok(!plan.candidates.some((tag) => tag.tag.includes("666becb") || tag.tag.includes("573ca08-claude-2.1.322")));
+});
+
+test("#2560 r2 a newer-mtime epoch-0 record and an older ordered record: the ordered previous image is never a candidate", () => {
+  const images = IMAGES.map((entry) => (entry.id === "sha256:ccc" ? { ...entry, created: "1970-01-01T00:00:00Z" } : entry));
+  const plan = planRunnerImagePrune(
+    inventory({ images, deployRecords: [record(`${R}:573ca08-claude-2.1.322`, ENV, 1), record(`${R}:666becb-claude-2.1.322`, ENV, 3)] }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.equal(reasonOf(plan, "666becb"), "rollback");
+  assert.ok(!plan.candidates.some((tag) => tag.tag.includes("666becb")));
+});
+
+test("#2560 r2 --keep-rollback 0 --keep-newer 0 without --include-newer still needs build order (staged rollout is listed for review)", () => {
+  const images = [...IMAGES.map((entry) => (entry.id === "sha256:aaa" ? { ...entry, created: "1970-01-01T00:00:00Z" } : entry)), image("nnn", [`${R}:next-rollout`], 4)];
+  const plan = planRunnerImagePrune(inventory({ images }), { nowMs: NOW, isRoot: true, keepRollback: 0, keepNewer: 0 });
+  assert.equal(plan.applyAllowed, false);
+  assert.ok(plan.applyRefusals.some((reason) => /tell a staged rollout/.test(reason)), plan.applyRefusals.join("; "));
+  assert.ok(!plan.candidates.some((tag) => tag.tag.includes("next-rollout")));
+});
+
+test("#2560 r2 an unparseable Created with an old load time is kept as unknown-build-order and listed for review", () => {
+  const images = IMAGES.map((entry) => (entry.id === "sha256:ddd" ? { ...entry, created: "garbage", lastTagTime: new Date(NOW - 30 * DAY).toISOString() } : entry));
+  const plan = planRunnerImagePrune(inventory({ images }), { nowMs: NOW, isRoot: true });
+  assert.equal(reasonOf(plan, "2.1.318"), "unknown-build-order");
+  assert.deepEqual(plan.unknownOrderToReview, [`${R}:573ca08-claude-2.1.318`]);
+  assert.ok(!plan.candidates.some((tag) => tag.tag.endsWith("2.1.318")));
+});
+
 test("#2554 r2 an own record that lost the slot but is also unattributed says whose history it is", () => {
   const plan = planRunnerImagePrune(
     inventory({
