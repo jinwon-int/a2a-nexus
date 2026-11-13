@@ -607,9 +607,9 @@ Only `a2a-docker-runner` / `a2a-docker-runner-<flavor>` repositories are planned
   (`<env>.bak-<tag>-<stamp>` and similar, also next to an env file outside `--env-dir`), deploy records without a
   known owner (`--deploy-record-dir` / colon-separated `A2A_DOCKER_RUNNER_DEPLOY_RECORD_DIRS`) **whose file name is
   that worker's env file name** (record directories keep the original name), then the newest image built before
-  that worker's in-use image **that no deploy record names for someone else** (another worker's backup or record,
-  a moved worker's backup, an unattributed record — those are kept for their own reason and never use this
-  worker's slot). Backups whose live file is gone are never used. An owner-less record that matches no worker, or
+  that worker's in-use image **not already kept for another reason** (every worker's own records are taken
+  first, then the fallbacks; an image kept as another worker's or a moved worker's rollback, or as an
+  unattributed record, never uses this worker's slot). Backups whose live file is gone are never used. An owner-less record that matches no worker, or
   whose file name several worker env files share (same name in different directories, any repository), never
   fills a slot; its image is kept and listed in `plan.recordsToReview`. Backups of a live env file that is no
   worker of this repository (e.g. its worker moved to another flavor) stay that file's rollback in the old

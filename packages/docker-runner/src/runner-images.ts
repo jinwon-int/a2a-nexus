@@ -404,8 +404,8 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
     // Rollback: N per worker of this repository, from (1) its own backups,
     // (2) deploy records without a known owner that carry its env file name,
     // (3) the newest non-recent image built before that worker's in-use image
-    // that no deploy record names for someone else (#2551 r3: a fallback must
-    // never use a slot on another worker's history and push out its own).
+    // not already kept for another reason (#2551 r3: a fallback must never use
+    // a slot on an image kept anyway and push out the worker's own previous).
     const repoWorkers = [...workers.values()]
       .filter((worker) => [...worker.ids].some((id) => inUseIds.has(id)))
       .sort((a, b) => a.key.localeCompare(b.key));
@@ -419,6 +419,10 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
       return record.file ? nameOwner.get(basename(record.file)) : undefined;
     };
     const restTag = (id: string): PlannedTag | undefined => rest.find((tag) => tag.id === id);
+    // A rollback must be an image the worker ran before: built before its
+    // in-use image. Recent images are kept anyway and never use a slot.
+    const inUseMsOf = new Map(repoWorkers.map((worker) => [worker, Math.max(...[...worker.ids].filter((id) => inUseIds.has(id)).map(createdMs).filter(Number.isFinite), Number.NEGATIVE_INFINITY)]));
+    const builtBefore = (worker: Worker, id: string): boolean => createdMs(id) < (inUseMsOf.get(worker) ?? Number.NEGATIVE_INFINITY);
     // Backups of a live env file that is no worker of this repository (its
     // worker moved to another repository, e.g. a flavor switch): still that
     // file's rollback — keep its N newest here, before any worker's fallback.
@@ -445,29 +449,27 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
         ? `named by deploy record ${record.source}, whose file name several worker env files share`
         : `named by deploy record ${record.source}, which matches no worker env file name`);
     }
+    // Two passes so no worker order matters: first every worker's own records
+    // (1) its backups, (2) owner-less records carrying its env file name; then
+    // (3) each worker's fallback — the newest non-recent image built before its
+    // in-use image that is not already kept for another reason (a record image
+    // kept as someone's rollback or as unattributed never uses this slot).
+    const picked = new Map<Worker, number>();
+    const take = (worker: Worker, id: string, why: string): void => {
+      const tag = restTag(id);
+      const count = picked.get(worker) ?? 0;
+      if (count >= keepRollback || rollback.has(id) || unattributed.has(id) || !tag || isRecent(tag) || !builtBefore(worker, id)) return;
+      rollback.set(id, why);
+      picked.set(worker, count + 1);
+    };
     for (const worker of repoWorkers) {
-      let picked = 0;
-      const workerInUseMs = Math.max(...[...worker.ids].filter((id) => inUseIds.has(id)).map(createdMs).filter(Number.isFinite), Number.NEGATIVE_INFINITY);
-      const builtBefore = (id: string): boolean => createdMs(id) < workerInUseMs;
-      // A rollback must be an image this worker ran before: built before its
-      // in-use image. Recent images are kept anyway and never use a slot.
-      const take = (id: string, why: string): void => {
-        const tag = restTag(id);
-        if (picked >= keepRollback || rollback.has(id) || !tag || isRecent(tag) || !builtBefore(id)) return;
-        rollback.set(id, why);
-        picked += 1;
-      };
       const own = resolvedRecords.filter((entry) => recordWorker(entry.record) === worker);
-      const ownIds = new Set(own.map((entry) => entry.id));
-      const othersIds = new Set(resolvedRecords.map((entry) => entry.id).filter((id) => !ownIds.has(id)));
-      // (1) its own backups, then (2) owner-less records carrying its env file name
-      for (const { record, id } of own) if (record.owner) take(id, `previous deploy of ${record.owner} (${record.source})`);
-      for (const { record, id } of own) if (!record.owner) take(id, `deploy record ${record.source} (for ${worker.key})`);
-      // (3) the newest non-recent image built before its in-use image that no record names for someone else
-      const fallback = rest
-        .filter((tag) => builtBefore(tag.id) && !othersIds.has(tag.id))
-        .sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
-      for (const tag of fallback) take(tag.id, `newest image built before the in-use image of ${worker.key} (no deploy record)`);
+      for (const { record, id } of own) if (record.owner) take(worker, id, `previous deploy of ${record.owner} (${record.source})`);
+      for (const { record, id } of own) if (!record.owner) take(worker, id, `deploy record ${record.source} (for ${worker.key})`);
+    }
+    for (const worker of repoWorkers) {
+      const fallback = rest.filter((tag) => builtBefore(worker, tag.id)).sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
+      for (const tag of fallback) take(worker, tag.id, `newest image built before the in-use image of ${worker.key} (no deploy record)`);
     }
     if (repoWorkers.length === 0) {
       // --repository opt-in without any worker: keep N newest non-recent images

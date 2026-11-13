@@ -391,6 +391,17 @@ test("#2551 r3 review: a fallback never takes another worker's backup, whatever 
   assert.deepEqual(tagsOf(plan.candidates), [`${R}:stale`]);
 });
 
+test("#2551 r3 review: an image only beyond another worker's N is still available to a fallback (no starvation)", () => {
+  // A keeps a-previous; its older backup names shared-x, which is also B's real previous image.
+  const images = [image("a1", [`${R}:a-current`], 5), image("b1", [`${R}:b-current`], 6), image("a0", [`${R}:a-previous`], 8), image("sx", [`${R}:shared-x`], 10), image("bo", [`${R}:b-old`], 20), image("xx", [`${R}:stale`], 30)];
+  const plan = planRunnerImagePrune(
+    inventory({ images, ...bothInUse(), deployRecords: [record(`${R}:a-previous`, ENV, 1), record(`${R}:shared-x`, ENV, 9)] }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.match(plan.repositories[0].keep.find((tag) => tag.tag.endsWith("shared-x"))?.why ?? "", /before the in-use image of \/etc\/default\/a2a-hermes-worker-secondary/);
+  assert.deepEqual(tagsOf(plan.candidates), [`${R}:b-old`, `${R}:stale`]);
+});
+
 test("#2551 r3 review: a moved worker's backup is its own, not a fallback of this repository's worker (T2 F5)", () => {
   const codex = "a2a-docker-runner-codex";
   const images = [image("cx", [`${codex}:a-current`], 3.5), image("b1", [`${R}:b-current`], 6), image("a0", [`${R}:a-previous`], 12), image("b0", [`${R}:b-previous`], 14), image("a9", [`${R}:a-older`], 20), image("xx", [`${R}:stale`], 30)];
