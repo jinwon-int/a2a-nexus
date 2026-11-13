@@ -11,14 +11,14 @@ import {
   buildTerminalBriefApprovalDispatchAdapter,
   extractTerminalBriefApprovalExecutorPacket,
   renderTerminalBriefApprovalDispatchAdapterMarkdown,
-} from "../dist/core/terminal-brief-approval-dispatch-adapter.js";
+} from "../dist/core/policy-approval/terminal-brief-approval-dispatch-adapter.js";
 import {
   buildTerminalBriefApprovalExecutor,
-} from "../dist/core/terminal-brief-approval-executor.js";
+} from "../dist/core/policy-approval/terminal-brief-approval-executor.js";
 import {
   buildTerminalBriefApprovalRequest,
   extractTerminalBriefCloseoutGatePacket,
-} from "../dist/core/terminal-brief-approval-request.js";
+} from "../dist/core/policy-approval/terminal-brief-approval-request.js";
 import {
   buildTerminalBriefCloseoutGate,
   extractTerminalBriefFinalizerWorkflowPacket,

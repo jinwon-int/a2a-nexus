@@ -53,7 +53,7 @@ Run from a clean broker checkout after #410-#415 candidate branches are merged o
 
 ```sh
 npm run build
-node --test dist/core/two-broker-safety-matrix.test.js
+node --test dist/core/policy-approval/two-broker-safety-matrix.test.js
 node --test dist/core/broker.test.js dist/worker.test.js dist/server.test.js
 npm test
 ```

@@ -15,7 +15,7 @@ import {
   buildTerminalBriefApprovalRequest,
   extractTerminalBriefCloseoutGatePacket,
   renderTerminalBriefApprovalRequestMarkdown,
-} from "../dist/core/terminal-brief-approval-request.js";
+} from "../dist/core/policy-approval/terminal-brief-approval-request.js";
 import {
   buildTerminalBriefCloseoutGate,
   extractTerminalBriefFinalizerWorkflowPacket,

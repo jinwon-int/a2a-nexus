@@ -57,7 +57,7 @@
     },
     {
       "from": "completion/broker-terminal-receipt-parity.ts",
-      "to": "receipt-gate-canary.ts"
+      "to": "policy-approval/receipt-gate-canary.ts"
     },
     {
       "from": "broker-wake-normalizers.ts",

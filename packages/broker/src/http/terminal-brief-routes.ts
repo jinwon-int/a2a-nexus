@@ -9,25 +9,25 @@ import {
 import {
   buildTerminalBriefApprovalRequest,
   extractTerminalBriefCloseoutGatePacket,
-} from "../core/terminal-brief-approval-request.js";
+} from "../core/policy-approval/terminal-brief-approval-request.js";
 import {
   buildTerminalBriefApprovalExecutor,
   extractTerminalBriefApprovalRequestPacket,
-} from "../core/terminal-brief-approval-executor.js";
+} from "../core/policy-approval/terminal-brief-approval-executor.js";
 import {
   buildTerminalBriefApprovalDispatchAdapter,
   extractTerminalBriefApprovalExecutorPacket,
-} from "../core/terminal-brief-approval-dispatch-adapter.js";
+} from "../core/policy-approval/terminal-brief-approval-dispatch-adapter.js";
 import {
   buildTerminalBriefApprovalReceiptIngestor,
   extractTerminalBriefApprovalDispatchAdapterPacket,
   extractTerminalBriefApprovalReceiptEvidence,
-} from "../core/terminal-brief-approval-receipt-ingestor.js";
+} from "../core/policy-approval/terminal-brief-approval-receipt-ingestor.js";
 import {
   buildTerminalBriefFinalizerApprovalStatus,
   extractTerminalBriefFinalizerApprovalReceiptStatus,
   extractTerminalBriefFinalizerApprovalStatusDispatch,
-} from "../core/terminal-brief-finalizer-approval-status.js";
+} from "../core/policy-approval/terminal-brief-finalizer-approval-status.js";
 import { readJson } from "./body.js";
 import { sendJson } from "./response.js";
 

@@ -6,7 +6,7 @@ import process from 'node:process';
 import {
   renderReceiptGateCanaryMarkdown,
   runReceiptGateCanaryMatrix,
-} from '../dist/core/receipt-gate-canary.js';
+} from '../dist/core/policy-approval/receipt-gate-canary.js';
 
 function parseArgs(argv) {
   return { json: argv.includes('--json') };
