@@ -302,6 +302,70 @@ test("#2551 review: a record that matches no worker is kept and listed for revie
   assert.equal(plan.reclaimableIsUpperBound, true);
 });
 
+test("#2551 r2 review: env files sharing a name in different directories attribute no owner-less record (F1)", () => {
+  const wA = "/srv/a2a/w1/worker.env";
+  const wB = "/srv/a2a/w2/worker.env";
+  const images = twoWorkers([image("ao", [`${R}:a-older`], 13)]);
+  const deployRecords = [
+    record(`${R}:a-previous`, undefined, 1, { file: "/backups/r3/worker.env" }),
+    record(`${R}:a-older`, undefined, 4, { file: "/backups/r2/worker.env" }),
+    record(`${R}:b-previous`, undefined, 8, { file: "/backups/r1/worker.env" }),
+  ];
+  const configured = [...inUse(`${R}:a-current`, wA).configured, ...inUse(`${R}:b-current`, wB).configured];
+  const plan = planRunnerImagePrune(inventory({ images, configured, deployRecords }), { nowMs: NOW, isRoot: true });
+  // Before: A took a-previous, B took a-older (A's history) and b-previous became a candidate.
+  assert.notEqual(reasonOf(plan, "b-previous"), undefined, "B's previous image is kept");
+  assert.ok(!plan.candidates.some((tag) => tag.tag.endsWith("b-previous")));
+  assert.ok(!plan.repositories[0].keep.some((tag) => /^deploy record/.test(tag.why ?? "") && tag.reason === "rollback"), "no shared-name record fills a slot");
+  const shared = plan.repositories[0].keep.filter((tag) => tag.reason === "unattributed-record");
+  assert.ok(shared.length > 0 && shared.every((tag) => /several worker env files share/.test(tag.why ?? "")), JSON.stringify(shared));
+  assert.deepEqual(tagsOf(plan.candidates), [`${R}:stale`]);
+});
+
+test("#2551 r2 review: a worker that moved to another repository keeps its backup in the old one (F2)", () => {
+  const codex = "a2a-docker-runner-codex";
+  const images = [image("cx", [`${codex}:a-current`], 3.5), image("b1", [`${R}:b-current`], 6), image("a0", [`${R}:a-previous`], 12), image("b0", [`${R}:b-previous`], 14), image("xx", [`${R}:stale`], 30)];
+  const plan = planRunnerImagePrune(
+    inventory({
+      images,
+      live: { refs: [], unreadable: 0, scanned: 40, units: [] },
+      configured: [...inUse(`${codex}:a-current`).configured, ...inUse(`${R}:b-current`, SECOND).configured],
+      deployRecords: [record(`${R}:a-previous`, ENV, 5), record(`${R}:b-previous`, SECOND, 2)],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.equal(reasonOf(plan, "b-previous"), "rollback");
+  assert.equal(reasonOf(plan, "a-previous"), "rollback");
+  assert.match(plan.repositories.find((repo) => repo.repository === R)?.keep.find((tag) => tag.tag.endsWith("a-previous"))?.why ?? "", /now runs another repository/);
+  assert.deepEqual(tagsOf(plan.candidates), [`${R}:stale`]);
+});
+
+test("#2551 r2 review: a foreign worker keeps only its N newest backups in the old repository", () => {
+  const codex = "a2a-docker-runner-codex";
+  const images = [image("cx", [`${codex}:a-current`], 3.5), image("b1", [`${R}:b-current`], 6), image("a0", [`${R}:a-previous`], 12), image("b0", [`${R}:b-previous`], 14), image("a9", [`${R}:a-older`], 20), image("xx", [`${R}:stale`], 30)];
+  const plan = planRunnerImagePrune(
+    inventory({
+      images,
+      live: { refs: [], unreadable: 0, scanned: 40, units: [] },
+      configured: [...inUse(`${codex}:a-current`).configured, ...inUse(`${R}:b-current`, SECOND).configured],
+      deployRecords: [record(`${R}:a-previous`, ENV, 5), record(`${R}:a-older`, ENV, 9), record(`${R}:b-previous`, SECOND, 2)],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.equal(reasonOf(plan, "a-previous"), "rollback");
+  assert.deepEqual(tagsOf(plan.candidates), [`${R}:a-older`, `${R}:stale`]);
+});
+
+test("#2551 r2 review: an unattributed record image never takes the --keep-newer slot (F4)", () => {
+  const images = [image("aaa", [`${R}:current`], 20), image("rrr", [`${R}:retired-worker`], 4), image("nnn", [`${R}:next-rollout`], 5), image("ooo", [`${R}:previous`], 25)];
+  const base = inventory({ engine: "podman", images, ...inUse(`${R}:current`), deployRecords: [record(`${R}:retired-worker`, undefined, 1, { file: "/backups/retired-worker" })] });
+  const plan = planRunnerImagePrune(base, { nowMs: NOW, isRoot: true });
+  assert.equal(reasonOf(plan, "retired-worker"), "unattributed-record");
+  assert.equal(reasonOf(plan, "next-rollout"), "newer-than-in-use");
+  const include = planRunnerImagePrune(base, { nowMs: NOW, isRoot: true, includeNewer: true });
+  assert.deepEqual(include.candidates, [], "--include-newer does not delete the next rollout");
+});
+
 test("#2551 review: a recent image or one built after the in-use image never uses a rollback slot (T1 F8)", () => {
   // Rolled back from N (loaded today) to O: the newest backup names N.
   const images = [

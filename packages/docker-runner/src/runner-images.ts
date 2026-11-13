@@ -400,6 +400,14 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
       .filter((worker) => [...worker.ids].some((id) => inUseIds.has(id)))
       .sort((a, b) => a.key.localeCompare(b.key));
     const attributed = new Set<string>(); // owner-less records some worker of this repository could claim
+    // An env file name shared by several workers (same name in different
+    // directories) cannot tell whose history a deploy record is: such records
+    // fill no slot and are kept for review.
+    const nameCount = new Map<string, number>();
+    for (const worker of workers.values()) {
+      for (const name of new Set([...worker.files].map((file) => basename(file)))) nameCount.set(name, (nameCount.get(name) ?? 0) + 1);
+    }
+    const ambiguousNames = new Set([...nameCount].filter(([, count]) => count > 1).map(([name]) => name));
     for (const worker of repoWorkers) {
       let picked = 0;
       const workerInUseMs = Math.max(...[...worker.ids].filter((id) => inUseIds.has(id)).map(createdMs).filter(Number.isFinite), Number.NEGATIVE_INFINITY);
@@ -417,7 +425,7 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
       for (const { record, id } of resolvedRecords) if (record.owner && worker.files.has(record.owner)) take(id, `previous deploy of ${record.owner} (${record.source})`);
       // (2) owner-less deploy records only when the file name is this worker's env file name (deploy-record
       //     dirs keep the original name) — never another worker's history
-      const names = new Set([...worker.files].map((file) => basename(file)));
+      const names = new Set([...worker.files].map((file) => basename(file)).filter((name) => !ambiguousNames.has(name)));
       for (const { record, id } of resolvedRecords) {
         if (record.owner || !record.file || !names.has(basename(record.file))) continue;
         attributed.add(record.source);
@@ -427,12 +435,27 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
       const fallback = rest.filter((tag) => builtBefore(tag.id)).sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
       for (const tag of fallback) take(tag.id, `newest image built before the in-use image of ${worker.key} (no deploy record)`);
     }
+    // Backups of a live env file whose worker now runs another repository (e.g.
+    // a flavor switch): still that worker's rollback — keep its N newest here.
+    const foreignPicked = new Map<string, number>();
+    for (const { record, id } of resolvedRecords) {
+      const owner = record.owner;
+      if (!owner || repoWorkers.some((worker) => worker.files.has(owner))) continue;
+      const tag = rest.find((candidate) => candidate.id === id);
+      const count = foreignPicked.get(owner) ?? 0;
+      if (!tag || rollback.has(id) || isRecent(tag) || count >= keepRollback) continue;
+      rollback.set(id, `previous deploy of ${owner} (${record.source}), which now runs another repository`);
+      foreignPicked.set(owner, count + 1);
+    }
     // Owner-less records no worker of this repository claims: never fill a
     // slot, never deleted here — kept and listed for a manual decision.
     const unattributed = new Map<string, string>();
     for (const { record, id } of resolvedRecords) {
       if (record.owner || attributed.has(record.source) || !restIds.has(id) || rollback.has(id) || unattributed.has(id)) continue;
-      unattributed.set(id, `named by deploy record ${record.source}, which matches no worker env file name`);
+      const shared = record.file !== undefined && ambiguousNames.has(basename(record.file));
+      unattributed.set(id, shared
+        ? `named by deploy record ${record.source}, whose file name several worker env files share`
+        : `named by deploy record ${record.source}, which matches no worker env file name`);
     }
     if (repoWorkers.length === 0) {
       // --repository opt-in without any worker: keep N newest non-recent images.
@@ -447,7 +470,7 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
     // loaded but not switched to yet (the load time is unknown on podman).
     // Keep the newest --keep-newer; list the rest for a manual decision.
     const newerIds = [...new Set(rest
-      .filter((tag) => !rollback.has(tag.id) && !isRecent(tag))
+      .filter((tag) => !rollback.has(tag.id) && !isRecent(tag) && !unattributed.has(tag.id))
       .filter((tag) => Number.isFinite(newestInUseMs) && Date.parse(tag.created) >= newestInUseMs)
       .sort((a, b) => Date.parse(b.created) - Date.parse(a.created))
       .map((tag) => tag.id))];

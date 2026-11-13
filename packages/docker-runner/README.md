@@ -608,7 +608,9 @@ Only `a2a-docker-runner` / `a2a-docker-runner-<flavor>` repositories are planned
   known owner (`--deploy-record-dir` / colon-separated `A2A_DOCKER_RUNNER_DEPLOY_RECORD_DIRS`) **whose file name is
   that worker's env file name** (record directories keep the original name), then the newest image built before
   that worker's in-use image. Backups whose live file is gone are never used. An owner-less record that matches no
-  worker never fills a slot; its image is kept and listed in `plan.recordsToReview`;
+  worker, or whose file name several worker env files share (same name in different directories), never fills a
+  slot; its image is kept and listed in `plan.recordsToReview`. Backups of a live env file whose worker now runs
+  another repository (e.g. a flavor switch) stay that worker's rollback in the old repository (its N newest);
 - tags whose name contains `rollback`, and images built **or loaded/tagged** within `--min-age` (default 72h;
   `docker load` keeps the build time, so docker's `LastTagTime` counts too);
 - images **built at or after the in-use image** of its repository — most likely the next rollout, loaded but not
