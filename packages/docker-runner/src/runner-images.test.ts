@@ -651,8 +651,83 @@ test("#2558 r2 review: more than RECORD_GAP_APPLY_LIMIT images kept only as reco
   assert.equal(three.applyAllowed, true);
   const four = planRunnerImagePrune(base(RECORD_GAP_APPLY_LIMIT + 1), { nowMs: NOW, isRoot: true });
   assert.equal(four.applyAllowed, false);
-  assert.match(four.applyRefusals.join(" "), /4 images kept only as record gaps \(more than 3\).*--deploy-record-dir/);
+  assert.match(four.applyRefusals.join(" "), /4 images that no deploy record names are kept as record gaps \(more than 3\).*--deploy-record-dir/);
+  assert.equal(four.recordGapImages.length, 4);
   assert.deepEqual(four.candidates, [], "the refusal changes nothing kept: all gap images stay");
+});
+
+test("#2558 r3 review: another worker's history never counts toward the refusal (workers on different cadences)", () => {
+  // A rolled out daily v1→…→v7 (its own records name v2..v6); B went v1→v7 in one step.
+  const images = [7, 6, 5, 4, 3, 2, 1].map((v) => image(`v${v}`, [`${R}:v${v}`], 12 - v - (v >= 6 ? 1 : 0)));
+  const plan = planRunnerImagePrune(
+    inventory({
+      images,
+      live: { refs: [], unreadable: 0, scanned: 40, units: [] },
+      configured: [...inUse(`${R}:v7`).configured, ...inUse(`${R}:v7`, SECOND).configured],
+      deployRecords: [
+        ...[6, 5, 4, 3, 2].map((v, i) => record(`${R}:v${v}`, ENV, 1 + i)),
+        record(`${R}:v1`, SECOND, 9),
+      ],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  const bOther = plan.recordGaps.filter((gap) => gap.startsWith(`${SECOND}:`) && /a record of \/etc\/default\/a2a-hermes-worker does/.test(gap));
+  assert.ok(bOther.length > RECORD_GAP_APPLY_LIMIT, JSON.stringify(plan.recordGaps));
+  assert.equal(plan.applyAllowed, true, JSON.stringify(plan.applyRefusals));
+});
+
+test("#2558 r3 review: an image already kept for another worker's gap is not counted twice", () => {
+  const between = Array.from({ length: RECORD_GAP_APPLY_LIMIT + 1 }, (_, i) => image(`g${i}`, [`${R}:gap-${i}`], 6 + i * 0.5));
+  const plan = planRunnerImagePrune(
+    inventory({
+      images: [image("ffc", [`${R}:ffc530e-claude-2.1.322`], 5), ...between, image("old", [`${R}:a038bb7-claude-2.1.280`], 40)],
+      live: { refs: [], unreadable: 0, scanned: 40, units: [] },
+      configured: [...inUse(`${R}:ffc530e-claude-2.1.322`).configured, ...inUse(`${R}:ffc530e-claude-2.1.322`, SECOND).configured],
+      deployRecords: [record(`${R}:a038bb7-claude-2.1.280`, ENV, 3), record(`${R}:a038bb7-claude-2.1.280`, SECOND, 3)],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  // A's record takes a038bb7; B's fallback takes gap-0; A's gap pass adds gap-1..gap-3 (3, at the
+  // limit). B reports the same images as "already kept" — they must not count toward its refusal.
+  assert.equal(plan.recordGapImages.length, RECORD_GAP_APPLY_LIMIT, "each image is counted once");
+  assert.ok(plan.recordGaps.filter((gap) => gap.startsWith(`${SECOND}:`)).every((gap) => /already kept/.test(gap)));
+  assert.ok(plan.recordGaps.length > plan.recordGapImages.length, "reports exceed unique images");
+  assert.equal(plan.applyAllowed, true, JSON.stringify(plan.applyRefusals));
+});
+
+test("#2558 r3 review: an old owner backup that keeps taking the slot refuses --apply with a rotation hint", () => {
+  const recordImages = Array.from({ length: RECORD_GAP_APPLY_LIMIT + 1 }, (_, i) => image(`r${i}`, [`${R}:rollout-${i}`], 6 + i * 0.5));
+  const plan = planRunnerImagePrune(
+    inventory({
+      images: [image("ffc", [`${R}:ffc530e-claude-2.1.322`], 5), ...recordImages, image("old", [`${R}:a038bb7-claude-2.1.280`], 40)],
+      ...inUse(`${R}:ffc530e-claude-2.1.322`),
+      deployRecords: [
+        record(`${R}:a038bb7-claude-2.1.280`, ENV, 30), // install-time .bak: an owner backup, taken first
+        ...recordImages.map((img, i) => record(img.repoTags[0], undefined, 1 + i, { file: `/root/a2a-nexus-local-deploy-backups/env.pre-${i}/a2a-hermes-worker` })),
+      ],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.equal(plan.applyAllowed, false);
+  assert.match(plan.applyRefusals.join(" "), /4 images its own deploy records name are kept as record gaps.*env-backups --prune/);
+  assert.doesNotMatch(plan.applyRefusals.join(" "), /--deploy-record-dir/);
+});
+
+test("#2558 r3 review: an own record image kept by a container raises the floor", () => {
+  const images = [...switchImages(), image("x65", [`${R}:x-between`], 6.5)];
+  const plan = planRunnerImagePrune(
+    inventory({
+      images,
+      ...inUse(`${R}:ffc530e-claude-2.1.322`),
+      containers: [{ id: "k1", name: "canary", imageId: "sha256:666", imageRef: `${R}:666becb-claude-2.1.322` }],
+      deployRecords: [record(`${R}:666becb-claude-2.1.322`, ENV, 1), record(`${R}:573ca08-claude-2.1.322`, ENV, 10)],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  // 666becb (its newest record image, kept by the container) is the floor: x-between is older than an
+  // image the worker really ran, so it is not a gap candidate for "the image it ran just before".
+  assert.deepEqual(plan.recordGaps, []);
+  assert.ok(plan.candidates.some((tag) => tag.tag.endsWith("x-between")));
 });
 
 test("#2557 with complete records nothing extra is kept and no gap is reported", () => {
@@ -1176,8 +1251,9 @@ test("#2547 doctor probe warns below 10% / 5GiB on / or the engine root, never h
     assert.equal(warn.status, "warn");
     assert.match(warn.message, /low disk: 2\.0GiB free on \//);
     assert.match(warn.message, /2 stale runner image tag\(s\), up to /);
-    assert.equal(warn.detail?.recordGaps, 2, "#2558: record gaps are visible in doctor");
-    assert.match(warn.message, /2 deploy record gap\(s\) keep extra runner images/);
+    assert.equal(warn.detail?.recordGapReports, 2, "#2558: record gaps are visible in doctor");
+    assert.equal(warn.detail?.recordGapImages, 2);
+    assert.match(warn.message, /2 extra runner image\(s\) kept for 2 deploy record gap report\(s\)/);
     assert.equal(warn.detail?.reclaimableIsUpperBound, true);
 
     const engineRootLow: StatfsFn = async (path) => (path === "/" ? { blocks: 100, bavail: 50, bsize: GB } : { blocks: 100, bavail: 3, bsize: GB });
