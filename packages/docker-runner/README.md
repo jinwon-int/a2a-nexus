@@ -614,7 +614,22 @@ Only `a2a-docker-runner` / `a2a-docker-runner-<flavor>` repositories are planned
   fills a slot; its image is kept and listed in `plan.recordsToReview`. Backups of a live env file that is no
   worker of this repository (e.g. its worker moved to another flavor) stay that file's rollback in the old
   repository (its N newest). A repository opted in with `--repository` but used by no worker keeps its N newest
-  non-recent images in addition to those;
+  non-recent images in addition to those. **Record gaps (#2557):** when a worker's records took its slot, every unprotected non-recent image built
+  after the newest of those record picks and before its in-use image is kept as well and listed per worker in
+  `plan.recordGaps` — it may be the image the worker ran just before (a switch whose backup sits in a directory
+  not passed with `--deploy-record-dir`, a record outranked by file mtime, or a loaded but never deployed build
+  in between: they cannot be told apart). Each entry says which case applies (no record of the worker names it /
+  its own record was outranked / another worker's record names it) and whether the image was already kept. With
+  complete records the range is empty (also when the worker's newest record image is kept by another worker,
+  e.g. workers switching together). On a node with several workers, images another worker ran after this
+  worker's last recorded switch fall inside its range and are kept as well (reported as "a record of <worker>
+  names it"); they never count toward the refusal below, since different rollout cadences are normal. A range
+  grows by one image per rollout while a backup directory stays unscanned or an old owner backup keeps taking
+  the slot, so for one worker more than 3 kept images that **no record names** refuse `--apply` (pass the
+  missing `--deploy-record-dir`), and more than 3 kept images **its own records name** refuse it too (rotate
+  its old env backups with `env-backups --prune`). `doctor` shows the extra images and the gap reports
+  (`plan.recordGapImages`, `plan.recordGaps`). Pass **every** directory where deploy scripts keep env backups
+  (repeat `--deploy-record-dir`), and read `plan.recordGaps` before `--apply`;
 - tags whose name contains `rollback`, and images built **or loaded/tagged** within `--min-age` (default 72h;
   `docker load` keeps the build time, so docker's `LastTagTime` counts too);
 - images **built at or after the in-use image** of its repository — most likely the next rollout, loaded but not
