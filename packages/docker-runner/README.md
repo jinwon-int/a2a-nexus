@@ -620,7 +620,9 @@ Only `a2a-docker-runner` / `a2a-docker-runner-<flavor>` repositories are planned
 - images **built at or after the in-use image** of its repository — most likely the next rollout, loaded but not
   switched to yet (this also covers podman, which has no load time): the newest `--keep-newer` (default 1) are
   kept; any more (failed rollouts, the image left after a rollback) are listed in `plan.newerToReview` and kept,
-  and become candidates only with `--include-newer`.
+  and become candidates only with `--include-newer`. A repository opted in with `--repository` but used by no
+  worker has no in-use image to measure from, so this protection does not apply there: only its N newest
+  non-recent images and `--min-age` keep anything.
 
 A runner repository that no running process or live env file uses is left alone (`plan.skippedRepositories`)
 unless named with `--repository <repo>`; containers and `--keep` protect their images but do not open a
@@ -630,7 +632,8 @@ layers are counted per image; shared-id tags are untag-only),
 and `df` for `/` and the engine root.
 
 `--apply` is **refused (exit 2)** when an in-use or `--keep` reference does not resolve to a local image, when
-`/proc` could not be read completely (run as root), or when no process or env file names an image at all. It then
+`/proc` could not be read completely (run as root), when no process or env file names an image at all, or when
+a worker's in-use image has no parseable creation time (its rollback cannot be told apart). It then
 re-plans immediately before deleting (and stops if that re-check is refused), confirms each tag still points at
 the planned image id, runs `image rm` without `-f` (the engine refuses an image a container still uses), and
 records removed tags/ids and before/after disk. Arguments are parsed strictly: `--flag value` or `--flag=value`;
