@@ -607,10 +607,14 @@ Only `a2a-docker-runner` / `a2a-docker-runner-<flavor>` repositories are planned
   (`<env>.bak-<tag>-<stamp>` and similar, also next to an env file outside `--env-dir`), deploy records without a
   known owner (`--deploy-record-dir` / colon-separated `A2A_DOCKER_RUNNER_DEPLOY_RECORD_DIRS`) **whose file name is
   that worker's env file name** (record directories keep the original name), then the newest image built before
-  that worker's in-use image. Backups whose live file is gone are never used. An owner-less record that matches no
-  worker, or whose file name several worker env files share (same name in different directories), never fills a
-  slot; its image is kept and listed in `plan.recordsToReview`. Backups of a live env file whose worker now runs
-  another repository (e.g. a flavor switch) stay that worker's rollback in the old repository (its N newest);
+  that worker's in-use image **that no deploy record names for someone else** (another worker's backup or record,
+  a moved worker's backup, an unattributed record — those are kept for their own reason and never use this
+  worker's slot). Backups whose live file is gone are never used. An owner-less record that matches no worker, or
+  whose file name several worker env files share (same name in different directories, any repository), never
+  fills a slot; its image is kept and listed in `plan.recordsToReview`. Backups of a live env file that is no
+  worker of this repository (e.g. its worker moved to another flavor) stay that file's rollback in the old
+  repository (its N newest). A repository opted in with `--repository` but used by no worker keeps its N newest
+  non-recent images in addition to those;
 - tags whose name contains `rollback`, and images built **or loaded/tagged** within `--min-age` (default 72h;
   `docker load` keeps the build time, so docker's `LastTagTime` counts too);
 - images **built at or after the in-use image** of its repository — most likely the next rollout, loaded but not

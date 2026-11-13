@@ -364,6 +364,14 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
     .map((record) => ({ record, id: resolveRef(record.ref, images) }))
     .filter((entry): entry is { record: ImageRef; id: string } => Boolean(entry.id))
     .sort((a, b) => (b.record.mtimeMs ?? 0) - (a.record.mtimeMs ?? 0));
+  // An env file name shared by several workers (same name in different
+  // directories, any repository) cannot tell whose history an owner-less deploy
+  // record is: such records fill no slot and are kept for review.
+  const nameCount = new Map<string, number>();
+  for (const worker of workers.values()) {
+    for (const name of new Set([...worker.files].map((file) => basename(file)))) nameCount.set(name, (nameCount.get(name) ?? 0) + 1);
+  }
+  const ambiguousNames = new Set([...nameCount].filter(([, count]) => count > 1).map(([name]) => name));
   for (const [repository, tags] of [...repoTags.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     const keep: PlannedTag[] = [];
     const rest: PlannedTag[] = [];
@@ -394,25 +402,53 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
     const newestInUseMs = Math.max(...[...inUseIds].map(createdMs).filter(Number.isFinite), Number.NEGATIVE_INFINITY);
 
     // Rollback: N per worker of this repository, from (1) its own backups,
-    // (2) deploy records without a known owner, (3) the newest non-recent image
-    // built before that worker's in-use image.
+    // (2) deploy records without a known owner that carry its env file name,
+    // (3) the newest non-recent image built before that worker's in-use image
+    // that no deploy record names for someone else (#2551 r3: a fallback must
+    // never use a slot on another worker's history and push out its own).
     const repoWorkers = [...workers.values()]
       .filter((worker) => [...worker.ids].some((id) => inUseIds.has(id)))
       .sort((a, b) => a.key.localeCompare(b.key));
-    const attributed = new Set<string>(); // owner-less records some worker of this repository could claim
-    // An env file name shared by several workers (same name in different
-    // directories) cannot tell whose history a deploy record is: such records
-    // fill no slot and are kept for review.
-    const nameCount = new Map<string, number>();
-    for (const worker of workers.values()) {
-      for (const name of new Set([...worker.files].map((file) => basename(file)))) nameCount.set(name, (nameCount.get(name) ?? 0) + 1);
+    const nameOwner = new Map<string, Worker>(); // unambiguous env file name → its worker of this repository
+    for (const worker of repoWorkers) {
+      for (const file of worker.files) if (!ambiguousNames.has(basename(file))) nameOwner.set(basename(file), worker);
     }
-    const ambiguousNames = new Set([...nameCount].filter(([, count]) => count > 1).map(([name]) => name));
+    const recordWorker = (record: ImageRef): Worker | undefined => {
+      const owner = record.owner;
+      if (owner) return repoWorkers.find((worker) => worker.files.has(owner));
+      return record.file ? nameOwner.get(basename(record.file)) : undefined;
+    };
+    const restTag = (id: string): PlannedTag | undefined => rest.find((tag) => tag.id === id);
+    // Backups of a live env file that is no worker of this repository (its
+    // worker moved to another repository, e.g. a flavor switch): still that
+    // file's rollback — keep its N newest here, before any worker's fallback.
+    const foreignPicked = new Map<string, number>();
+    for (const { record, id } of resolvedRecords) {
+      const owner = record.owner;
+      if (!owner || recordWorker(record)) continue;
+      const tag = restTag(id);
+      const count = foreignPicked.get(owner) ?? 0;
+      if (!tag || rollback.has(id) || isRecent(tag) || count >= keepRollback) continue;
+      rollback.set(id, workers.has(owner)
+        ? `previous deploy of ${owner} (${record.source}), which now runs another repository`
+        : `previous deploy of ${owner} (${record.source}), whose env file names no running runner image`);
+      foreignPicked.set(owner, count + 1);
+    }
+    // Owner-less records no worker of this repository can claim (no env file
+    // name matches, or several workers share it): never fill a slot, never
+    // deleted here — kept and listed for a manual decision.
+    const unattributed = new Map<string, string>();
+    for (const { record, id } of resolvedRecords) {
+      if (record.owner || recordWorker(record) || !restIds.has(id) || rollback.has(id) || unattributed.has(id)) continue;
+      const shared = record.file !== undefined && ambiguousNames.has(basename(record.file));
+      unattributed.set(id, shared
+        ? `named by deploy record ${record.source}, whose file name several worker env files share`
+        : `named by deploy record ${record.source}, which matches no worker env file name`);
+    }
     for (const worker of repoWorkers) {
       let picked = 0;
       const workerInUseMs = Math.max(...[...worker.ids].filter((id) => inUseIds.has(id)).map(createdMs).filter(Number.isFinite), Number.NEGATIVE_INFINITY);
       const builtBefore = (id: string): boolean => createdMs(id) < workerInUseMs;
-      const restTag = (id: string): PlannedTag | undefined => rest.find((tag) => tag.id === id);
       // A rollback must be an image this worker ran before: built before its
       // in-use image. Recent images are kept anyway and never use a slot.
       const take = (id: string, why: string): void => {
@@ -421,48 +457,28 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
         rollback.set(id, why);
         picked += 1;
       };
-      // (1) its own backups
-      for (const { record, id } of resolvedRecords) if (record.owner && worker.files.has(record.owner)) take(id, `previous deploy of ${record.owner} (${record.source})`);
-      // (2) owner-less deploy records only when the file name is this worker's env file name (deploy-record
-      //     dirs keep the original name) — never another worker's history
-      const names = new Set([...worker.files].map((file) => basename(file)).filter((name) => !ambiguousNames.has(name)));
-      for (const { record, id } of resolvedRecords) {
-        if (record.owner || !record.file || !names.has(basename(record.file))) continue;
-        attributed.add(record.source);
-        take(id, `deploy record ${record.source} (for ${worker.key})`);
-      }
-      // (3) the newest non-recent image built before this worker's own in-use image
-      const fallback = rest.filter((tag) => builtBefore(tag.id)).sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
+      const own = resolvedRecords.filter((entry) => recordWorker(entry.record) === worker);
+      const ownIds = new Set(own.map((entry) => entry.id));
+      const othersIds = new Set(resolvedRecords.map((entry) => entry.id).filter((id) => !ownIds.has(id)));
+      // (1) its own backups, then (2) owner-less records carrying its env file name
+      for (const { record, id } of own) if (record.owner) take(id, `previous deploy of ${record.owner} (${record.source})`);
+      for (const { record, id } of own) if (!record.owner) take(id, `deploy record ${record.source} (for ${worker.key})`);
+      // (3) the newest non-recent image built before its in-use image that no record names for someone else
+      const fallback = rest
+        .filter((tag) => builtBefore(tag.id) && !othersIds.has(tag.id))
+        .sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
       for (const tag of fallback) take(tag.id, `newest image built before the in-use image of ${worker.key} (no deploy record)`);
     }
-    // Backups of a live env file whose worker now runs another repository (e.g.
-    // a flavor switch): still that worker's rollback — keep its N newest here.
-    const foreignPicked = new Map<string, number>();
-    for (const { record, id } of resolvedRecords) {
-      const owner = record.owner;
-      if (!owner || repoWorkers.some((worker) => worker.files.has(owner))) continue;
-      const tag = rest.find((candidate) => candidate.id === id);
-      const count = foreignPicked.get(owner) ?? 0;
-      if (!tag || rollback.has(id) || isRecent(tag) || count >= keepRollback) continue;
-      rollback.set(id, `previous deploy of ${owner} (${record.source}), which now runs another repository`);
-      foreignPicked.set(owner, count + 1);
-    }
-    // Owner-less records no worker of this repository claims: never fill a
-    // slot, never deleted here — kept and listed for a manual decision.
-    const unattributed = new Map<string, string>();
-    for (const { record, id } of resolvedRecords) {
-      if (record.owner || attributed.has(record.source) || !restIds.has(id) || rollback.has(id) || unattributed.has(id)) continue;
-      const shared = record.file !== undefined && ambiguousNames.has(basename(record.file));
-      unattributed.set(id, shared
-        ? `named by deploy record ${record.source}, whose file name several worker env files share`
-        : `named by deploy record ${record.source}, which matches no worker env file name`);
-    }
     if (repoWorkers.length === 0) {
-      // --repository opt-in without any worker: keep N newest non-recent images.
+      // --repository opt-in without any worker: keep N newest non-recent images
+      // besides those already kept for a record (counted on their own).
+      let optInPicked = 0;
       const fallback = rest.filter((tag) => !isRecent(tag)).sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
       for (const tag of fallback) {
-        if (rollback.size >= keepRollback) break;
-        if (!rollback.has(tag.id)) rollback.set(tag.id, "newest image (opted-in repository without a worker)");
+        if (optInPicked >= keepRollback) break;
+        if (rollback.has(tag.id) || unattributed.has(tag.id)) continue;
+        rollback.set(tag.id, "newest image (opted-in repository without a worker)");
+        optInPicked += 1;
       }
     }
 
