@@ -17,6 +17,7 @@ import {
   parseImagesArgs,
   planRunnerImagePrune,
   pruneRunnerImages,
+  RECORD_GAP_APPLY_LIMIT,
   resolveRef,
   scanDeployRecordDirs,
   scanEnvDir,
@@ -542,6 +543,8 @@ test("#2557 r1 review: an undeployed build between the real previous image and t
   assert.equal(reasonOf(plan, "x-loaded-never-deployed"), "rollback");
   assert.equal(reasonOf(plan, "666becb"), "rollback", "the real previous image is kept even with a newer undeployed build");
   assert.equal(plan.recordGaps.length, 2);
+  assert.ok(plan.recordGaps.some((gap) => /x-loaded-never-deployed.*--deploy-record-dir/.test(gap)));
+  assert.ok(plan.recordGaps.some((gap) => /666becb.*--deploy-record-dir/.test(gap)));
   assert.deepEqual(tagsOf(plan.candidates), [`${R}:a038bb7-claude-2.1.280`]);
 });
 
@@ -609,6 +612,49 @@ test("#2557 r1 review: an unattributed record image inside the gap is reported w
   assert.ok(plan.recordGaps.some((gap) => /666becb.*already kept: an unattributed deploy record/.test(gap)));
 });
 
+test("#2558 r2 review: two workers switching together with complete records report no gap", () => {
+  const plan = planRunnerImagePrune(
+    inventory({
+      images: switchImages(),
+      configured: [...inUse(`${R}:ffc530e-claude-2.1.322`).configured, ...inUse(`${R}:ffc530e-claude-2.1.322`, SECOND).configured],
+      deployRecords: [
+        record(`${R}:666becb-claude-2.1.322`, ENV, 2), record(`${R}:573ca08-claude-2.1.322`, ENV, 10),
+        record(`${R}:666becb-claude-2.1.322`, SECOND, 2), record(`${R}:573ca08-claude-2.1.322`, SECOND, 10),
+      ],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.deepEqual(plan.recordGaps, [], "the second worker's newest record image is kept by the first worker — not a gap");
+  assert.equal(reasonOf(plan, "666becb"), "rollback");
+  assert.equal(plan.applyAllowed, true);
+});
+
+test("#2558 r2 review: an image with the same Created as the floor image is inside the range", () => {
+  const images = [...switchImages(), image("twn", [`${R}:573ca08-claude-2.1.322-rebuilt`], 7)];
+  const plan = planRunnerImagePrune(
+    inventory({ images, ...inUse(`${R}:ffc530e-claude-2.1.322`), deployRecords: [record(`${R}:573ca08-claude-2.1.322`, ENV, 3)] }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.equal(reasonOf(plan, "573ca08-claude-2.1.322-rebuilt"), "rollback");
+  assert.ok(plan.recordGaps.some((gap) => gap.includes("573ca08-claude-2.1.322-rebuilt")));
+});
+
+test("#2558 r2 review: more than RECORD_GAP_APPLY_LIMIT images kept only as record gaps refuses --apply", () => {
+  const between = (n: number): EngineImage[] => Array.from({ length: n }, (_, i) => image(`g${i}`, [`${R}:gap-${i}`], 6 + i * 0.5));
+  const base = (n: number) => inventory({
+    images: [image("ffc", [`${R}:ffc530e-claude-2.1.322`], 5), ...between(n), image("old", [`${R}:a038bb7-claude-2.1.280`], 40)],
+    ...inUse(`${R}:ffc530e-claude-2.1.322`),
+    deployRecords: [record(`${R}:a038bb7-claude-2.1.280`, ENV, 3)],
+  });
+  const three = planRunnerImagePrune(base(RECORD_GAP_APPLY_LIMIT), { nowMs: NOW, isRoot: true });
+  assert.equal(three.recordGaps.length, RECORD_GAP_APPLY_LIMIT);
+  assert.equal(three.applyAllowed, true);
+  const four = planRunnerImagePrune(base(RECORD_GAP_APPLY_LIMIT + 1), { nowMs: NOW, isRoot: true });
+  assert.equal(four.applyAllowed, false);
+  assert.match(four.applyRefusals.join(" "), /4 images kept only as record gaps \(more than 3\).*--deploy-record-dir/);
+  assert.deepEqual(four.candidates, [], "the refusal changes nothing kept: all gap images stay");
+});
+
 test("#2557 with complete records nothing extra is kept and no gap is reported", () => {
   const plan = planRunnerImagePrune(
     inventory({
@@ -649,7 +695,6 @@ test("#2554 a worker's own backup wins over an unattributed record naming the sa
   assert.equal(kept?.reason, "rollback");
   assert.match(kept?.why ?? "", /previous deploy of \/etc\/default\/a2a-hermes-worker/);
   assert.deepEqual(plan.recordsToReview, []);
-  // The fallback did not take the slot: the next older images are candidates.
   // The record took the slot (not the fallback): 666becb and 573ca08-322 are kept by the #2557
   // record-gap pass, never as a fallback pick.
   assert.match(plan.repositories[0].keep.find((tag) => tag.tag.includes("666becb"))?.why ?? "", /latest switch may be unrecorded/);
@@ -1131,6 +1176,8 @@ test("#2547 doctor probe warns below 10% / 5GiB on / or the engine root, never h
     assert.equal(warn.status, "warn");
     assert.match(warn.message, /low disk: 2\.0GiB free on \//);
     assert.match(warn.message, /2 stale runner image tag\(s\), up to /);
+    assert.equal(warn.detail?.recordGaps, 2, "#2558: record gaps are visible in doctor");
+    assert.match(warn.message, /2 deploy record gap\(s\) keep extra runner images/);
     assert.equal(warn.detail?.reclaimableIsUpperBound, true);
 
     const engineRootLow: StatfsFn = async (path) => (path === "/" ? { blocks: 100, bavail: 50, bsize: GB } : { blocks: 100, bavail: 3, bsize: GB });

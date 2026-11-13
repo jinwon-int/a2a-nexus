@@ -176,6 +176,8 @@ export interface PlanOptions {
   includeNewer?: boolean;
 }
 
+/** More images than this kept only as record gaps for one worker refuses --apply (#2558). */
+export const RECORD_GAP_APPLY_LIMIT = 3;
 export const DEFAULT_KEEP_NEWER = 1;
 
 // ── reference matching ───────────────────────────────────────────────────────
@@ -508,30 +510,48 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
     // unprotected non-recent image and report it per worker. With complete,
     // well-ordered records that range is empty: nothing extra, no gap.
     if (keepRollback > 0) {
-      const restIdSet = new Set(rest.map((tag) => tag.id));
       for (const worker of repoWorkers) {
-        const picks = recordPicks.get(worker) ?? [];
-        if (picks.length === 0 || !Number.isFinite(inUseMsOf.get(worker) ?? Number.NaN)) continue;
-        const floorMs = Math.max(...picks.map(createdMs));
-        const floorTag = rest.find((tag) => tag.id === picks.find((id) => createdMs(id) === floorMs))?.tag ?? "its recorded rollback";
+        if (!Number.isFinite(inUseMsOf.get(worker) ?? Number.NaN)) continue;
         const ownIds = new Set(resolvedRecords.filter((entry) => recordWorker(entry.record) === worker).map((entry) => entry.id));
+        // The floor is the newest image the worker's own records name that is
+        // kept anyway: taken by its records, or already kept as another worker's
+        // rollback, protected (container, --keep, in use elsewhere) or recent.
+        // Workers switching together share their record images, so a second
+        // worker's records must not count as "missing" (#2558 r2).
+        const repoIds = new Set(tags.map((tag) => tag.id));
+        const floorIds = [...ownIds].filter((id) => repoIds.has(id) && builtBefore(worker, id) && (
+          (recordPicks.get(worker) ?? []).includes(id) || rollback.has(id) || !restIds.has(id) || isRecent(restTag(id) as PlannedTag)));
+        if (floorIds.length === 0) continue;
+        const floorMs = Math.max(...floorIds.map(createdMs));
+        const floorTag = tags.find((tag) => tag.id === floorIds.find((id) => createdMs(id) === floorMs))?.tag ?? "its recorded rollback";
         const seen = new Set<string>();
-        const range = tags
-          .filter((tag) => restIdSet.has(tag.id) && createdMs(tag.id) > floorMs && builtBefore(worker, tag.id) && !isRecent(tag))
+        const range = rest
+          .filter((tag) => !floorIds.includes(tag.id) && createdMs(tag.id) >= floorMs && builtBefore(worker, tag.id) && !isRecent(tag))
           .sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
+        let added = 0;
         for (const tag of range) {
           if (seen.has(tag.id)) continue;
           seen.add(tag.id);
+          // An own record image in the range was eligible but lost to the slot limit.
           const outranked = ownIds.has(tag.id);
           const other = outranked ? undefined : resolvedRecords.find((entry) => entry.id === tag.id && recordWorker(entry.record) && recordWorker(entry.record) !== worker);
           const already = rollback.get(tag.id) ?? (unattributed.has(tag.id) ? "an unattributed deploy record" : undefined);
           const cause = outranked
-            ? "its own deploy record names it but a record of an older image took the slot (records are ordered by file mtime)"
+            ? "its own deploy record names it but a record of an older image took the slot (records are taken owner backups first, then by file mtime)"
             : other
               ? `none of its deploy records names it; a record of ${recordWorker(other.record)?.key} does — it may be that worker's history`
               : "none of its deploy records names it — check that every directory holding its env backups is passed with --deploy-record-dir";
-          if (!already) rollback.set(tag.id, `built after ${floorTag} (the newest image ${worker.key}'s records kept) and before its in-use image — ${outranked ? "its own record was outranked" : "the latest switch may be unrecorded"}; kept besides the records`);
+          if (!already) {
+            rollback.set(tag.id, `built after ${floorTag} (the newest image ${worker.key}'s records keep) and before its in-use image — ${outranked ? "its own record was outranked" : "the latest switch may be unrecorded"}; kept besides the records`);
+            added += 1;
+          }
           recordGaps.push(`${worker.key}: ${tag.tag} was built after its newest recorded rollback (${floorTag}) and before its in-use image; ${cause}${already ? ` (already kept: ${already})` : " — kept"}`);
+        }
+        // Bound the accumulation: a floor stuck on an old record keeps one more
+        // image per rollout. Past the limit, stop --apply so the record
+        // directories get fixed instead of the disk filling up again (#2547).
+        if (added > RECORD_GAP_APPLY_LIMIT) {
+          applyRefusals.push(`${worker.key} in ${repository}: ${added} images kept only as record gaps (more than ${RECORD_GAP_APPLY_LIMIT}) — its deploy records look incomplete; pass every directory holding its env backups with --deploy-record-dir`);
         }
       }
     }
@@ -1162,11 +1182,13 @@ export async function checkRunnerImageDisk(options: RunnerImageDiskCheckOptions)
       detail.reclaimableBytes = plan.reclaimableBytes;
       detail.reclaimableIsUpperBound = true;
       if (plan.newerToReview.length > 0) detail.newerToReview = plan.newerToReview;
+      if (plan.recordGaps.length > 0) detail.recordGaps = plan.recordGaps.length;
       if (!plan.applyAllowed) detail.evidenceIncomplete = plan.applyRefusals;
       if (plan.candidates.length > 0) {
         const note = plan.applyAllowed ? "" : " (evidence incomplete — list is indicative only)";
         reclaim = `; ${plan.candidates.length} stale runner image tag(s), up to ${formatBytes(plan.reclaimableBytes)} reclaimable${note} — review with: a2a-docker-runner images (dry-run)`;
       }
+      if (plan.recordGaps.length > 0) reclaim += `; ${plan.recordGaps.length} deploy record gap(s) keep extra runner images — check --deploy-record-dir (a2a-docker-runner images, plan.recordGaps)`;
     } catch (error) {
       detail.inventoryError = error instanceof Error ? error.message : "runner image inventory failed";
     }
