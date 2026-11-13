@@ -858,9 +858,9 @@ test("#2554 r2 one unknown in-use Created among a worker's in-use images refuses
   assert.deepEqual(plan.candidates, []);
 });
 
-test("#2554 r2 --keep-rollback 0 with --include-newer needs no build order: an unknown in-use Created does not refuse", () => {
+test("#2554 r2 --keep-rollback 0 --keep-newer 0 --include-newer needs no build order: an unknown in-use Created does not refuse", () => {
   const images = IMAGES.map((entry) => (entry.id === "sha256:aaa" ? { ...entry, created: "not-a-date" } : entry));
-  const plan = planRunnerImagePrune(inventory({ images }), { nowMs: NOW, isRoot: true, keepRollback: 0, includeNewer: true });
+  const plan = planRunnerImagePrune(inventory({ images }), { nowMs: NOW, isRoot: true, keepRollback: 0, keepNewer: 0, includeNewer: true });
   assert.ok(!plan.applyRefusals.some((reason) => /creation time/.test(reason)), plan.applyRefusals.join("; "));
   assert.equal(plan.applyAllowed, true);
 });
@@ -913,6 +913,10 @@ test("#2560 r2 an own record naming an epoch-0 image keeps it without taking the
   assert.equal(reasonOf(plan, "573ca08-claude-2.1.322"), "rollback"); // kept, as the record says
   assert.equal(reasonOf(plan, "666becb"), "rollback"); // the slot still goes to the newest ordered previous image
   assert.ok(!plan.candidates.some((tag) => tag.tag.includes("666becb") || tag.tag.includes("573ca08-claude-2.1.322")));
+  // #2560 r3: the order-unknown record keep is listed, and with no ordered floor the gap pass keeps older ordered images.
+  assert.deepEqual(plan.unknownOrderToReview, [`${R}:573ca08-claude-2.1.322`]);
+  assert.ok(!plan.candidates.some((tag) => tag.tag.endsWith("2.1.318")), "ddd is kept by the record-gap pass");
+  assert.ok(plan.recordGaps.some((gap) => gap.includes("build order unknown")), plan.recordGaps.join("; "));
 });
 
 test("#2560 r2 a newer-mtime epoch-0 record and an older ordered record: the ordered previous image is never a candidate", () => {
@@ -939,6 +943,24 @@ test("#2560 r2 an unparseable Created with an old load time is kept as unknown-b
   assert.equal(reasonOf(plan, "2.1.318"), "unknown-build-order");
   assert.deepEqual(plan.unknownOrderToReview, [`${R}:573ca08-claude-2.1.318`]);
   assert.ok(!plan.candidates.some((tag) => tag.tag.endsWith("2.1.318")));
+});
+
+test("#2560 r3 --keep-rollback 0 --include-newer still needs build order while --keep-newer keeps a staged rollout", () => {
+  const images = [...IMAGES.map((entry) => (entry.id === "sha256:aaa" ? { ...entry, created: "1970-01-01T00:00:00Z" } : entry)), image("nnn", [`${R}:next-rollout`], 4)];
+  const plan = planRunnerImagePrune(inventory({ images }), { nowMs: NOW, isRoot: true, keepRollback: 0, includeNewer: true });
+  assert.equal(plan.applyAllowed, false);
+  assert.ok(!plan.candidates.some((tag) => tag.tag.includes("next-rollout")));
+  assert.match(plan.repositories[0].keep.find((tag) => tag.tag.includes("next-rollout"))?.why ?? "", /a staged rollout cannot be told apart/);
+});
+
+test("#2560 r3 doctor counts tags kept for unknown build order", async () => {
+  await withNode(async (paths) => {
+    const images = ENGINE_IMAGES.map((entry) => (entry.id === "sha256:ddd" ? { ...entry, created: "1970-01-01T00:00:00Z", lastTagTime: new Date(NOW - 30 * DAY).toISOString() } : entry));
+    const { exec } = fakeEngine(images);
+    const res = await checkRunnerImageDisk({ engine: "docker", engineReady: true, exec, ...paths, statfsFn: async () => ({ blocks: 48, bavail: 2, bsize: GB }), nowMs: NOW, isRoot: true, unitEnvFiles: noUnits });
+    assert.equal(res.detail?.unknownOrderToReview, 1);
+    assert.match(res.message, /1 runner image tag\(s\) kept because their creation time carries no build order/);
+  });
 });
 
 test("#2554 r2 an own record that lost the slot but is also unattributed says whose history it is", () => {
