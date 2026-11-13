@@ -100,10 +100,14 @@ test("#2547 the worker's own newest env backup picks the rollback over a newer u
     inventory({ deployRecords: [record(`${R}:573ca08-claude-2.1.322`, ENV, 20), record(`${R}:573ca08-claude-2.1.318`, ENV, 2)] }),
     { nowMs: NOW, isRoot: true },
   );
-  const rollback = plan.repositories[0].keep.find((tag) => tag.reason === "rollback");
+  const rollback = plan.repositories[0].keep.find((tag) => tag.reason === "rollback" && /previous deploy of/.test(tag.why ?? ""));
   assert.equal(rollback?.tag, `${R}:573ca08-claude-2.1.318`);
   assert.match(rollback?.why ?? "", /previous deploy of \/etc\/default\/a2a-hermes-worker/);
-  assert.deepEqual(tagsOf(plan.candidates), [`${R}:573ca08-claude-2.1.322`, `${R}:666becb-claude-2.1.322`]);
+  // #2557: the newer unused tag is the newest image built before the in-use one; an unrecorded
+  // switch cannot be told from it, so it is kept as well and reported as a record gap.
+  assert.equal(reasonOf(plan, "666becb"), "rollback");
+  assert.equal(plan.recordGaps.length, 1);
+  assert.deepEqual(tagsOf(plan.candidates), [`${R}:573ca08-claude-2.1.322`]);
 });
 
 test("#2547 two workers on the same repository each keep their own rollback (review F3)", () => {
@@ -119,7 +123,9 @@ test("#2547 two workers on the same repository each keep their own rollback (rev
   );
   assert.equal(reasonOf(plan, "2.1.318"), "rollback");
   assert.equal(reasonOf(plan, "573ca08-claude-2.1.322"), "rollback");
-  assert.deepEqual(tagsOf(plan.candidates), [`${R}:666becb-claude-2.1.322`]);
+  // #2557: 666becb is the newest image built before both in-use images — kept by the safety net.
+  assert.equal(reasonOf(plan, "666becb"), "rollback");
+  assert.deepEqual(plan.candidates, []);
 });
 
 test("#2547 an orphaned backup never takes the rollback slot", () => {
@@ -492,6 +498,56 @@ test("#2551 review: a unit whose EnvironmentFile= is a live env file is that wor
 
 // ── #2554: own record vs unattributed, reason texts, fail-closed Created ───────
 
+// ── #2557: an unrecorded latest switch must not push out the real previous image ──
+// Field case 2026-11-13 (four worker nodes): the latest switch's backup sat in a
+// directory not passed with --deploy-record-dir, so only the older 573ca08 record was seen.
+const switchImages = (): EngineImage[] => [
+  image("ffc", [`${R}:ffc530e-claude-2.1.322`], 5),
+  image("666", [`${R}:666becb-claude-2.1.322`], 6),
+  image("573", [`${R}:573ca08-claude-2.1.322`], 7),
+  image("9ce", [`${R}:9ce562a-claude-2.1.322`], 4),
+  image("old", [`${R}:a038bb7-claude-2.1.280`], 40),
+];
+
+test("#2557 when records fill the slot with an older image, the newest image built before the in-use one is kept too and reported", () => {
+  const plan = planRunnerImagePrune(
+    inventory({ images: switchImages(), ...inUse(`${R}:ffc530e-claude-2.1.322`), deployRecords: [record(`${R}:573ca08-claude-2.1.322`, undefined, 3, { file: "/root/.ccc-node/backups/meta-image-x/a2a-hermes-worker" })] }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.equal(reasonOf(plan, "573ca08"), "rollback", "the record still fills the slot");
+  assert.equal(reasonOf(plan, "666becb"), "rollback", "the real previous image is not a candidate");
+  assert.match(plan.repositories[0].keep.find((tag) => tag.tag.includes("666becb"))?.why ?? "", /latest switch may be unrecorded/);
+  assert.equal(plan.recordGaps.length, 1);
+  assert.match(plan.recordGaps[0], /^\/etc\/default\/a2a-hermes-worker: .*666becb.*--deploy-record-dir/);
+  assert.deepEqual(tagsOf(plan.candidates), [`${R}:a038bb7-claude-2.1.280`]);
+});
+
+test("#2557 with complete records nothing extra is kept and no gap is reported", () => {
+  const plan = planRunnerImagePrune(
+    inventory({
+      images: switchImages(),
+      ...inUse(`${R}:ffc530e-claude-2.1.322`),
+      deployRecords: [
+        record(`${R}:573ca08-claude-2.1.322`, undefined, 3, { file: "/root/.ccc-node/backups/meta-image-x/a2a-hermes-worker" }),
+        record(`${R}:666becb-claude-2.1.322`, undefined, 2.9, { file: "/root/a2a-nexus-local-deploy-backups/env.pre-ffc530e/a2a-hermes-worker" }),
+      ],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.equal(reasonOf(plan, "666becb"), "rollback");
+  assert.deepEqual(plan.recordGaps, []);
+  assert.deepEqual(tagsOf(plan.candidates), [`${R}:573ca08-claude-2.1.322`, `${R}:a038bb7-claude-2.1.280`]);
+});
+
+test("#2557 --keep-rollback 0 keeps no rollback, so no safety net either", () => {
+  const plan = planRunnerImagePrune(
+    inventory({ images: switchImages(), ...inUse(`${R}:ffc530e-claude-2.1.322`), deployRecords: [record(`${R}:573ca08-claude-2.1.322`, undefined, 3, { file: "/root/.ccc-node/backups/meta-image-x/a2a-hermes-worker" })] }),
+    { nowMs: NOW, isRoot: true, keepRollback: 0 },
+  );
+  assert.deepEqual(plan.recordGaps, []);
+  assert.ok(plan.candidates.some((tag) => tag.tag.includes("666becb")));
+});
+
 test("#2554 a worker's own backup wins over an unattributed record naming the same image", () => {
   const plan = planRunnerImagePrune(
     inventory({
@@ -507,7 +563,8 @@ test("#2554 a worker's own backup wins over an unattributed record naming the sa
   assert.match(kept?.why ?? "", /previous deploy of \/etc\/default\/a2a-hermes-worker/);
   assert.deepEqual(plan.recordsToReview, []);
   // The fallback did not take the slot: the next older images are candidates.
-  assert.deepEqual(tagsOf(plan.candidates), [`${R}:573ca08-claude-2.1.322`, `${R}:666becb-claude-2.1.322`]);
+  // (#2557 keeps 666becb, the newest image built before the in-use one, besides the record.)
+  assert.deepEqual(tagsOf(plan.candidates), [`${R}:573ca08-claude-2.1.322`]);
 });
 
 test("#2554 a worker's own owner-less record (by env file name) also wins over an unattributed one", () => {
@@ -783,6 +840,10 @@ interface FakeOptions {
 }
 
 /** Fake engine: records every call; answers ls/inspect/info from fixtures (tab-separated json columns). */
+// #2557: 666becb (newest built before the in-use image) is kept by the safety net, so the
+// engine tests add an older tag to keep two candidates on the apply path.
+const ENGINE_IMAGES: EngineImage[] = [...IMAGES, image("a03", [`${R}:a038bb7-claude-2.1.280`], 20)];
+
 function fakeEngine(images: EngineImage[], options: FakeOptions = {}): { exec: EngineExec; calls: string[][] } {
   const calls: string[][] = [];
   const exec: EngineExec = async (engine, args) => {
@@ -847,10 +908,10 @@ const run = (exec: EngineExec, paths: { envDir: string; procRoot: string }, extr
 
 test("#2547 dry-run (the default) never calls image rm or builder prune", async () => {
   await withNode(async (paths) => {
-    const { exec, calls } = fakeEngine(IMAGES);
+    const { exec, calls } = fakeEngine(ENGINE_IMAGES);
     const report = await run(exec, paths, { builderCache: true });
     assert.equal(report.mode, "dry-run");
-    assert.deepEqual(tagsOf(report.plan.candidates), [`${R}:573ca08-claude-2.1.322`, `${R}:666becb-claude-2.1.322`]);
+    assert.deepEqual(tagsOf(report.plan.candidates), [`${R}:573ca08-claude-2.1.322`, `${R}:a038bb7-claude-2.1.280`]);
     assert.equal(reasonOf(report.plan, "2.1.318"), "rollback");
     assert.ok(!calls.some((args) => args[1] === "rm" || args[0] === "builder"), JSON.stringify(calls));
     assert.equal(report.removed, undefined);
@@ -860,10 +921,10 @@ test("#2547 dry-run (the default) never calls image rm or builder prune", async 
 
 test("#2547 --apply removes only candidates, re-checks each id, never uses -f, records disk before/after", async () => {
   await withNode(async (paths) => {
-    const { exec, calls } = fakeEngine(IMAGES);
+    const { exec, calls } = fakeEngine(ENGINE_IMAGES);
     const report = await run(exec, paths, { apply: true, builderCache: true });
     const removed = calls.filter((args) => args[0] === "image" && args[1] === "rm");
-    assert.deepEqual(removed.map((args) => args[2]).sort(), [`${R}:573ca08-claude-2.1.322`, `${R}:666becb-claude-2.1.322`]);
+    assert.deepEqual(removed.map((args) => args[2]).sort(), [`${R}:573ca08-claude-2.1.322`, `${R}:a038bb7-claude-2.1.280`]);
     assert.ok(removed.every((args) => !args.includes("-f") && !args.includes("--force")));
     assert.equal(calls.filter((args) => args[3] === "{{json .Id}}").length, 2, "one id check per removal");
     assert.ok(!calls.some((args) => args[2]?.startsWith("swift") || args[2]?.startsWith("python")));
@@ -876,11 +937,11 @@ test("#2547 --apply removes only candidates, re-checks each id, never uses -f, r
 
 test("#2547 --apply skips a tag re-pointed since the plan and reports an engine rm failure", async () => {
   await withNode(async (paths) => {
-    const { exec, calls } = fakeEngine(IMAGES, { repointed: { [`${R}:666becb-claude-2.1.322`]: "sha256:new" }, rmFails: [`${R}:573ca08-claude-2.1.322`] });
+    const { exec, calls } = fakeEngine(ENGINE_IMAGES, { repointed: { [`${R}:a038bb7-claude-2.1.280`]: "sha256:new" }, rmFails: [`${R}:573ca08-claude-2.1.322`] });
     const report = await run(exec, paths, { apply: true });
     const byTag = Object.fromEntries((report.removed ?? []).map((entry) => [entry.tag, entry]));
-    assert.match(byTag[`${R}:666becb-claude-2.1.322`].stderr ?? "", /skipped: tag now points at sha256:new/);
-    assert.ok(!calls.some((args) => args[1] === "rm" && args[2] === `${R}:666becb-claude-2.1.322`));
+    assert.match(byTag[`${R}:a038bb7-claude-2.1.280`].stderr ?? "", /skipped: tag now points at sha256:new/);
+    assert.ok(!calls.some((args) => args[1] === "rm" && args[2] === `${R}:a038bb7-claude-2.1.280`));
     assert.equal(byTag[`${R}:573ca08-claude-2.1.322`].ok, false);
     assert.equal(report.ok, false);
   });
@@ -919,7 +980,7 @@ test("#2547 --apply without in-use evidence deletes nothing", async () => {
 
 test("#2547 podman: no LastTagTime column, builder cache is reported as skipped", async () => {
   await withNode(async (paths) => {
-    const { exec, calls } = fakeEngine(IMAGES);
+    const { exec, calls } = fakeEngine(ENGINE_IMAGES);
     const report = await pruneRunnerImages({ engine: "podman", exec, ...paths, nowMs: NOW, isRoot: true, statfsFn, unitEnvFiles: noUnits, builderCache: true });
     const inspect = calls.find((args) => args[0] === "image" && args[1] === "inspect");
     assert.ok(inspect && !inspect[3].includes("LastTagTime"));
@@ -974,7 +1035,7 @@ test("#2547 images argument parser: --flag value and --flag=value, unknown or va
 
 test("#2547 doctor probe warns below 10% / 5GiB on / or the engine root, never hangs on a stuck engine", async () => {
   await withNode(async (paths) => {
-    const { exec } = fakeEngine(IMAGES);
+    const { exec } = fakeEngine(ENGINE_IMAGES);
     const low: StatfsFn = async () => ({ blocks: 48, bavail: 2, bsize: GB });
     const warn = await checkRunnerImageDisk({ engine: "docker", engineReady: true, exec, ...paths, statfsFn: low, nowMs: NOW, isRoot: true, unitEnvFiles: noUnits });
     assert.equal(warn.status, "warn");

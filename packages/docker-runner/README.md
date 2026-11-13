@@ -614,7 +614,12 @@ Only `a2a-docker-runner` / `a2a-docker-runner-<flavor>` repositories are planned
   fills a slot; its image is kept and listed in `plan.recordsToReview`. Backups of a live env file that is no
   worker of this repository (e.g. its worker moved to another flavor) stay that file's rollback in the old
   repository (its N newest). A repository opted in with `--repository` but used by no worker keeps its N newest
-  non-recent images in addition to those;
+  non-recent images in addition to those. **Record gaps (#2557):** when a worker's records filled its slot with
+  an older image, the newest non-recent image built before its in-use image is kept as well and listed in
+  `plan.recordGaps` — a switch whose backup sits in a directory not passed with `--deploy-record-dir` would
+  otherwise lose the image the worker ran just before. A built but never deployed image in that position cannot
+  be told apart and is kept too, until the next rollout. Pass **every** directory where deploy scripts keep env
+  backups (repeat `--deploy-record-dir`), and read `plan.recordGaps` before `--apply`;
 - tags whose name contains `rollback`, and images built **or loaded/tagged** within `--min-age` (default 72h;
   `docker load` keeps the build time, so docker's `LastTagTime` counts too);
 - images **built at or after the in-use image** of its repository — most likely the next rollout, loaded but not

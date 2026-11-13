@@ -146,6 +146,13 @@ export interface RunnerImagePlan {
   reclaimableIsUpperBound: true;
   /** images named only by a deploy record that matches no worker: kept, listed for a manual decision. */
   recordsToReview: string[];
+  /**
+   * Workers whose deploy records filled the rollback slot with an older image
+   * while the newest image built before their in-use image is named by none of
+   * them — the latest switch may be unrecorded (e.g. its backup sits in a
+   * directory not passed with --deploy-record-dir). That image is kept as well.
+   */
+  recordGaps: string[];
   /** candidate tags whose image keeps another (non-runner or kept) tag — untag only, frees nothing. */
   untagOnly: string[];
   unresolvedRefs: ImageRef[];
@@ -361,6 +368,7 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
   const skippedRepositories: string[] = [];
   const newerToReview: string[] = [];
   const recordsToReview: string[] = [];
+  const recordGaps: string[] = [];
   const resolvedRecords = inventory.deployRecords
     .filter((record) => !record.orphan)
     .map((record) => ({ record, id: resolveRef(record.ref, images) }))
@@ -489,6 +497,22 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
       const note = hadOwnRecords.has(worker) ? "no eligible deploy record left" : "no deploy record";
       for (const tag of fallback) take(worker, tag.id, `newest image built before the in-use image of ${worker.key} (${note})`, false);
     }
+    // (4) Safety net (#2557): records name only the switches that left a backup
+    // in a scanned directory. When a worker's records filled its slot with an
+    // older image, the newest image built before its in-use image — most likely
+    // the one it ran just before — would otherwise become a candidate. Keep it
+    // too and report the gap. With complete records both are the same image.
+    if (keepRollback > 0) {
+      for (const worker of repoWorkers) {
+        if (!Number.isFinite(inUseMsOf.get(worker) ?? Number.NaN)) continue;
+        const newest = rest
+          .filter((tag) => builtBefore(worker, tag.id) && !isRecent(tag))
+          .sort((a, b) => Date.parse(b.created) - Date.parse(a.created))[0];
+        if (!newest || rollback.has(newest.id) || unattributed.has(newest.id)) continue;
+        rollback.set(newest.id, `newest image built before the in-use image of ${worker.key} — none of its deploy records names it; kept besides them (the latest switch may be unrecorded)`);
+        recordGaps.push(`${worker.key}: ${newest.tag} is the newest image built before its in-use image but none of its deploy records names it — check that every directory holding its env backups is passed with --deploy-record-dir`);
+      }
+    }
     if (repoWorkers.length === 0) {
       // --repository opt-in without any worker: keep N newest non-recent images
       // besides those already kept for a record (counted on their own).
@@ -564,6 +588,7 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
     skippedRepositories,
     newerToReview,
     recordsToReview,
+    recordGaps,
     reclaimableIsUpperBound: true,
     applyAllowed: applyRefusals.length === 0,
     applyRefusals,
