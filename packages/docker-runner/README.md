@@ -648,7 +648,7 @@ and `df` for `/` and the engine root.
 
 `--apply` is **refused (exit 2)** when an in-use or `--keep` reference does not resolve to a local image, when
 `/proc` could not be read completely (run as root), when no process or env file names an image at all, or when
-any in-use image of a worker has no usable creation time — unparseable, or docker's `0001-01-01` / an epoch-0 reproducible build (`1970-01-01`) — while `--keep-rollback` is above 0: its rollback cannot be told apart, so that repository's remaining tags are reported as kept (`unverified-rollback`), not as candidates. It then
+any in-use image of a worker has no usable creation time — unparseable, or docker's `0001-01-01` / an epoch-0 reproducible build (`1970-01-01`) — while build order matters (`--keep-rollback` above 0, or the newer-than-in-use line is active: `--keep-newer` above 0 without `--include-newer`): its rollback and the staged rollout cannot be told apart, so that repository's remaining tags are reported as kept (`unverified-rollback`), not as candidates. A tag that is not in use but whose own creation time is such a value is kept as `unknown-build-order` under the same condition (it may be a previous deploy or a staged rollout); a worker's own deploy record still takes it as that worker's rollback. It then
 re-plans immediately before deleting (and stops if that re-check is refused), confirms each tag still points at
 the planned image id, runs `image rm` without `-f` (the engine refuses an image a container still uses), and
 records removed tags/ids and before/after disk. Arguments are parsed strictly: `--flag value` or `--flag=value`;

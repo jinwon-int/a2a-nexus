@@ -858,11 +858,51 @@ test("#2554 r2 one unknown in-use Created among a worker's in-use images refuses
   assert.deepEqual(plan.candidates, []);
 });
 
-test("#2554 r2 --keep-rollback 0 needs no build order: an unknown in-use Created does not refuse", () => {
+test("#2554 r2 --keep-rollback 0 with --include-newer needs no build order: an unknown in-use Created does not refuse", () => {
   const images = IMAGES.map((entry) => (entry.id === "sha256:aaa" ? { ...entry, created: "not-a-date" } : entry));
-  const plan = planRunnerImagePrune(inventory({ images }), { nowMs: NOW, isRoot: true, keepRollback: 0 });
+  const plan = planRunnerImagePrune(inventory({ images }), { nowMs: NOW, isRoot: true, keepRollback: 0, includeNewer: true });
   assert.ok(!plan.applyRefusals.some((reason) => /creation time/.test(reason)), plan.applyRefusals.join("; "));
   assert.equal(plan.applyAllowed, true);
+});
+
+// ── #2560 review (T1 nosuk / T2 jingun): sentinel Created must not move an image toward deletion ──
+
+test("#2560 r1 a previous deploy with an epoch-0 Created named by the worker's own record stays its rollback", () => {
+  const images = IMAGES.map((entry) => (entry.id === "sha256:bbb" ? { ...entry, created: "1970-01-01T00:00:00Z" } : entry));
+  const plan = planRunnerImagePrune(inventory({ images, deployRecords: [record(`${R}:666becb-claude-2.1.322`, ENV, 2)] }), { nowMs: NOW, isRoot: true });
+  assert.equal(reasonOf(plan, "666becb"), "rollback");
+  assert.ok(!plan.candidates.some((tag) => tag.tag.includes("666becb")));
+});
+
+test("#2560 r1 a non-in-use image with a sentinel or unparseable Created is kept as unknown-build-order, never a candidate", () => {
+  for (const created of ["1970-01-01T00:00:00Z", "0001-01-01T00:00:00Z", "garbage"]) {
+    const images = IMAGES.map((entry) => (entry.id === "sha256:ddd" ? { ...entry, created } : entry));
+    const plan = planRunnerImagePrune(inventory({ images }), { nowMs: NOW, isRoot: true });
+    // An unparseable Created already reads as "recent" (unknown age); either way it is kept.
+    assert.equal(reasonOf(plan, "2.1.318"), created === "garbage" ? "recent" : "unknown-build-order", created);
+    assert.ok(!plan.candidates.some((tag) => tag.tag.endsWith("2.1.318")), created);
+    assert.equal(plan.applyAllowed, true, created); // a known in-use image still lets the rest be pruned
+  }
+});
+
+test("#2560 r1 --keep-rollback 0 with an unknown in-use Created still refuses while the newer line is active", () => {
+  // A staged next rollout (built after the in-use image) must not become a candidate with apply allowed.
+  const images = [...IMAGES.map((entry) => (entry.id === "sha256:aaa" ? { ...entry, created: "not-a-date" } : entry)), image("nnn", [`${R}:next-rollout`], 4)];
+  const plan = planRunnerImagePrune(inventory({ images }), { nowMs: NOW, isRoot: true, keepRollback: 0 });
+  assert.equal(plan.applyAllowed, false);
+  assert.ok(plan.applyRefusals.some((reason) => /no usable creation time/.test(reason)), plan.applyRefusals.join("; "));
+  assert.ok(!plan.candidates.some((tag) => tag.tag.includes("next-rollout")));
+});
+
+test("#2560 r1 an unattributed image also named by a worker with an unknown in-use Created says that is why", () => {
+  const images = IMAGES.map((entry) => (entry.id === "sha256:aaa" ? { ...entry, created: "garbage" } : entry));
+  const plan = planRunnerImagePrune(
+    inventory({ images, deployRecords: [record(`${R}:573ca08-claude-2.1.322`, ENV, 3), record(`${R}:573ca08-claude-2.1.322`, undefined, 2, { file: "/backups/retired-worker" })] }),
+    { nowMs: NOW, isRoot: true },
+  );
+  const kept = plan.repositories[0].keep.find((tag) => tag.tag.endsWith("573ca08-claude-2.1.322"));
+  assert.equal(kept?.reason, "unattributed-record");
+  assert.match(kept?.why ?? "", /not taken as its rollback \(its in-use creation time is unknown\)/);
 });
 
 test("#2554 r2 an own record that lost the slot but is also unattributed says whose history it is", () => {
