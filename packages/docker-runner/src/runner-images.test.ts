@@ -579,7 +579,11 @@ test("#2557 r1 review: two workers sharing the gap image are both reported", () 
   assert.equal(reasonOf(plan, "666becb"), "rollback");
   const gaps = plan.recordGaps.filter((gap) => gap.includes("666becb"));
   assert.equal(gaps.length, 2, JSON.stringify(plan.recordGaps));
-  assert.ok(gaps.some((gap) => gap.startsWith(`${SECOND}:`) && /already kept/.test(gap)), "the second worker is reported although the first one already kept the image");
+  // #2559: neither worker's line depends on which one was visited first — the image was kept by
+  // no record or fallback, so both report it as kept for their own gap.
+  assert.ok(gaps.some((gap) => gap.startsWith(`${ENV}:`)) && gaps.some((gap) => gap.startsWith(`${SECOND}:`)), "both workers are reported");
+  assert.ok(gaps.every((gap) => / — kept$/.test(gap)), JSON.stringify(gaps));
+  assert.deepEqual(plan.recordGapImages, [`${R}:666becb-claude-2.1.322`], "listed once");
 });
 
 test("#2557 r1 review: a gap image already protected (container) is not reported; older unprotected ones in range are", () => {
@@ -676,7 +680,7 @@ test("#2558 r3 review: another worker's history never counts toward the refusal 
   assert.equal(plan.applyAllowed, true, JSON.stringify(plan.applyRefusals));
 });
 
-test("#2558 r3 review: an image already kept for another worker's gap is not counted twice", () => {
+test("#2558 r3 review: an image kept for two workers' gaps is listed once and each worker counts only its own range (#2559)", () => {
   const between = Array.from({ length: RECORD_GAP_APPLY_LIMIT + 1 }, (_, i) => image(`g${i}`, [`${R}:gap-${i}`], 6 + i * 0.5));
   const plan = planRunnerImagePrune(
     inventory({
@@ -687,10 +691,18 @@ test("#2558 r3 review: an image already kept for another worker's gap is not cou
     }),
     { nowMs: NOW, isRoot: true },
   );
-  // A's record takes a038bb7; B's fallback takes gap-0; A's gap pass adds gap-1..gap-3 (3, at the
-  // limit). B reports the same images as "already kept" — they must not count toward its refusal.
-  assert.equal(plan.recordGapImages.length, RECORD_GAP_APPLY_LIMIT, "each image is counted once");
-  assert.ok(plan.recordGaps.filter((gap) => gap.startsWith(`${SECOND}:`)).every((gap) => /already kept/.test(gap)));
+  // A's record takes a038bb7; B's fallback takes gap-0. Both gap passes then keep gap-1..gap-3
+  // (3 each, at the limit): the images are listed once, and each worker counts its own range
+  // whatever the visiting order (#2559).
+  assert.equal(plan.recordGapImages.length, RECORD_GAP_APPLY_LIMIT, "each image is listed once");
+  const second = plan.recordGaps.filter((gap) => gap.startsWith(`${SECOND}:`));
+  assert.equal(second.length, RECORD_GAP_APPLY_LIMIT, JSON.stringify(second));
+  assert.ok(second.every((gap) => / — kept$/.test(gap)), JSON.stringify(second));
+  // #2554: B's own fallback pick (gap-0) is its rollback, not a gap — no report line for B …
+  assert.ok(!second.some((gap) => gap.includes("gap-0 ")), JSON.stringify(second));
+  // … while A, whose records do not name it, reports it as already kept by B's fallback.
+  assert.ok(plan.recordGaps.some((gap) => gap.startsWith(`${ENV}:`) && gap.includes("gap-0 ") && /already kept: newest image built before the in-use image of/.test(gap)));
+  assert.equal(reasonOf(plan, "gap-0"), "rollback");
   assert.ok(plan.recordGaps.length > plan.recordGapImages.length, "reports exceed unique images");
   assert.equal(plan.applyAllowed, true, JSON.stringify(plan.applyRefusals));
 });
@@ -953,6 +965,112 @@ test("#2560 r3 --keep-rollback 0 --include-newer still needs build order while -
   assert.match(plan.repositories[0].keep.find((tag) => tag.tag.includes("next-rollout"))?.why ?? "", /a staged rollout cannot be told apart/);
 });
 
+// ── #2554 / #2559: order-independent gap counting, own fallback, open floor ──
+
+const AAA = "/etc/default/a2a-aaa-worker";
+const ZZZ = "/etc/default/a2a-zzz-worker";
+const gapImages = (n: number): EngineImage[] => Array.from({ length: n }, (_, i) => image(`g${i}`, [`${R}:gap-${i}`], 6 + i * 0.5));
+const epochZero = (): EngineImage => image("ep0", [`${R}:epoch0-claude-2.1.200`], 50, { created: "1970-01-01T00:00:00Z", lastTagTime: new Date(NOW - 30 * DAY).toISOString() });
+
+test("#2559 the record-gap count and refusal do not depend on the order the workers are visited in", () => {
+  // `big` records only the old image (range gap-0..gap-4); `small` records gap-2 (range gap-0, gap-1).
+  const planFor = (big: string, small: string) => planRunnerImagePrune(
+    inventory({
+      images: [image("ffc", [`${R}:ffc530e-claude-2.1.322`], 5), ...gapImages(5), image("old", [`${R}:a038bb7-claude-2.1.280`], 40)],
+      live: { refs: [], unreadable: 0, scanned: 40, units: [] },
+      configured: [...inUse(`${R}:ffc530e-claude-2.1.322`, big).configured, ...inUse(`${R}:ffc530e-claude-2.1.322`, small).configured],
+      deployRecords: [record(`${R}:a038bb7-claude-2.1.280`, big, 3), record(`${R}:gap-2`, small, 3)],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  const bigFirst = planFor(AAA, ZZZ);
+  const bigLast = planFor(ZZZ, AAA);
+  for (const [result, big] of [[bigFirst, AAA], [bigLast, ZZZ]] as const) {
+    // gap-0, gap-1, gap-3, gap-4 are named by no record: 4 > limit, whoever goes first.
+    assert.equal(result.applyAllowed, false, JSON.stringify(result.applyRefusals));
+    assert.equal(result.applyRefusals.length, 1, JSON.stringify(result.applyRefusals));
+    assert.ok(result.applyRefusals[0].startsWith(`${big} in ${R}: 4 images that no deploy record names`), result.applyRefusals[0]);
+    assert.equal(result.recordGapImages.length, 4, "each image once");
+    assert.deepEqual(result.candidates, [], "nothing is a candidate either way");
+  }
+  const normalize = (gaps: string[], big: string, small: string): string[] => gaps.map((gap) => gap.split(big).join("BIG").split(small).join("SMALL")).sort();
+  assert.deepEqual(normalize(bigFirst.recordGaps, AAA, ZZZ), normalize(bigLast.recordGaps, ZZZ, AAA), "same reports with the worker names swapped");
+});
+
+test("#2554 a second worker sharing an order-unknown record gets the same open gap range", () => {
+  // A runs 573 (7d), B runs ffc (5d); both workers' only record names the epoch-0 image.
+  const plan = planRunnerImagePrune(
+    inventory({
+      images: [
+        image("ffc", [`${R}:ffc530e-claude-2.1.322`], 5),
+        image("666", [`${R}:666becb-claude-2.1.322`], 6),
+        image("mid", [`${R}:mid-claude-2.1.322`], 6.5),
+        image("573", [`${R}:573ca08-claude-2.1.322`], 7),
+        image("old", [`${R}:a038bb7-claude-2.1.280`], 40),
+        epochZero(),
+      ],
+      live: { refs: [], unreadable: 0, scanned: 40, units: [] },
+      configured: [...inUse(`${R}:573ca08-claude-2.1.322`).configured, ...inUse(`${R}:ffc530e-claude-2.1.322`, SECOND).configured],
+      deployRecords: [record(`${R}:epoch0-claude-2.1.200`, ENV, 2), record(`${R}:epoch0-claude-2.1.200`, SECOND, 2)],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  // A's record keeps the epoch-0 image; A's fallback is a038bb7, B's fallback is 666becb. B did not
+  // "take" the shared record image, but its records name nothing else: mid may be what it ran before.
+  assert.equal(reasonOf(plan, "666becb"), "rollback");
+  assert.equal(reasonOf(plan, "mid-claude"), "rollback", "kept for B's open range, not a candidate");
+  assert.deepEqual(plan.candidates, []);
+  const kept = plan.repositories[0].keep.find((tag) => tag.tag.includes("mid-claude"));
+  assert.match(kept?.why ?? "", /whose records name only .*epoch0-claude-2\.1\.200 \(build order unknown\) — its previous deploy cannot be told apart/);
+  const midGap = plan.recordGaps.find((gap) => gap.startsWith(`${SECOND}:`) && gap.includes("mid-claude"));
+  assert.match(midGap ?? "", /was built before its in-use image and its deploy records name only .*\(build order unknown\); .*has no usable creation time.* — kept$/);
+  assert.ok(!(midGap ?? "").includes("--deploy-record-dir"), "the open range is not a missing-directory problem");
+  assert.ok(!plan.recordGaps.some((gap) => gap.startsWith(`${SECOND}:`) && gap.includes("666becb")), "B's own fallback is not a gap");
+});
+
+test("#2554 an open range past the limit refuses --apply and names the order-unknown record, not --deploy-record-dir", () => {
+  const plan = planRunnerImagePrune(
+    inventory({
+      images: [image("ffc", [`${R}:ffc530e-claude-2.1.322`], 5), ...gapImages(RECORD_GAP_APPLY_LIMIT + 2), epochZero()],
+      ...inUse(`${R}:ffc530e-claude-2.1.322`),
+      deployRecords: [record(`${R}:epoch0-claude-2.1.200`, ENV, 2)],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  // gap-0 is the fallback rollback; gap-1..gap-4 are kept for the open range: 4 > limit.
+  assert.equal(reasonOf(plan, "gap-0"), "rollback");
+  assert.equal(plan.recordGapImages.length, RECORD_GAP_APPLY_LIMIT + 1);
+  assert.equal(plan.recordGaps.length, RECORD_GAP_APPLY_LIMIT + 1, "the fallback pick adds no report line");
+  assert.equal(plan.applyAllowed, false);
+  const refusal = plan.applyRefusals.join(" ");
+  assert.match(refusal, /4 images that no deploy record names are kept as record gaps \(more than 3\) — its deploy records name only .*epoch0-claude-2\.1\.200 \(build order unknown\).*plan\.unknownOrderToReview/);
+  assert.ok(!refusal.includes("--deploy-record-dir"), refusal);
+  assert.deepEqual(plan.candidates, [], "the refusal changes nothing kept");
+});
+
+test("#2559 a gap image tagged in two runner repositories is listed once", () => {
+  const codex = "a2a-docker-runner-codex";
+  const codexEnv = "/etc/default/a2a-codex-worker";
+  const plan = planRunnerImagePrune(
+    inventory({
+      images: [
+        image("ffc", [`${R}:ffc530e-claude-2.1.322`], 5),
+        image("cdx", [`${codex}:c1`], 5),
+        image("shr", [`${R}:shared`, `${codex}:shared`], 6),
+        image("old", [`${R}:a038bb7-claude-2.1.280`], 40),
+        image("cld", [`${codex}:c0`], 40),
+      ],
+      live: { refs: [], unreadable: 0, scanned: 40, units: [] },
+      configured: [...inUse(`${R}:ffc530e-claude-2.1.322`).configured, ...inUse(`${codex}:c1`, codexEnv).configured],
+      deployRecords: [record(`${R}:a038bb7-claude-2.1.280`, ENV, 3), record(`${codex}:c0`, codexEnv, 3)],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.equal(plan.recordGaps.length, 2, JSON.stringify(plan.recordGaps));
+  assert.equal(plan.recordGapImages.length, 1, JSON.stringify(plan.recordGapImages));
+  assert.deepEqual(plan.candidates, []);
+});
+
 test("#2560 r3 doctor counts tags kept for unknown build order", async () => {
   await withNode(async (paths) => {
     const images = ENGINE_IMAGES.map((entry) => (entry.id === "sha256:ddd" ? { ...entry, created: "1970-01-01T00:00:00Z", lastTagTime: new Date(NOW - 30 * DAY).toISOString() } : entry));
@@ -960,6 +1078,23 @@ test("#2560 r3 doctor counts tags kept for unknown build order", async () => {
     const res = await checkRunnerImageDisk({ engine: "docker", engineReady: true, exec, ...paths, statfsFn: async () => ({ blocks: 48, bavail: 2, bsize: GB }), nowMs: NOW, isRoot: true, unitEnvFiles: noUnits });
     assert.equal(res.detail?.unknownOrderToReview, 1);
     assert.match(res.message, /1 runner image tag\(s\) kept because their creation time carries no build order/);
+  });
+});
+
+test("#2559 doctor does not say '0 extra runner image(s)' when gap reports add no image", async () => {
+  await withNode(async (paths) => {
+    // The worker's backup names ddd (slot). bbb and ccc sit in the gap but are already kept as
+    // unattributed record images: two reports, no extra image.
+    const records = join(paths.envDir, "..", "records");
+    await mkdir(records);
+    await writeFile(join(records, "retired-worker"), `A2A_DOCKER_RUNNER_IMAGE=${R}:666becb-claude-2.1.322\n`);
+    await writeFile(join(records, "retired-worker-b"), `A2A_DOCKER_RUNNER_IMAGE=${R}:573ca08-claude-2.1.322\n`);
+    const { exec } = fakeEngine(ENGINE_IMAGES);
+    const res = await checkRunnerImageDisk({ engine: "docker", engineReady: true, exec, ...paths, deployRecordDirs: [records], statfsFn: async () => ({ blocks: 48, bavail: 2, bsize: GB }), nowMs: NOW, isRoot: true, unitEnvFiles: noUnits });
+    assert.equal(res.detail?.recordGapReports, 2);
+    assert.equal(res.detail?.recordGapImages, 0);
+    assert.match(res.message, /; 2 deploy record gap report\(s\) — review plan\.recordGaps/);
+    assert.ok(!/0 extra runner image/.test(res.message), res.message);
   });
 });
 

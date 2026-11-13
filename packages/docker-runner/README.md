@@ -619,7 +619,13 @@ Only `a2a-docker-runner` / `a2a-docker-runner-<flavor>` repositories are planned
   `plan.recordGaps` — it may be the image the worker ran just before (a switch whose backup sits in a directory
   not passed with `--deploy-record-dir`, a record outranked by file mtime, or a loaded but never deployed build
   in between: they cannot be told apart). Each entry says which case applies (no record of the worker names it /
-  its own record was outranked / another worker's record names it) and whether the image was already kept. With
+  its own record was outranked / another worker's record names it) and whether the image was already kept by a
+  record or a fallback rollback. A worker's own fallback rollback is not a gap and gets no entry. Each worker
+  counts the images of its own range, whichever worker is looked at first, so the entries and the refusal below
+  do not depend on env file names; an image two workers keep is listed once in `plan.recordGapImages`. When a
+  worker's records name only an image without a usable creation time, there is no floor: every ordered image
+  built before its in-use image is in range (for every worker whose records name that image), and the refusal
+  then points at that record instead of a missing `--deploy-record-dir`. With
   complete records the range is empty (also when the worker's newest record image is kept by another worker,
   e.g. workers switching together). On a node with several workers, images another worker ran after this
   worker's last recorded switch fall inside its range and are kept as well (reported as "a record of <worker>
