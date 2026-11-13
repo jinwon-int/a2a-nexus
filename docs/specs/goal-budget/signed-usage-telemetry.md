@@ -2,7 +2,7 @@
 
 > **Issue:** [#2519](https://github.com/jinwon-int/a2a-nexus/issues/2519) (follow-up of [#2499](https://github.com/jinwon-int/a2a-nexus/issues/2499), spec decision 12)
 > **Phase:** Spec-first. This document changes no code, schema, setting or runtime behaviour, and grants no approval.
-> **Status:** Draft — awaiting owner ratification of the [decisions](#decisions-for-owner-ratification). Nothing in "Recommended design" exists yet.
+> **Status:** Ratified — 2026-11-14 KST, owner decision recorded on [#2519](https://github.com/jinwon-int/a2a-nexus/issues/2519): all 10 [decisions](#decisions-for-owner-ratification) are settled as recommended. Nothing in "Recommended design" exists yet; implementation is a separate PR, and every step under [Rollout order](#rollout-order) keeps its own approval. The [open questions](#open-questions) are not settled by this ratification.
 > **Related:** [`spec.md`](spec.md) (decisions 4, 8, 12, 15, 16, 19), [`cross-broker-spend.md`](cross-broker-spend.md), [`packages/broker/docs/spend-budget-runbook.md`](../../../packages/broker/docs/spend-budget-runbook.md), [`packages/docker-runner/docs/signed-execution-proof.md`](../../../packages/docker-runner/docs/signed-execution-proof.md)
 
 Code references are to `main` at `dc2fd4b2`; paths without a package are under `packages/broker/src/`. "Spec decision N" means a numbered decision in [`spec.md`](spec.md).
@@ -146,7 +146,7 @@ Mixed versions: an older worker with a newer broker gives unverified rows, as to
 
 ## Decisions for owner ratification
 
-Numbered within this document. Each has a recommendation and the alternative.
+Numbered within this document. **Ratified 2026-11-14 KST: each of the 10 decisions is settled as its recommendation.** The alternatives stay recorded for reference; changing one later needs a new owner decision and an edit to this section.
 
 1. **Signed structure.** Recommended: the usage attestation (option B). Alternative: mark rows from `v1` result provenance only (A), or extend `ExecutionProof` (C).
 2. **Invalid attestation.** Recommended: accept the terminal report and record the row unverified. Alternative: reject the report, as `provenance_invalid` does for result provenance; stricter, but a signing bug then blocks task completion.
