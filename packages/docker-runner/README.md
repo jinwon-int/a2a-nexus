@@ -598,21 +598,35 @@ Only `a2a-docker-runner` / `a2a-docker-runner-<flavor>` repositories are planned
 
 - **in use** — the `A2A_*IMAGE` value in a running process's environ (`/proc/<pid>/environ`), the systemd
   `EnvironmentFile=` of that process's unit, live env files under `--env-dir` (default `/etc/default`), an env
-  file named with `--env-file` / `A2A_DOCKER_RUNNER_ENV_FILE`, and `--keep <image-ref>` (a reference matching
-  several local images protects all of them);
+  file named with `--env-file` (repeatable) / `A2A_DOCKER_RUNNER_ENV_FILE`, and `--keep <image-ref>` (a reference
+  matching several local images protects all of them);
 - **any container's image**, running or stopped (e.g. an egress proxy still on an older tag);
-- **rollback** — `--keep-rollback` (default 1) per worker env file, from that file's newest backup
-  (`<env>.bak-<tag>-<stamp>` and similar = the previous deploy); topped up per repository from
-  `--deploy-record-dir` / colon-separated `A2A_DOCKER_RUNNER_DEPLOY_RECORD_DIRS`, else the newest image built
-  before the in-use one. Backups whose live file is gone are never used to pick a rollback;
+- **rollback** — `--keep-rollback` (default 1) **per worker** (a live env file; a running process whose systemd
+  unit loads none of them is its own worker), taken in this order until each worker has N, counting only images
+  built before that worker's in-use image and not already kept as recent: its own newest backups
+  (`<env>.bak-<tag>-<stamp>` and similar, also next to an env file outside `--env-dir`), deploy records without a
+  known owner (`--deploy-record-dir` / colon-separated `A2A_DOCKER_RUNNER_DEPLOY_RECORD_DIRS`) **whose file name is
+  that worker's env file name** (record directories keep the original name), then the newest image built before
+  that worker's in-use image **not already kept for another reason** (every worker's own records are taken
+  first, then the fallbacks; an image kept as another worker's or a moved worker's rollback, or as an
+  unattributed record, never uses this worker's slot). Backups whose live file is gone are never used. An owner-less record that matches no worker, or
+  whose file name several worker env files share (same name in different directories, any repository), never
+  fills a slot; its image is kept and listed in `plan.recordsToReview`. Backups of a live env file that is no
+  worker of this repository (e.g. its worker moved to another flavor) stay that file's rollback in the old
+  repository (its N newest). A repository opted in with `--repository` but used by no worker keeps its N newest
+  non-recent images in addition to those;
 - tags whose name contains `rollback`, and images built **or loaded/tagged** within `--min-age` (default 72h;
   `docker load` keeps the build time, so docker's `LastTagTime` counts too);
-- any image **built after the in-use image** of its repository — most likely the next rollout, loaded but not
-  switched to yet (this also covers podman, which has no load time).
+- images **built at or after the in-use image** of its repository — most likely the next rollout, loaded but not
+  switched to yet (this also covers podman, which has no load time): the newest `--keep-newer` (default 1) are
+  kept; any more (failed rollouts, the image left after a rollback) are listed in `plan.newerToReview` and kept,
+  and become candidates only with `--include-newer`.
 
-A runner repository with no resolved in-use image is left alone (`plan.skippedRepositories`) unless named with
-`--repository <repo>`. Everything else in the planned repositories is a candidate; the report shows the evidence
-behind each decision, the bytes freed (an image counts only when all its tags go; shared-id tags are untag-only),
+A runner repository that no running process or live env file uses is left alone (`plan.skippedRepositories`)
+unless named with `--repository <repo>`; containers and `--keep` protect their images but do not open a
+repository for pruning. Everything else in the planned repositories is a candidate; the report shows the evidence
+behind each decision, an upper bound of the bytes freed (an image counts only when all its tags go, shared base
+layers are counted per image; shared-id tags are untag-only),
 and `df` for `/` and the engine root.
 
 `--apply` is **refused (exit 2)** when an in-use or `--keep` reference does not resolve to a local image, when
