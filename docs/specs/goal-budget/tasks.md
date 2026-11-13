@@ -147,10 +147,10 @@ Split into two PRs (finalizer decision, 2026-11-07, recorded on #2499): **3b-1**
 ### Closeout
 
 - [x] Open follow-up issues:
-  - cross-broker spend aggregation (Team 1 + Team 2): #2516;
+  - cross-broker spend aggregation (Team 1 + Team 2): #2516 — design draft [`cross-broker-spend.md`](cross-broker-spend.md), awaiting owner ratification;
   - reconcile `docs/specs/a2a-goal-mode/schema.json` with `GoalStatus`: #2517;
   - cost reporting for Codex, Hermes and patch lanes (worker adapters): #2518;
-  - signed usage telemetry, so budgets do not rely on unsigned worker reports (spec decision 12): #2519;
+  - signed usage telemetry, so budgets do not rely on unsigned worker reports (spec decision 12): #2519 — design draft [`signed-usage-telemetry.md`](signed-usage-telemetry.md), awaiting owner ratification;
   - carried review minors from slices 3b-2 and 4: #2520 (and #2512, found during slice 3a).
 - [x] Produce worker evidence packets (A2A lane task IDs and verdicts) per slice: [`evidence.md`](evidence.md).
 - [x] Runbook hardening from the slice 4 re-review: keep the current v14 database before a restore, verify and record the pre-upgrade backup, read the edge secret without shell history, name `STALE_REAPER_ENABLED`, and document the SSE snapshot replace semantics in `a2a-protocol.md`.
