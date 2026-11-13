@@ -819,11 +819,77 @@ test("#2554 the fallback reason tells 'no deploy record' from 'no eligible deplo
   assert.match(rollback?.why ?? "", /\(no eligible deploy record left\)$/);
 });
 
-test("#2554 apply is refused when a worker's in-use image has no parseable creation time", () => {
+test("#2554 apply is refused when a worker's in-use image has no usable creation time", () => {
   const images = IMAGES.map((entry) => (entry.id === "sha256:aaa" ? { ...entry, created: "not-a-date" } : entry));
   const plan = planRunnerImagePrune(inventory({ images }), { nowMs: NOW, isRoot: true });
   assert.equal(plan.applyAllowed, false);
-  assert.ok(plan.applyRefusals.some((reason) => /no parseable creation time/.test(reason)), plan.applyRefusals.join("; "));
+  assert.ok(plan.applyRefusals.some((reason) => /no usable creation time/.test(reason)), plan.applyRefusals.join("; "));
+  // #2554 r2: the refused repository lists no candidate (the dry-run must not read as a delete list).
+  assert.deepEqual(plan.candidates, []);
+  assert.equal(plan.reclaimableBytes, 0);
+  assert.equal(reasonOf(plan, "666becb"), "unverified-rollback");
+});
+
+// ── #2554 r2: minors from the #2555 review ──────────────────────────────────
+
+test("#2554 r2 an epoch-0 or 0001-01-01 in-use Created is unknown: apply refused, nothing a candidate", () => {
+  for (const created of ["1970-01-01T00:00:00Z", "0001-01-01T00:00:00Z"]) {
+    const images = IMAGES.map((entry) => (entry.id === "sha256:aaa" ? { ...entry, created } : entry));
+    const plan = planRunnerImagePrune(inventory({ images }), { nowMs: NOW, isRoot: true });
+    assert.equal(plan.applyAllowed, false, created);
+    assert.ok(plan.applyRefusals.some((reason) => /no usable creation time/.test(reason)), created);
+    assert.deepEqual(plan.candidates, [], created);
+  }
+});
+
+test("#2554 r2 one unknown in-use Created among a worker's in-use images refuses apply", () => {
+  // The worker's env file names aaa; its unit's process runs ggg (Created unparseable).
+  const images = [...IMAGES, image("ggg", [`${R}:hotfix`], 4, { created: "garbage" })];
+  const plan = planRunnerImagePrune(
+    inventory({
+      images,
+      live: { refs: [{ ref: `${R}:hotfix`, source: "pid 10 a2a-hermes-worker.service A2A_DOCKER_RUNNER_IMAGE" }], unreadable: 0, scanned: 40, units: ["a2a-hermes-worker.service"] },
+      unitEnvFiles: { "a2a-hermes-worker.service": [ENV] },
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.equal(plan.applyAllowed, false);
+  assert.ok(plan.applyRefusals.some((reason) => /no usable creation time/.test(reason)), plan.applyRefusals.join("; "));
+  assert.deepEqual(plan.candidates, []);
+});
+
+test("#2554 r2 --keep-rollback 0 needs no build order: an unknown in-use Created does not refuse", () => {
+  const images = IMAGES.map((entry) => (entry.id === "sha256:aaa" ? { ...entry, created: "not-a-date" } : entry));
+  const plan = planRunnerImagePrune(inventory({ images }), { nowMs: NOW, isRoot: true, keepRollback: 0 });
+  assert.ok(!plan.applyRefusals.some((reason) => /creation time/.test(reason)), plan.applyRefusals.join("; "));
+  assert.equal(plan.applyAllowed, true);
+});
+
+test("#2554 r2 an own record that lost the slot but is also unattributed says whose history it is", () => {
+  const plan = planRunnerImagePrune(
+    inventory({
+      deployRecords: [
+        record(`${R}:666becb-claude-2.1.322`, ENV, 1),
+        record(`${R}:573ca08-claude-2.1.322`, ENV, 3),
+        record(`${R}:573ca08-claude-2.1.322`, undefined, 2, { file: "/backups/retired-worker" }),
+      ],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.equal(reasonOf(plan, "666becb"), "rollback");
+  const kept = plan.repositories[0].keep.find((tag) => tag.tag.endsWith("573ca08-claude-2.1.322"));
+  assert.equal(kept?.reason, "unattributed-record");
+  assert.match(kept?.why ?? "", /matches no worker env file name; also named by \/etc\/default\/a2a-hermes-worker's own deploy record/);
+  assert.deepEqual(plan.recordsToReview, [`${R}:573ca08-claude-2.1.322`]);
+});
+
+test("#2554 r2 records naming only another repository's image leave the fallback note at 'no deploy record'", () => {
+  const codex = "a2a-docker-runner-codex";
+  const images = [...IMAGES, image("cx0", [`${codex}:old`], 20)];
+  const plan = planRunnerImagePrune(inventory({ images, deployRecords: [record(`${codex}:old`, ENV, 2)] }), { nowMs: NOW, isRoot: true });
+  const rollback = plan.repositories.find((repo) => repo.repository === R)?.keep.find((tag) => tag.reason === "rollback");
+  assert.equal(rollback?.tag, `${R}:666becb-claude-2.1.322`);
+  assert.match(rollback?.why ?? "", /\(no deploy record\)$/);
 });
 
 test("#2554 a relative --env-dir yields absolute paths that match live files and backup owners", async () => {
