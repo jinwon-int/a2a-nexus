@@ -1,5 +1,5 @@
-import { unique } from "./collections.js";
-import { isRecord } from "./value-guards.js";
+import { unique } from "../collections.js";
+import { isRecord } from "../value-guards.js";
 import { createHash } from "node:crypto";
 
 import type { TerminalBriefApprovalDispatchAdapterPacket } from "./terminal-brief-approval-dispatch-adapter.js";

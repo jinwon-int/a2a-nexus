@@ -8,16 +8,16 @@
 // InMemoryA2ABroker keeps both public methods as delegators.
 import { randomUUID } from "node:crypto";
 
-import { BrokerError } from "./broker-error.js";
-import { isoNow } from "./broker-helpers.js";
-import { isTerminalTaskStatus } from "./broker-status-predicates.js";
+import { BrokerError } from "../broker-error.js";
+import { isoNow } from "../broker-helpers.js";
+import { isTerminalTaskStatus } from "../broker-status-predicates.js";
 import {
   normalizeApprovalId,
   normalizeApprovalReason,
   normalizeApprovalTerminalStatus,
-} from "./broker-wake-normalizers.js";
+} from "../broker-wake-normalizers.js";
 import { isPrivilegedTaskApprover } from "./policy.js";
-import type { TaskUpdateReason } from "./broker-contracts.js";
+import type { TaskUpdateReason } from "../broker-contracts.js";
 import type {
   A2AExchangeState,
   AuditAction,
@@ -25,7 +25,7 @@ import type {
   TaskApprovalRequest,
   TaskApprovalTerminalRequest,
   TaskRecord,
-} from "./types.js";
+} from "../types.js";
 
 export interface TaskApprovalContext {
   requireTask(id: string): TaskRecord;

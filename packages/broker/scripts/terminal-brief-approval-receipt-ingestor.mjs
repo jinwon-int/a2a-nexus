@@ -12,7 +12,7 @@ import {
   extractTerminalBriefApprovalDispatchAdapterPacket,
   extractTerminalBriefApprovalReceiptEvidence,
   renderTerminalBriefApprovalReceiptIngestorMarkdown,
-} from "../dist/core/terminal-brief-approval-receipt-ingestor.js";
+} from "../dist/core/policy-approval/terminal-brief-approval-receipt-ingestor.js";
 
 function parseArgs(argv) {
   const readOption = (name) => {

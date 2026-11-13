@@ -9,14 +9,14 @@
 // delegators. Proposal READ paths live in broker-proposal-read paths already.
 import { randomUUID } from "node:crypto";
 
-import { BrokerError } from "./broker-error.js";
-import { isoNow, uniqueIds } from "./broker-helpers.js";
+import { BrokerError } from "../broker-error.js";
+import { isoNow, uniqueIds } from "../broker-helpers.js";
 import {
   assertAttachArtifactPayload,
   assertProposalPayload,
   assertSubmitValidationPayload,
-} from "./dispatch/broker-payload-validators.js";
-import { assertTransition } from "./broker-transition-guards.js";
+} from "../dispatch/broker-payload-validators.js";
+import { assertTransition } from "../broker-transition-guards.js";
 import {
   assertProposalApplyAllowed,
   assertProposalCreationAllowed,
@@ -35,7 +35,7 @@ import type {
   ProposalActorRequest,
   SubmitValidationRequest,
   ValidationResult,
-} from "./types.js";
+} from "../types.js";
 
 export interface ProposalWriteContext {
   requireProposal(id: string): ChangeProposal;

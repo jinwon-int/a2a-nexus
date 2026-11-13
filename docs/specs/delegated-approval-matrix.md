@@ -30,9 +30,9 @@
 
 | 항목 | 위치 (main `33c4892`) | 관찰 |
 |---|---|---|
-| 승인 플로 | `packages/broker/src/core/broker-task-approval.ts:53` `approveTask` | `blocked → approved → queued` 재개 + approval 레코드(`approvalId`/`approvedBy`/`actorRole`, :76–:79). 승인권 판정은 :58(approve), :123(reject-approval) 에서 `isPrivilegedTaskApprover` 호출 |
-| 승인권자 판정 | `packages/broker/src/core/policy.ts:150` `isPrivilegedTaskApprover` | `role === "operator" \|\| role === "hub"` — **hub 와 operator 가 동등**, 위험 등급 구분 없음 |
-| 승인 필요 판정 | `packages/broker/src/core/policy.ts:140` `isTaskApprovalRequired` | `DANGEROUS_TASK_INTENTS`(:95, `apply_local_change`·`promote_to_live`·`rollback_live`) · `liveImpact` · `targetEnvironment=live` · `requiresApproval` |
+| 승인 플로 | `packages/broker/src/core/policy-approval/broker-task-approval.ts:53` `approveTask` | `blocked → approved → queued` 재개 + approval 레코드(`approvalId`/`approvedBy`/`actorRole`, :76–:79). 승인권 판정은 :58(approve), :123(reject-approval) 에서 `isPrivilegedTaskApprover` 호출 |
+| 승인권자 판정 | `packages/broker/src/core/policy-approval/policy.ts:150` `isPrivilegedTaskApprover` | `role === "operator" \|\| role === "hub"` — **hub 와 operator 가 동등**, 위험 등급 구분 없음 |
+| 승인 필요 판정 | `packages/broker/src/core/policy-approval/policy.ts:140` `isTaskApprovalRequired` | `DANGEROUS_TASK_INTENTS`(:95, `apply_local_change`·`promote_to_live`·`rollback_live`) · `liveImpact` · `targetEnvironment=live` · `requiresApproval` |
 | HTTP 경로 | `packages/broker/src/http/tasks-decision-routes.ts:61` `readActorGatedBody` (이슈 원문 :99) | `enforceRequesterIdentity` 일 때만(:70) 인증 신원·hub/operator 역할 대조. 기본 on: `packages/broker/src/server.ts:343` `ENFORCE_REQUESTER_IDENTITY !== "0"` (이슈 원문 :340) |
 | 승인자 자격증명 바인딩 (#2322) | `tasks-decision-routes.ts:116` `readApproverDecisionBody`, `server.ts:349` | opt-in `A2A_APPROVER_ROLE_BINDING` = `off`(기본) \| `enforce`. `enforce` 시 서명 키 소유자 == requester, 키 레코드가 `roles` 를 명시적으로 선언해야 승인 가능 (`request-security.ts:1001`–`:1026` `a2a_signature_approver_*`) |
 | 서명 키 역할 제한 | `packages/broker/src/core/transport/request-security.ts:514` | `a2a_signature_role_denied` — 키 레지스트리 `roles` 제한 |

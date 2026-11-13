@@ -5,7 +5,7 @@ import type {
   CreateTaskRequest,
   ProposalActorRequest,
   SubmitValidationRequest,
-} from "./types.js";
+} from "../types.js";
 
 export class PolicyError extends Error {
   readonly code = "policy_denied" as const;

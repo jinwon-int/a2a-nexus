@@ -1,11 +1,11 @@
-import { isRecord } from "./value-guards.js";
+import { isRecord } from "../value-guards.js";
 import { createHash } from "node:crypto";
 
 import type {
   TerminalBriefCloseoutGateAction,
   TerminalBriefCloseoutGateActionStatus,
   TerminalBriefCloseoutGatePacket,
-} from "./completion/terminal-brief-closeout-gate.js";
+} from "../completion/terminal-brief-closeout-gate.js";
 
 export type TerminalBriefApprovalRequestDecision = "request_ready" | "waiting" | "blocked";
 

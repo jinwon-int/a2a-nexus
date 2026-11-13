@@ -7,7 +7,7 @@
  * and audit trails — so they act as change detectors for behavioral drift.
  *
  * Usage in tests:
- *   import { buildWaitingState, buildTombstonedState } from "../fixtures/delegated-runtime.js";
+ *   import { buildWaitingState, buildTombstonedState } from "./delegated-runtime.js";
  *   const broker = loadBrokerFromFixture(buildWaitingState());
  *   // assert behavioral invariants...
  *

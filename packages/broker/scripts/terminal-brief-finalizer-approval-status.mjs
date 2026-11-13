@@ -13,7 +13,7 @@ import {
   extractTerminalBriefFinalizerApprovalReceiptStatus,
   extractTerminalBriefFinalizerApprovalStatusDispatch,
   renderTerminalBriefFinalizerApprovalStatusMarkdown,
-} from "../dist/core/terminal-brief-finalizer-approval-status.js";
+} from "../dist/core/policy-approval/terminal-brief-finalizer-approval-status.js";
 
 function parseArgs(argv) {
   const readOption = (name) => {

@@ -1,12 +1,12 @@
-import { unique } from "./collections.js";
-import { isRecord } from "./value-guards.js";
+import { unique } from "../collections.js";
+import { isRecord } from "../value-guards.js";
 import { createHash } from "node:crypto";
 
 import type {
   TerminalBriefApprovalDispatchAdapterPacket,
   TerminalBriefApprovalDispatchAdapterState,
 } from "./terminal-brief-approval-dispatch-adapter.js";
-import { optionalString } from "./value-text.js";
+import { optionalString } from "../value-text.js";
 
 export type TerminalBriefApprovalReceiptEvidenceKind =
   | "provider_accepted"

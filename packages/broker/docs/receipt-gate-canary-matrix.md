@@ -15,7 +15,7 @@ For a full pre-deploy check, run the focused test plus the normal CI command:
 
 ```sh
 npm run build
-node --test dist/core/receipt-gate-canary.test.js
+node --test dist/core/policy-approval/receipt-gate-canary.test.js
 npm test
 ```
 

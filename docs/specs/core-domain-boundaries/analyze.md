@@ -1135,6 +1135,51 @@ modules match, and the count went from 16 to 26. It now tests only the
 filename, as its doc comment always said. The count is back to 16, and a
 regression test pins this.
 
+**2b moved (2026-11-13):** the remaining 11 modules and their 7 tests, to
+the same directory:
+
+- Modules: `broker-proposal-read`, `broker-proposal-write`,
+  `broker-task-approval`, `policy`, `receipt-gate-canary`,
+  `terminal-brief-approval-{dispatch-adapter,executor,receipt-ingestor,request}`,
+  `terminal-brief-finalizer-approval-status` and `two-broker-safety-matrix`.
+  `two-broker-safety-matrix` is kept permanently by decision #6 and moves with
+  its domain.
+- Tests: `receipt-gate-canary`, the four `terminal-brief-approval-*` tests,
+  `terminal-brief-finalizer-approval-status` and `two-broker-safety-matrix`.
+
+**2b changes:**
+
+- 49 specifiers rewritten in 19 files. Outside the moved files, the importers
+  are `broker.ts`, `http/terminal-brief-routes.ts`,
+  `completion/broker-terminal-receipt-parity{,.test}.ts` and
+  `fixtures/delegated-runtime.ts`.
+- 15 path strings updated: the `../dist/core/…` imports of 7 wrappers
+  (`terminal-brief-approval-{dispatch,executor,receipt-ingestor,request}`,
+  `terminal-brief-finalizer-approval-status`, `receipt-gate-canary`,
+  `broker-terminal-receipt-parity`), the delegated-approval matrix spec and the
+  `node --test dist/core/…` lines of two broker docs.
+- None of the moved files uses `import.meta`, `__dirname` or `__filename`.
+- 11 map entries removed; 1 type-baseline entry re-keyed
+  (`completion/broker-terminal-receipt-parity.ts → policy-approval/receipt-gate-canary.ts`).
+
+**Left unchanged on purpose:** the synthetic `classifyFile` inputs in
+`scripts/check-source-quality-floors.test.mjs` (they test path classification,
+and `core/policy.test.ts` never existed); the historical design notes in
+`phase-1-implementation-checklist.md` and `trading-partner-refactor-design.md`;
+the Step 4 table above; packet `kind` strings and wrapper script names in
+fixtures and manifests.
+
+**Results:** the map's `modules` now lists only the root exceptions `facade`
+(`broker.ts`) and the 2 `test-support` modules. The literal row-7 rule, "only
+`broker.ts` may import domain directories", now holds for every root module.
+175 core modules: kernel 27 by root default and 9 domain directories,
+`policy-approval` 29 among them. Value violations stay at 0 and type-only at
+23 = baseline. The ceremony count stays at 16. No moved module is in the
+worker dist closure. The packed artifact's file list is unchanged; only the
+7 wrappers (payload `scripts/` and `handlers/` copies) differ, by their
+import paths. Rolling them out goes with the next regular worker deploy and
+needs its own approval.
+
 ## Appendix: survey script
 
 Throwaway. Do not add it under `scripts/` because of the budget. Copy it to a

@@ -159,19 +159,8 @@
   },
   "rootDefaultDomain": "kernel",
   "modules": {
-    "broker-proposal-read.ts": "policy-approval",
-    "broker-proposal-write.ts": "policy-approval",
-    "broker-task-approval.ts": "policy-approval",
     "broker-test-helpers.ts": "test-support",
     "broker.ts": "facade",
-    "policy.ts": "policy-approval",
-    "receipt-gate-canary.ts": "policy-approval",
-    "store-test-helpers.ts": "test-support",
-    "terminal-brief-approval-dispatch-adapter.ts": "policy-approval",
-    "terminal-brief-approval-executor.ts": "policy-approval",
-    "terminal-brief-approval-receipt-ingestor.ts": "policy-approval",
-    "terminal-brief-approval-request.ts": "policy-approval",
-    "terminal-brief-finalizer-approval-status.ts": "policy-approval",
-    "two-broker-safety-matrix.ts": "policy-approval"
+    "store-test-helpers.ts": "test-support"
   }
 }

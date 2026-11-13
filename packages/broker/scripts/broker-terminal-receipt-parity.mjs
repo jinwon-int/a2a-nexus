@@ -4,7 +4,7 @@
 // never sends provider messages, mutates broker state, or ACKs terminal rows.
 
 import process from 'node:process';
-import { runReceiptGateCanaryMatrix } from '../dist/core/receipt-gate-canary.js';
+import { runReceiptGateCanaryMatrix } from '../dist/core/policy-approval/receipt-gate-canary.js';
 import {
   analyzeBrokerTerminalReceiptSnapshot,
   compareBrokerTerminalReceiptParity,

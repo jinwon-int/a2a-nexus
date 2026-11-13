@@ -132,7 +132,7 @@ import { getBrokerRoundStatus, listBrokerTasks, readBrokerTask } from "./evidenc
 import { HOT_READ_HARD_MAX_LIMIT } from "./store/store-hot-select-projections.js";
 import { TaskLineageIndex } from "./evidence-retrieval/task-lineage-index.js";
 import type { TaskLineageReadProjectionV1 } from "./evidence-retrieval/task-lineage-read.js";
-import { readBrokerProposal, listBrokerProposals } from "./broker-proposal-read.js";
+import { readBrokerProposal, listBrokerProposals } from "./policy-approval/broker-proposal-read.js";
 import {
   listBrokerArtifactsForProposal,
   listBrokerAuditEvents,
@@ -152,7 +152,7 @@ import {
 
 import type { RoundStatusSummary } from "./completion/round-status.js";
 
-import { normalizeTaskPolicyContext } from "./policy.js";
+import { normalizeTaskPolicyContext } from "./policy-approval/policy.js";
 import type { BrokerPolicyDocument } from "a2a-policy-referee";
 import {
   resolveInjectedKnowledgeTaskClass,
@@ -169,16 +169,16 @@ import type {
 } from "./dispatch/broker-task-admission.js";
 import * as staleTaskRequeue from "./claim/broker-stale-task-requeue.js";
 import type { StaleTaskRequeueContext } from "./claim/broker-stale-task-requeue.js";
-import * as proposalWrite from "./broker-proposal-write.js";
-import * as taskApproval from "./broker-task-approval.js";
+import * as proposalWrite from "./policy-approval/broker-proposal-write.js";
+import * as taskApproval from "./policy-approval/broker-task-approval.js";
 import * as taskCancellation from "./execution/broker-task-cancellation.js";
 import * as taskCheckpoint from "./execution/broker-task-checkpoint.js";
 import * as taskTerminal from "./completion/broker-task-terminal.js";
 import type { TaskTerminalContext } from "./completion/broker-task-terminal.js";
 import type { TaskCheckpointContext } from "./execution/broker-task-checkpoint.js";
 import type { TaskCancellationContext } from "./execution/broker-task-cancellation.js";
-import type { TaskApprovalContext } from "./broker-task-approval.js";
-import type { ProposalWriteContext } from "./broker-proposal-write.js";
+import type { TaskApprovalContext } from "./policy-approval/broker-task-approval.js";
+import type { ProposalWriteContext } from "./policy-approval/broker-proposal-write.js";
 import {
   CURRENT_BROKER_STATE_VERSION,
   type BrokerSnapshot,

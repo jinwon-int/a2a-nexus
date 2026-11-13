@@ -1,7 +1,7 @@
-import { proposalMatchesFilters } from "./broker-list-filters.js";
-import { sortedCopy, sortNewestFirst } from "./broker-helpers.js";
-import type { ProposalRuntimeRepository } from "./proposal-repository.js";
-import type { ChangeProposal, ProposalListFilters } from "./types.js";
+import { proposalMatchesFilters } from "../broker-list-filters.js";
+import { sortedCopy, sortNewestFirst } from "../broker-helpers.js";
+import type { ProposalRuntimeRepository } from "../proposal-repository.js";
+import type { ChangeProposal, ProposalListFilters } from "../types.js";
 
 export function readBrokerProposal(
   proposals: Map<string, ChangeProposal>,
