@@ -467,6 +467,7 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
     // in-use image that is not already kept for another reason (a record image
     // kept as someone's rollback or as unattributed never uses this slot).
     const picked = new Map<Worker, number>();
+    const recordPicks = new Map<Worker, string[]>(); // ids a worker's own deploy records took as its rollback
     // `fromRecord`: the worker's own deploy record names this image. An
     // unattributed record pointing at the same image does not outrank it — the
     // worker's real previous deploy is its rollback, not a review item (#2554).
@@ -478,6 +479,7 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
       rollback.set(id, why);
       unattributed.delete(id);
       picked.set(worker, count + 1);
+      if (fromRecord) recordPicks.set(worker, [...(recordPicks.get(worker) ?? []), id]);
     };
     const hadOwnRecords = new Set<Worker>();
     for (const worker of repoWorkers) {
@@ -498,19 +500,39 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
       for (const tag of fallback) take(worker, tag.id, `newest image built before the in-use image of ${worker.key} (${note})`, false);
     }
     // (4) Safety net (#2557): records name only the switches that left a backup
-    // in a scanned directory. When a worker's records filled its slot with an
-    // older image, the newest image built before its in-use image — most likely
-    // the one it ran just before — would otherwise become a candidate. Keep it
-    // too and report the gap. With complete records both are the same image.
+    // in a scanned directory, ordered by file mtime. When a worker's records
+    // took its slot, every image built after the newest of those record picks
+    // and before its in-use image may be the one it ran just before (an
+    // unrecorded switch, a record outranked by mtime, or a loaded but never
+    // deployed build in between — they cannot be told apart). Keep every such
+    // unprotected non-recent image and report it per worker. With complete,
+    // well-ordered records that range is empty: nothing extra, no gap.
     if (keepRollback > 0) {
+      const restIdSet = new Set(rest.map((tag) => tag.id));
       for (const worker of repoWorkers) {
-        if (!Number.isFinite(inUseMsOf.get(worker) ?? Number.NaN)) continue;
-        const newest = rest
-          .filter((tag) => builtBefore(worker, tag.id) && !isRecent(tag))
-          .sort((a, b) => Date.parse(b.created) - Date.parse(a.created))[0];
-        if (!newest || rollback.has(newest.id) || unattributed.has(newest.id)) continue;
-        rollback.set(newest.id, `newest image built before the in-use image of ${worker.key} — none of its deploy records names it; kept besides them (the latest switch may be unrecorded)`);
-        recordGaps.push(`${worker.key}: ${newest.tag} is the newest image built before its in-use image but none of its deploy records names it — check that every directory holding its env backups is passed with --deploy-record-dir`);
+        const picks = recordPicks.get(worker) ?? [];
+        if (picks.length === 0 || !Number.isFinite(inUseMsOf.get(worker) ?? Number.NaN)) continue;
+        const floorMs = Math.max(...picks.map(createdMs));
+        const floorTag = rest.find((tag) => tag.id === picks.find((id) => createdMs(id) === floorMs))?.tag ?? "its recorded rollback";
+        const ownIds = new Set(resolvedRecords.filter((entry) => recordWorker(entry.record) === worker).map((entry) => entry.id));
+        const seen = new Set<string>();
+        const range = tags
+          .filter((tag) => restIdSet.has(tag.id) && createdMs(tag.id) > floorMs && builtBefore(worker, tag.id) && !isRecent(tag))
+          .sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
+        for (const tag of range) {
+          if (seen.has(tag.id)) continue;
+          seen.add(tag.id);
+          const outranked = ownIds.has(tag.id);
+          const other = outranked ? undefined : resolvedRecords.find((entry) => entry.id === tag.id && recordWorker(entry.record) && recordWorker(entry.record) !== worker);
+          const already = rollback.get(tag.id) ?? (unattributed.has(tag.id) ? "an unattributed deploy record" : undefined);
+          const cause = outranked
+            ? "its own deploy record names it but a record of an older image took the slot (records are ordered by file mtime)"
+            : other
+              ? `none of its deploy records names it; a record of ${recordWorker(other.record)?.key} does — it may be that worker's history`
+              : "none of its deploy records names it — check that every directory holding its env backups is passed with --deploy-record-dir";
+          if (!already) rollback.set(tag.id, `built after ${floorTag} (the newest image ${worker.key}'s records kept) and before its in-use image — ${outranked ? "its own record was outranked" : "the latest switch may be unrecorded"}; kept besides the records`);
+          recordGaps.push(`${worker.key}: ${tag.tag} was built after its newest recorded rollback (${floorTag}) and before its in-use image; ${cause}${already ? ` (already kept: ${already})` : " — kept"}`);
+        }
       }
     }
     if (repoWorkers.length === 0) {
