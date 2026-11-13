@@ -2,7 +2,7 @@
 
 > **Issue:** [#2516](https://github.com/jinwon-int/a2a-nexus/issues/2516) (follow-up of [#2499](https://github.com/jinwon-int/a2a-nexus/issues/2499))
 > **Phase:** Spec-first. This document changes no code, schema, setting or runtime behaviour, and grants no approval.
-> **Status:** Draft — awaiting owner ratification of the [decisions](#decisions-for-owner-ratification). Nothing in "Recommended design" exists yet.
+> **Status:** Ratified — 2026-11-14 KST, owner decision recorded on [#2516](https://github.com/jinwon-int/a2a-nexus/issues/2516): all 11 [decisions](#decisions-for-owner-ratification) are settled as recommended. Nothing in "Recommended design" exists yet; implementation is a separate PR, and every step under [Rollout order](#rollout-order) keeps its own approval. The [open questions](#open-questions) are not settled by this ratification.
 > **Related:** [`spec.md`](spec.md) (decisions 9, 10, 11, 13, 15, 19), [`plan.md`](plan.md) ("Scope of a budget"), [`signed-usage-telemetry.md`](signed-usage-telemetry.md), [`docs/specs/cross-broker-parent-round/spec.md`](../cross-broker-parent-round/spec.md)
 
 Code references are to `main` at `dc2fd4b2`; paths without a package are under `packages/broker/src/`. "Spec decision N" means a numbered decision in [`spec.md`](spec.md).
@@ -145,7 +145,7 @@ Accepted overshoot (extends spec decision 10): up to one relay interval of peer 
 
 ## Decisions for owner ratification
 
-Numbered within this document. Each has a recommendation and the alternative.
+Numbered within this document. **Ratified 2026-11-14 KST: each of the 11 decisions is settled as its recommendation.** The alternatives stay recorded for reference; changing one later needs a new owner decision and an edit to this section.
 
 1. **Where the total lives.** Recommended: signed periodic summaries carried by the relay (option B). Alternative: broker pull (A) or an external aggregator (C).
 2. **Who signs.** Recommended: the source broker process, with its broker signing key, so the relay is untrusted. Alternative: only the relay's request-bound sender proof, as for Terminal Briefs; simpler, but the relay host then vouches for the numbers.
