@@ -819,11 +819,175 @@ test("#2554 the fallback reason tells 'no deploy record' from 'no eligible deplo
   assert.match(rollback?.why ?? "", /\(no eligible deploy record left\)$/);
 });
 
-test("#2554 apply is refused when a worker's in-use image has no parseable creation time", () => {
+test("#2554 apply is refused when a worker's in-use image has no usable creation time", () => {
   const images = IMAGES.map((entry) => (entry.id === "sha256:aaa" ? { ...entry, created: "not-a-date" } : entry));
   const plan = planRunnerImagePrune(inventory({ images }), { nowMs: NOW, isRoot: true });
   assert.equal(plan.applyAllowed, false);
-  assert.ok(plan.applyRefusals.some((reason) => /no parseable creation time/.test(reason)), plan.applyRefusals.join("; "));
+  assert.ok(plan.applyRefusals.some((reason) => /no usable creation time/.test(reason)), plan.applyRefusals.join("; "));
+  // #2554 r2: the refused repository lists no candidate (the dry-run must not read as a delete list).
+  assert.deepEqual(plan.candidates, []);
+  assert.equal(plan.reclaimableBytes, 0);
+  assert.equal(reasonOf(plan, "666becb"), "unverified-rollback");
+});
+
+// ── #2554 r2: minors from the #2555 review ──────────────────────────────────
+
+test("#2554 r2 an epoch-0 or 0001-01-01 in-use Created is unknown: apply refused, nothing a candidate", () => {
+  for (const created of ["1970-01-01T00:00:00Z", "0001-01-01T00:00:00Z"]) {
+    const images = IMAGES.map((entry) => (entry.id === "sha256:aaa" ? { ...entry, created } : entry));
+    const plan = planRunnerImagePrune(inventory({ images }), { nowMs: NOW, isRoot: true });
+    assert.equal(plan.applyAllowed, false, created);
+    assert.ok(plan.applyRefusals.some((reason) => /no usable creation time/.test(reason)), created);
+    assert.deepEqual(plan.candidates, [], created);
+  }
+});
+
+test("#2554 r2 one unknown in-use Created among a worker's in-use images refuses apply", () => {
+  // The worker's env file names aaa; its unit's process runs ggg (Created unparseable).
+  const images = [...IMAGES, image("ggg", [`${R}:hotfix`], 4, { created: "garbage" })];
+  const plan = planRunnerImagePrune(
+    inventory({
+      images,
+      live: { refs: [{ ref: `${R}:hotfix`, source: "pid 10 a2a-hermes-worker.service A2A_DOCKER_RUNNER_IMAGE" }], unreadable: 0, scanned: 40, units: ["a2a-hermes-worker.service"] },
+      unitEnvFiles: { "a2a-hermes-worker.service": [ENV] },
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.equal(plan.applyAllowed, false);
+  assert.ok(plan.applyRefusals.some((reason) => /no usable creation time/.test(reason)), plan.applyRefusals.join("; "));
+  assert.deepEqual(plan.candidates, []);
+});
+
+test("#2554 r2 --keep-rollback 0 --keep-newer 0 --include-newer needs no build order: an unknown in-use Created does not refuse", () => {
+  const images = IMAGES.map((entry) => (entry.id === "sha256:aaa" ? { ...entry, created: "not-a-date" } : entry));
+  const plan = planRunnerImagePrune(inventory({ images }), { nowMs: NOW, isRoot: true, keepRollback: 0, keepNewer: 0, includeNewer: true });
+  assert.ok(!plan.applyRefusals.some((reason) => /creation time/.test(reason)), plan.applyRefusals.join("; "));
+  assert.equal(plan.applyAllowed, true);
+});
+
+// ── #2560 review (T1 nosuk / T2 jingun): sentinel Created must not move an image toward deletion ──
+
+test("#2560 r1 a previous deploy with an epoch-0 Created named by the worker's own record stays its rollback", () => {
+  const images = IMAGES.map((entry) => (entry.id === "sha256:bbb" ? { ...entry, created: "1970-01-01T00:00:00Z" } : entry));
+  const plan = planRunnerImagePrune(inventory({ images, deployRecords: [record(`${R}:666becb-claude-2.1.322`, ENV, 2)] }), { nowMs: NOW, isRoot: true });
+  assert.equal(reasonOf(plan, "666becb"), "rollback");
+  assert.ok(!plan.candidates.some((tag) => tag.tag.includes("666becb")));
+});
+
+test("#2560 r1 a non-in-use image with a sentinel or unparseable Created is kept as unknown-build-order, never a candidate", () => {
+  for (const created of ["1970-01-01T00:00:00Z", "0001-01-01T00:00:00Z", "garbage"]) {
+    const images = IMAGES.map((entry) => (entry.id === "sha256:ddd" ? { ...entry, created } : entry));
+    const plan = planRunnerImagePrune(inventory({ images }), { nowMs: NOW, isRoot: true });
+    // An unparseable Created already reads as "recent" (unknown age); either way it is kept.
+    assert.equal(reasonOf(plan, "2.1.318"), created === "garbage" ? "recent" : "unknown-build-order", created);
+    assert.ok(!plan.candidates.some((tag) => tag.tag.endsWith("2.1.318")), created);
+    assert.equal(plan.applyAllowed, true, created); // a known in-use image still lets the rest be pruned
+  }
+});
+
+test("#2560 r1 --keep-rollback 0 with an unknown in-use Created still refuses while the newer line is active", () => {
+  // A staged next rollout (built after the in-use image) must not become a candidate with apply allowed.
+  const images = [...IMAGES.map((entry) => (entry.id === "sha256:aaa" ? { ...entry, created: "not-a-date" } : entry)), image("nnn", [`${R}:next-rollout`], 4)];
+  const plan = planRunnerImagePrune(inventory({ images }), { nowMs: NOW, isRoot: true, keepRollback: 0 });
+  assert.equal(plan.applyAllowed, false);
+  assert.ok(plan.applyRefusals.some((reason) => /no usable creation time/.test(reason)), plan.applyRefusals.join("; "));
+  assert.ok(!plan.candidates.some((tag) => tag.tag.includes("next-rollout")));
+});
+
+test("#2560 r1 an unattributed image also named by a worker with an unknown in-use Created says that is why", () => {
+  const images = IMAGES.map((entry) => (entry.id === "sha256:aaa" ? { ...entry, created: "garbage" } : entry));
+  const plan = planRunnerImagePrune(
+    inventory({ images, deployRecords: [record(`${R}:573ca08-claude-2.1.322`, ENV, 3), record(`${R}:573ca08-claude-2.1.322`, undefined, 2, { file: "/backups/retired-worker" })] }),
+    { nowMs: NOW, isRoot: true },
+  );
+  const kept = plan.repositories[0].keep.find((tag) => tag.tag.endsWith("573ca08-claude-2.1.322"));
+  assert.equal(kept?.reason, "unattributed-record");
+  assert.match(kept?.why ?? "", /not taken as its rollback \(its in-use creation time is unknown\)/);
+});
+
+// ── #2560 review r2: an order-unknown record image keeps no slot; the newer line needs order at --keep-newer 0 ──
+
+test("#2560 r2 an own record naming an epoch-0 image keeps it without taking the slot: the real previous image stays", () => {
+  const images = IMAGES.map((entry) => (entry.id === "sha256:ccc" ? { ...entry, created: "1970-01-01T00:00:00Z" } : entry));
+  const plan = planRunnerImagePrune(inventory({ images, deployRecords: [record(`${R}:573ca08-claude-2.1.322`, ENV, 2)] }), { nowMs: NOW, isRoot: true });
+  assert.equal(reasonOf(plan, "573ca08-claude-2.1.322"), "rollback"); // kept, as the record says
+  assert.equal(reasonOf(plan, "666becb"), "rollback"); // the slot still goes to the newest ordered previous image
+  assert.ok(!plan.candidates.some((tag) => tag.tag.includes("666becb") || tag.tag.includes("573ca08-claude-2.1.322")));
+  // #2560 r3: the order-unknown record keep is listed, and with no ordered floor the gap pass keeps older ordered images.
+  assert.deepEqual(plan.unknownOrderToReview, [`${R}:573ca08-claude-2.1.322`]);
+  assert.ok(!plan.candidates.some((tag) => tag.tag.endsWith("2.1.318")), "ddd is kept by the record-gap pass");
+  assert.ok(plan.recordGaps.some((gap) => gap.includes("build order unknown")), plan.recordGaps.join("; "));
+});
+
+test("#2560 r2 a newer-mtime epoch-0 record and an older ordered record: the ordered previous image is never a candidate", () => {
+  const images = IMAGES.map((entry) => (entry.id === "sha256:ccc" ? { ...entry, created: "1970-01-01T00:00:00Z" } : entry));
+  const plan = planRunnerImagePrune(
+    inventory({ images, deployRecords: [record(`${R}:573ca08-claude-2.1.322`, ENV, 1), record(`${R}:666becb-claude-2.1.322`, ENV, 3)] }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.equal(reasonOf(plan, "666becb"), "rollback");
+  assert.ok(!plan.candidates.some((tag) => tag.tag.includes("666becb")));
+});
+
+test("#2560 r2 --keep-rollback 0 --keep-newer 0 without --include-newer still needs build order (staged rollout is listed for review)", () => {
+  const images = [...IMAGES.map((entry) => (entry.id === "sha256:aaa" ? { ...entry, created: "1970-01-01T00:00:00Z" } : entry)), image("nnn", [`${R}:next-rollout`], 4)];
+  const plan = planRunnerImagePrune(inventory({ images }), { nowMs: NOW, isRoot: true, keepRollback: 0, keepNewer: 0 });
+  assert.equal(plan.applyAllowed, false);
+  assert.ok(plan.applyRefusals.some((reason) => /tell a staged rollout/.test(reason)), plan.applyRefusals.join("; "));
+  assert.ok(!plan.candidates.some((tag) => tag.tag.includes("next-rollout")));
+});
+
+test("#2560 r2 an unparseable Created with an old load time is kept as unknown-build-order and listed for review", () => {
+  const images = IMAGES.map((entry) => (entry.id === "sha256:ddd" ? { ...entry, created: "garbage", lastTagTime: new Date(NOW - 30 * DAY).toISOString() } : entry));
+  const plan = planRunnerImagePrune(inventory({ images }), { nowMs: NOW, isRoot: true });
+  assert.equal(reasonOf(plan, "2.1.318"), "unknown-build-order");
+  assert.deepEqual(plan.unknownOrderToReview, [`${R}:573ca08-claude-2.1.318`]);
+  assert.ok(!plan.candidates.some((tag) => tag.tag.endsWith("2.1.318")));
+});
+
+test("#2560 r3 --keep-rollback 0 --include-newer still needs build order while --keep-newer keeps a staged rollout", () => {
+  const images = [...IMAGES.map((entry) => (entry.id === "sha256:aaa" ? { ...entry, created: "1970-01-01T00:00:00Z" } : entry)), image("nnn", [`${R}:next-rollout`], 4)];
+  const plan = planRunnerImagePrune(inventory({ images }), { nowMs: NOW, isRoot: true, keepRollback: 0, includeNewer: true });
+  assert.equal(plan.applyAllowed, false);
+  assert.ok(!plan.candidates.some((tag) => tag.tag.includes("next-rollout")));
+  assert.match(plan.repositories[0].keep.find((tag) => tag.tag.includes("next-rollout"))?.why ?? "", /a staged rollout cannot be told apart/);
+});
+
+test("#2560 r3 doctor counts tags kept for unknown build order", async () => {
+  await withNode(async (paths) => {
+    const images = ENGINE_IMAGES.map((entry) => (entry.id === "sha256:ddd" ? { ...entry, created: "1970-01-01T00:00:00Z", lastTagTime: new Date(NOW - 30 * DAY).toISOString() } : entry));
+    const { exec } = fakeEngine(images);
+    const res = await checkRunnerImageDisk({ engine: "docker", engineReady: true, exec, ...paths, statfsFn: async () => ({ blocks: 48, bavail: 2, bsize: GB }), nowMs: NOW, isRoot: true, unitEnvFiles: noUnits });
+    assert.equal(res.detail?.unknownOrderToReview, 1);
+    assert.match(res.message, /1 runner image tag\(s\) kept because their creation time carries no build order/);
+  });
+});
+
+test("#2554 r2 an own record that lost the slot but is also unattributed says whose history it is", () => {
+  const plan = planRunnerImagePrune(
+    inventory({
+      deployRecords: [
+        record(`${R}:666becb-claude-2.1.322`, ENV, 1),
+        record(`${R}:573ca08-claude-2.1.322`, ENV, 3),
+        record(`${R}:573ca08-claude-2.1.322`, undefined, 2, { file: "/backups/retired-worker" }),
+      ],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.equal(reasonOf(plan, "666becb"), "rollback");
+  const kept = plan.repositories[0].keep.find((tag) => tag.tag.endsWith("573ca08-claude-2.1.322"));
+  assert.equal(kept?.reason, "unattributed-record");
+  assert.match(kept?.why ?? "", /matches no worker env file name; also named by \/etc\/default\/a2a-hermes-worker's own deploy record/);
+  assert.deepEqual(plan.recordsToReview, [`${R}:573ca08-claude-2.1.322`]);
+});
+
+test("#2554 r2 records naming only another repository's image leave the fallback note at 'no deploy record'", () => {
+  const codex = "a2a-docker-runner-codex";
+  const images = [...IMAGES, image("cx0", [`${codex}:old`], 20)];
+  const plan = planRunnerImagePrune(inventory({ images, deployRecords: [record(`${codex}:old`, ENV, 2)] }), { nowMs: NOW, isRoot: true });
+  const rollback = plan.repositories.find((repo) => repo.repository === R)?.keep.find((tag) => tag.reason === "rollback");
+  assert.equal(rollback?.tag, `${R}:666becb-claude-2.1.322`);
+  assert.match(rollback?.why ?? "", /\(no deploy record\)$/);
 });
 
 test("#2554 a relative --env-dir yields absolute paths that match live files and backup owners", async () => {

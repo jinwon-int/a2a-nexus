@@ -107,7 +107,9 @@ export type KeepReason =
   | "newer-than-in-use"
   | "newer-to-review"
   | "unattributed-record"
-  | "unverified-repository";
+  | "unverified-repository"
+  | "unverified-rollback"
+  | "unknown-build-order";
 
 export interface PlannedTag {
   tag: string;
@@ -155,6 +157,8 @@ export interface RunnerImagePlan {
   recordGaps: string[];
   /** tags kept only because of a record gap (unique images the gap pass added). */
   recordGapImages: string[];
+  /** tags kept only because their creation time carries no build order (sentinel / unparseable): review by hand. */
+  unknownOrderToReview: string[];
   /** candidate tags whose image keeps another (non-runner or kept) tag — untag only, frees nothing. */
   untagOnly: string[];
   unresolvedRefs: ImageRef[];
@@ -259,10 +263,13 @@ export function resolveRef(ref: string, images: readonly EngineImage[]): string 
   return images.find((image) => image.repoTags.some((tag) => normalizeRef(tag) === wanted))?.id;
 }
 
+/** Times at or before this carry no order: docker's 0001-01-01 "never" and epoch-0 reproducible builds. */
+const CREATED_FLOOR_MS = Date.UTC(1971, 0, 1);
+
 function effectiveMs(image: Pick<EngineImage, "created" | "lastTagTime">): number {
   const times = [image.created, image.lastTagTime]
     .map((value) => (value ? Date.parse(value) : Number.NaN))
-    .filter((value) => Number.isFinite(value) && value > Date.UTC(1971, 0, 1)); // docker reports 0001-01-01 for "never"
+    .filter((value) => Number.isFinite(value) && value > CREATED_FLOOR_MS); // docker reports 0001-01-01 for "never"
   return times.length > 0 ? Math.max(...times) : Number.NaN;
 }
 
@@ -345,7 +352,17 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
     for (const id of ids) worker.ids.add(id);
   }
   const keepNewer = options.keepNewer ?? DEFAULT_KEEP_NEWER;
-  const createdMs = (id: string): number => Date.parse(byId.get(id)?.created ?? "");
+  // Build order matters whenever a rollback is kept or the newer-than-in-use
+  // line protects a staged rollout (kept up to --keep-newer even with
+  // --include-newer, the rest listed for review without it); only then may an
+  // unknown Created block (#2560 review r1-r3).
+  const needOrder = keepRollback > 0 || keepNewer > 0 || !options.includeNewer;
+  // Same floor as effectiveMs: docker's 0001-01-01 and a SOURCE_DATE_EPOCH=0
+  // build (1970-01-01) carry no build order, so they count as unknown (#2554).
+  const createdMs = (id: string): number => {
+    const ms = Date.parse(byId.get(id)?.created ?? "");
+    return Number.isFinite(ms) && ms > CREATED_FLOOR_MS ? ms : Number.NaN;
+  };
   const runsOtherRunner = (file: string): boolean =>
     [...(workers.get(file)?.ids ?? [])].some((id) => byId.get(id)?.repoTags.some((tag) => isRunnerRepository(tag)) ?? false);
 
@@ -374,6 +391,7 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
   const recordsToReview: string[] = [];
   const recordGaps: string[] = [];
   const recordGapImages: string[] = [];
+  const unknownOrderToReview: string[] = [];
   const resolvedRecords = inventory.deployRecords
     .filter((record) => !record.orphan)
     .map((record) => ({ record, id: resolveRef(record.ref, images) }))
@@ -473,6 +491,7 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
     // kept as someone's rollback or as unattributed never uses this slot).
     const picked = new Map<Worker, number>();
     const recordPicks = new Map<Worker, string[]>(); // ids a worker's own deploy records took as its rollback
+    const unknownOrderPicks = new Map<Worker, string[]>(); // order-unknown ids its own records keep (no slot)
     // `fromRecord`: the worker's own deploy record names this image. An
     // unattributed record pointing at the same image does not outrank it — the
     // worker's real previous deploy is its rollback, not a review item (#2554).
@@ -480,29 +499,62 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
     const take = (worker: Worker, id: string, why: string, fromRecord: boolean): void => {
       const tag = restTag(id);
       const count = picked.get(worker) ?? 0;
-      if (count >= keepRollback || rollback.has(id) || (!fromRecord && unattributed.has(id)) || !tag || isRecent(tag) || !builtBefore(worker, id)) return;
+      // A worker's own record proves the image was a previous deploy even when
+      // its Created carries no order (sentinel / unparseable) (#2560 review).
+      const orderProvenByRecord = fromRecord && !Number.isFinite(createdMs(id));
+      if (count >= keepRollback || rollback.has(id) || (!fromRecord && unattributed.has(id)) || !tag || isRecent(tag) || (!builtBefore(worker, id) && !orderProvenByRecord)) return;
       rollback.set(id, why);
+      // The final rendering checks rollback first; the delete matters to the
+      // "also named by …" pass below, so a taken record image never reads "not taken".
       unattributed.delete(id);
+      // An order-unknown image is kept as the record says, but uses no slot and
+      // is no safety-net floor: the slot (and the floor) still go to an ordered
+      // record or the fallback, so the real previous image is never pushed out (#2560 r2).
+      if (orderProvenByRecord) {
+        rollback.set(id, `${why} — build order unknown, kept without using a rollback slot`);
+        unknownOrderPicks.set(worker, [...(unknownOrderPicks.get(worker) ?? []), id]);
+        return;
+      }
       picked.set(worker, count + 1);
       if (fromRecord) recordPicks.set(worker, [...(recordPicks.get(worker) ?? []), id]);
     };
     const hadOwnRecords = new Set<Worker>();
+    const repoImageIds = new Set(tags.map((tag) => tag.id));
     for (const worker of repoWorkers) {
       const own = resolvedRecords.filter((entry) => recordWorker(entry.record) === worker);
-      if (own.length > 0) hadOwnRecords.add(worker);
+      // Only records naming an image of this repository make the fallback note
+      // "no eligible deploy record left" (a flavor switch's backups do not, #2554).
+      if (own.some((entry) => repoImageIds.has(entry.id))) hadOwnRecords.add(worker);
       for (const { record, id } of own) if (record.owner) take(worker, id, `previous deploy of ${record.owner} (${record.source})`, true);
       for (const { record, id } of own) if (!record.owner) take(worker, id, `deploy record ${record.source} (for ${worker.key})`, true);
     }
+    let rollbackUnknown = false;
+    const unknownWorkers = new Set<Worker>();
     for (const worker of repoWorkers) {
-      // A worker whose in-use image has no parseable creation time cannot tell
-      // which image it ran before: refuse --apply rather than keep no rollback (#2554).
-      if (!Number.isFinite(inUseMsOf.get(worker) ?? Number.NaN)) {
-        applyRefusals.push(`in-use image of ${worker.key} in ${repository} has no parseable creation time — cannot pick its rollback`);
+      // A worker with ANY in-use image of unknown creation time (unparseable,
+      // or a sentinel) cannot tell which image it ran before: refuse --apply,
+      // and report nothing of this repository as a candidate (#2554). Only
+      // when build order matters (needOrder: a rollback slot or the newer line).
+      const unknownInUse = [...worker.ids].filter((id) => inUseIds.has(id) && !Number.isFinite(createdMs(id)));
+      if (needOrder && unknownInUse.length > 0) {
+        unknownWorkers.add(worker);
+        applyRefusals.push(`in-use image of ${worker.key} in ${repository} has no usable creation time — cannot ${keepRollback > 0 ? "pick its rollback" : "tell a staged rollout (newer-than-in-use line) apart"}`);
+        rollbackUnknown = true;
         continue;
       }
       const fallback = rest.filter((tag) => builtBefore(worker, tag.id)).sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
       const note = hadOwnRecords.has(worker) ? "no eligible deploy record left" : "no deploy record";
       for (const tag of fallback) take(worker, tag.id, `newest image built before the in-use image of ${worker.key} (${note})`, false);
+    }
+    // A worker's own record that was not taken (slot full, or not eligible)
+    // while an unmatched record names the same image: still kept for review,
+    // but say whose history it also is, not "matches no worker" alone (#2554).
+    for (const { record, id } of resolvedRecords) {
+      const owner = recordWorker(record);
+      const why = unattributed.get(id);
+      if (!owner || !why || why.includes(`also named by ${owner.key}'s own deploy record ${record.source}`)) continue;
+      const cause = unknownWorkers.has(owner) ? "its in-use creation time is unknown" : "slot full, or not built before its in-use image";
+      unattributed.set(id, `${why}; also named by ${owner.key}'s own deploy record ${record.source}, not taken as its rollback (${cause})`);
     }
     // (4) Safety net (#2557): records name only the switches that left a backup
     // in a scanned directory, ordered by file mtime. When a worker's records
@@ -530,9 +582,14 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
           return (recordPicks.get(worker) ?? []).includes(id) || keptBeforeGaps.has(id) || restEntry === undefined || isRecent(restEntry);
         };
         const floorIds = [...ownIds].filter((id) => repoIds.has(id) && builtBefore(worker, id) && keptAnyway(id));
-        if (floorIds.length === 0) continue;
-        const floorMs = Math.max(...floorIds.map(createdMs));
-        const floorTag = tags.find((tag) => tag.id === floorIds.find((id) => createdMs(id) === floorMs))?.tag ?? "its recorded rollback";
+        // Records that name only order-unknown images give no floor: then every
+        // ordered image built before the in-use one is in range (#2560 r3).
+        const unknownPicks = unknownOrderPicks.get(worker) ?? [];
+        if (floorIds.length === 0 && unknownPicks.length === 0) continue;
+        const floorMs = floorIds.length > 0 ? Math.max(...floorIds.map(createdMs)) : Number.NEGATIVE_INFINITY;
+        const floorTag = floorIds.length > 0
+          ? tags.find((tag) => tag.id === floorIds.find((id) => createdMs(id) === floorMs))?.tag ?? "its recorded rollback"
+          : `${tags.find((tag) => tag.id === unknownPicks[0])?.tag ?? "its recorded rollback"} (build order unknown)`;
         const seen = new Set<string>();
         const range = rest
           .filter((tag) => !floorIds.includes(tag.id) && createdMs(tag.id) >= floorMs && builtBefore(worker, tag.id) && !isRecent(tag))
@@ -599,11 +656,19 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
     const remove: PlannedTag[] = [];
     for (const tag of rest) {
       const why = rollback.get(tag.id);
-      if (why) keep.push({ ...tag, reason: "rollback", why });
+      if (why) {
+        keep.push({ ...tag, reason: "rollback", why });
+        if (!Number.isFinite(createdMs(tag.id))) unknownOrderToReview.push(tag.tag);
+      }
       else if (isRecent(tag)) keep.push({ ...tag, reason: "recent", why: `built/loaded ${tag.effectiveTime}` });
       else if (unattributed.has(tag.id)) {
         keep.push({ ...tag, reason: "unattributed-record", why: unattributed.get(tag.id) });
         recordsToReview.push(tag.tag);
+      }
+      else if (rollbackUnknown) keep.push({ ...tag, reason: "unverified-rollback", why: `an in-use image of this repository has no usable creation time — ${keepRollback > 0 ? "its rollback" : "a staged rollout"} cannot be told apart, so nothing here is a candidate` });
+      else if (needOrder && !Number.isFinite(createdMs(tag.id))) {
+        keep.push({ ...tag, reason: "unknown-build-order", why: `creation time ${tag.created || "missing"} carries no build order (0001-01-01, epoch-0 or unparseable) — it may be a previous deploy or a staged rollout` });
+        unknownOrderToReview.push(tag.tag);
       }
       else if (newerKept.has(tag.id)) keep.push({ ...tag, reason: "newer-than-in-use", why: `built ${tag.created}, not before the in-use image` });
       else if (newerBeyond.has(tag.id) && !options.includeNewer) {
@@ -649,6 +714,7 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
     recordsToReview,
     recordGaps,
     recordGapImages,
+    unknownOrderToReview,
     reclaimableIsUpperBound: true,
     applyAllowed: applyRefusals.length === 0,
     applyRefusals,
@@ -1204,12 +1270,14 @@ export async function checkRunnerImageDisk(options: RunnerImageDiskCheckOptions)
         detail.recordGapReports = plan.recordGaps.length;
         detail.recordGapImages = plan.recordGapImages.length;
       }
+      if (plan.unknownOrderToReview.length > 0) detail.unknownOrderToReview = plan.unknownOrderToReview.length;
       if (!plan.applyAllowed) detail.evidenceIncomplete = plan.applyRefusals;
       if (plan.candidates.length > 0) {
         const note = plan.applyAllowed ? "" : " (evidence incomplete — list is indicative only)";
         reclaim = `; ${plan.candidates.length} stale runner image tag(s), up to ${formatBytes(plan.reclaimableBytes)} reclaimable${note} — review with: a2a-docker-runner images (dry-run)`;
       }
       if (plan.recordGaps.length > 0) reclaim += `; ${plan.recordGapImages.length} extra runner image(s) kept for ${plan.recordGaps.length} deploy record gap report(s) — review plan.recordGaps in: a2a-docker-runner images (dry-run)`;
+      if (plan.unknownOrderToReview.length > 0) reclaim += `; ${plan.unknownOrderToReview.length} runner image tag(s) kept because their creation time carries no build order — review plan.unknownOrderToReview in: a2a-docker-runner images (dry-run)`;
     } catch (error) {
       detail.inventoryError = error instanceof Error ? error.message : "runner image inventory failed";
     }
