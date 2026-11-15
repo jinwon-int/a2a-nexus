@@ -43,7 +43,7 @@ clones (evidence at commit `75250447`):
 | claude-code model calls | Claude CLI with OAuth token or a refresh-token-stripped credentials copy (`profiles/claude-code.sh`); refresh happens on the host (`claude-host-refresh.ts`) | Anthropic API |
 | codex model calls **and token refresh** | `CODEX_HOME=/run/secrets/codex-dir`, `auth.json` writable, refresh inside the container (`runner.ts:295-319`) | OpenAI API + OpenAI auth endpoint |
 | danso model calls | `DANSO_GLM_BASE_URL` / `DANSO_GLM_ENDPOINT` (`profiles/danso.sh:166`) | Z.ai GLM endpoint |
-| Installs (optional) | agent-initiated, or post-patch verification commands (`task-normalizer.ts:829-840`) | npm / PyPI registries, only if tasks need them |
+| Installs | default verification (`buildToolchainDetectedCommandsForRepo`: `npm ci` / `pip install`), agent-initiated installs | `registry.npmjs.org`, `pypi.org`, `files.pythonhosted.org` (in the `claude-code` base set since 2026-11-16, §5.2) |
 | `gh` self-install fallback | `script-generators.ts:110-134` (images bake `gh`, normally unused) | `cli.github.com`, apt mirrors |
 
 The host-side evidence collector (`github-evidence.ts`) calls `api.github.com`
@@ -113,6 +113,18 @@ in `egress-runtime.ts`, merged in `config.ts loadEgressConfig`).
   other profiles are empty (unmeasured) and `enforce` keeps requiring the
   explicit env for them. `doctor` reports `egressProxy.detail.baseAllowlistSize`
   next to `allowlistSize` so a node shows which part came from code.
+- **Package registries (2026-11-16):** `claude-code` also carries
+  `registry.npmjs.org`, `pypi.org`, `files.pythonhosted.org`. The runner's own
+  default verification (`buildToolchainDetectedCommandsForRepo`) runs `npm ci`
+  / `pip install` inside the task container before the tests, so without them
+  every Node/Python patch fails at install under `enforce` (answers the §7
+  install question). Measured on the first real `enforce` patch task (T1 worker,
+  2026-11-16, #2564): 22 CONNECTs, all allowed — `github.com` 8,
+  `registry.npmjs.org` 7, `api.github.com` 4, `api.anthropic.com` 3. PyPI uses
+  the same install path and is not yet observed. Before this landed the two T1
+  workers carried the three hosts as `A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST`;
+  after deploying a runner with this base set that env line is redundant
+  (merge folds duplicates) and can be removed per worker.
 - Exact hostnames only; no wildcards in v1. A suffix rule can be added later if
   observe data shows a CDN pattern that needs it.
 - Port 443 only (`CONNECT`). Plain HTTP and other ports are denied in `enforce`.
@@ -197,7 +209,7 @@ Implemented (`src/egress-proxy.ts`, `src/egress-proxy-main.ts`):
 | `claude` CLI | documented `HTTPS_PROXY` support | verify (needs bridge allowlist change) |
 | `codex` CLI | Rust HTTP client; env proxy support expected | **verify**, including in-container token refresh |
 | danso / GLM client | depends on its HTTP client | **verify** |
-| `npm` / `pip` | honour proxy env | only if installs are allowed |
+| `npm` / `pip` | honour proxy env | `npm ci` confirmed through the proxy on 2026-11-16 (§5.2); `pip` not yet observed |
 
 A tool that ignores the proxy env fails closed (no route on the internal network);
 the PoC must confirm none of the required tools fall into that bucket.
@@ -275,6 +287,12 @@ with `wouldDeny` for a non-allowlisted host in observe.
   restart, env backup for rollback). Until then the unrestricted
   `--network bridge` path is latent, not exercised. The PoC node keeps
   `observe` (harmless; switching it off is a separate decision).
+- **2026-11-14 / 11-16:** `enforce` applied and doctor-verified on both T1
+  patch workers (env + `install --egress` + idle restart, synthetic canary
+  passed on each). The registries were added as an env line, then the first
+  real patch task ran under `enforce` (2026-11-16, #2564: succeeded, PR via
+  `git push` + `gh pr create`, egress deny 0). `propose_patch` dispatch is
+  re-enabled; a 7-day soak ends 2026-11-23 09:00 KST (#2395).
 - `codex` and `danso` still have no measured set; their first
   real patch task must run in `observe` before `enforce` (or an operator
   supplies `A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST` explicitly).
@@ -286,8 +304,10 @@ with `wouldDeny` for a non-allowlisted host in observe.
   assumes a dual-homed proxy container because that works regardless.
 - codex token refresh endpoint and danso endpoint hostnames — taken from observe
   logs, not guessed.
-- Whether any active task class relies on runtime installs (npm/PyPI). If yes,
-  add registries to the relevant profile base set rather than a global allow.
+- ~~Whether any active task class relies on runtime installs (npm/PyPI).~~
+  Answered 2026-11-16: yes — the default verification itself installs, so the
+  registries are in the `claude-code` base set (§5.2), not a global allow.
+  Other profiles get them when their own set is measured.
 - Termux-native nodes (no Docker runner) are out of scope.
 
 ## References

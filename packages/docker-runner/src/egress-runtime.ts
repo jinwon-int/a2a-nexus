@@ -38,13 +38,30 @@ export const DEFAULT_EGRESS_PROXY_NAME = "a2a-egress-proxy";
  * The 2026-10-20 → 2026-11-02 observe soak added nothing because no patch task
  * ran fleet-wide in that window (#2395 closure).
  *
+ * The package registries (`registry.npmjs.org`, `pypi.org`,
+ * `files.pythonhosted.org`) are there because the runner's own default
+ * verification (`buildToolchainDetectedCommandsForRepo`) runs `npm ci` /
+ * `pip install` inside the task container before the tests: without them every
+ * Node/Python patch fails at install under `enforce` (design §7). Measured on
+ * the first real `enforce` patch task (T1, 2026-11-16, a2a-nexus#2564):
+ * 22 CONNECTs, all allowed — github.com 8, registry.npmjs.org 7,
+ * api.github.com 4, api.anthropic.com 3. PyPI follows the same install path
+ * (`pip install -r requirements.txt` / `-e .`) and is not yet observed.
+ *
  * The effective proxy allowlist is base ∪ `A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST`;
  * a profile whose base set is empty still needs the explicit env in `enforce`.
  * Model/auth hostnames for the other CLIs are chosen by the CLIs, so they stay
  * empty until an observe run on that profile records them.
  */
 export const EGRESS_PROXY_PROFILE_BASE_ALLOWLIST: Readonly<Record<RunnerCommandProfile, readonly string[]>> = Object.freeze({
-  "claude-code": Object.freeze(["api.anthropic.com", "github.com", "api.github.com"]),
+  "claude-code": Object.freeze([
+    "api.anthropic.com",
+    "github.com",
+    "api.github.com",
+    "registry.npmjs.org",
+    "pypi.org",
+    "files.pythonhosted.org",
+  ]),
   codex: Object.freeze([]),
   hermes: Object.freeze([]),
   openclaw: Object.freeze([]),
