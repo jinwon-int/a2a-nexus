@@ -98,6 +98,17 @@ function fakeExec(handlers: { network?: EgressExecResult; container?: EgressExec
   return { exec, calls };
 }
 
+// #2395 §5.2/§7: measured claude-code CONNECT set plus the package registries the
+// runner's own default verification (`npm ci` / `pip install`) needs in the container.
+const CLAUDE_CODE_BASE = [
+  "api.anthropic.com",
+  "github.com",
+  "api.github.com",
+  "registry.npmjs.org",
+  "pypi.org",
+  "files.pythonhosted.org",
+];
+
 test("parseEgressMode defaults to off and rejects unknown values", () => {
   assert.equal(parseEgressMode(undefined), "off");
   assert.equal(parseEgressMode(" "), "off");
@@ -122,26 +133,26 @@ test("observe routes the task network onto the managed internal network", async 
   assert.equal(config.network, "a2a-egress-internal");
   assert.equal(config.egressProxyName, "a2a-egress-proxy");
   // #2395 §5.2: the claude-code base set applies even without the env.
-  assert.deepEqual(config.egressProxyAllowlist, ["api.anthropic.com", "github.com", "api.github.com"]);
-  assert.deepEqual(config.egressProxyBaseAllowlist, ["api.anthropic.com", "github.com", "api.github.com"]);
+  assert.deepEqual(config.egressProxyAllowlist, CLAUDE_CODE_BASE);
+  assert.deepEqual(config.egressProxyBaseAllowlist, CLAUDE_CODE_BASE);
 
   const custom = await loadConfig({
     ...trustedClaude,
     A2A_DOCKER_RUNNER_EGRESS_MODE: "enforce",
     A2A_DOCKER_RUNNER_EGRESS_NETWORK: "lane-egress",
     A2A_DOCKER_RUNNER_EGRESS_PROXY_NAME: "lane-proxy",
-    A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST: "api.github.com,registry.npmjs.org,github.com",
+    A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST: "api.github.com,npm.mirror.example,registry.npmjs.org,github.com",
     A2A_DOCKER_RUNNER_EGRESS_STATE_DIR: "/srv/egress",
     A2A_DOCKER_RUNNER_NETWORK: "lane-egress",
   });
   assert.equal(custom.network, "lane-egress");
   // base first, operator additions appended once, exact duplicates folded
-  assert.deepEqual(custom.egressProxyAllowlist, ["api.anthropic.com", "github.com", "api.github.com", "registry.npmjs.org"]);
+  assert.deepEqual(custom.egressProxyAllowlist, [...CLAUDE_CODE_BASE, "npm.mirror.example"]);
   assert.equal(custom.egressStateDir, "/srv/egress");
 });
 
 test("profile base allowlist (#2395 §5.2): measured claude-code set, unmeasured profiles fail closed in enforce", async () => {
-  assert.deepEqual(EGRESS_PROXY_PROFILE_BASE_ALLOWLIST["claude-code"], ["api.anthropic.com", "github.com", "api.github.com"]);
+  assert.deepEqual(EGRESS_PROXY_PROFILE_BASE_ALLOWLIST["claude-code"], CLAUDE_CODE_BASE);
   for (const profile of ["codex", "hermes", "openclaw", "piri", "danso"] as const) {
     assert.deepEqual(EGRESS_PROXY_PROFILE_BASE_ALLOWLIST[profile], [], profile);
   }
@@ -150,12 +161,12 @@ test("profile base allowlist (#2395 §5.2): measured claude-code set, unmeasured
   // the returned base set is a copy: mutating it must not leak into the constant
   const copy = egressProxyBaseAllowlist("claude-code");
   copy.push("evil.example");
-  assert.deepEqual(EGRESS_PROXY_PROFILE_BASE_ALLOWLIST["claude-code"], ["api.anthropic.com", "github.com", "api.github.com"]);
+  assert.deepEqual(EGRESS_PROXY_PROFILE_BASE_ALLOWLIST["claude-code"], CLAUDE_CODE_BASE);
 
   // claude-code enforce needs no env; the proxy receives the base set verbatim.
   const enforced = await loadConfig({ ...trustedClaude, A2A_DOCKER_RUNNER_EGRESS_MODE: "enforce" });
   assert.equal(enforced.egressMode, "enforce");
-  assert.ok(buildEgressProxyRunArgs(enforced).includes("A2A_EGRESS_PROXY_ALLOWLIST=api.anthropic.com,github.com,api.github.com"));
+  assert.ok(buildEgressProxyRunArgs(enforced).includes(`A2A_EGRESS_PROXY_ALLOWLIST=${CLAUDE_CODE_BASE.join(",")}`));
 
   // codex has no measured base set, so enforce still demands the explicit env.
   const codexEnv = { ...trustedClaude, A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: "codex", A2A_DOCKER_RUNNER_EGRESS_MODE: "enforce" };
