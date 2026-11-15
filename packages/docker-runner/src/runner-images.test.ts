@@ -965,6 +965,57 @@ test("#2560 r3 --keep-rollback 0 --include-newer still needs build order while -
   assert.match(plan.repositories[0].keep.find((tag) => tag.tag.includes("next-rollout"))?.why ?? "", /a staged rollout cannot be told apart/);
 });
 
+test("#2554 only the next-rollout record image has an epoch-0 Created: it is never moved to the delete side by the unknown order", () => {
+  // Every image has a valid Created except the one the worker's own deploy record names as the
+  // next rollout (built after the in-use image, so with a real Created it is "newer-than-in-use").
+  const nextRollout = (created: string): EngineImage[] => [...IMAGES, image("nnn", [`${R}:next-rollout`], 4, { created })];
+  const deployRecords = [record(`${R}:next-rollout`, ENV, 1)];
+  const epoch = nextRollout("1970-01-01T00:00:00Z");
+  const ordered = nextRollout(new Date(NOW - 4 * DAY).toISOString());
+
+  const plan = planRunnerImagePrune(inventory({ images: epoch, deployRecords }), { nowMs: NOW, isRoot: true });
+  // The in-use Created is known, so nothing refuses --apply for build order.
+  assert.ok(!plan.applyRefusals.some((reason) => /creation time/.test(reason)), plan.applyRefusals.join("; "));
+  assert.equal(plan.applyAllowed, true);
+  // The worker's own record proves it was deployed: kept as the record says, without a rollback slot.
+  assert.equal(reasonOf(plan, "next-rollout"), "rollback");
+  assert.match(plan.repositories[0].keep.find((tag) => tag.tag.includes("next-rollout"))?.why ?? "", /build order unknown, kept without using a rollback slot/);
+  assert.deepEqual(plan.unknownOrderToReview, [`${R}:next-rollout`]);
+  // The slot still goes to the newest ordered image built before the in-use one.
+  const fallback = plan.repositories[0].keep.find((tag) => tag.tag.includes("666becb"));
+  assert.equal(fallback?.reason, "rollback");
+  assert.match(fallback?.why ?? "", /\(no eligible deploy record left\)$/);
+  // Its records name only an order-unknown image: no ordered floor (-Infinity), so every older
+  // ordered image is kept by the record-gap pass and reported against the order-unknown record.
+  assert.equal(reasonOf(plan, "573ca08-claude-2.1.322"), "rollback");
+  assert.equal(reasonOf(plan, "2.1.318"), "rollback");
+  assert.deepEqual([...plan.recordGapImages].sort(), [`${R}:573ca08-claude-2.1.318`, `${R}:573ca08-claude-2.1.322`]);
+  assert.ok(plan.recordGaps.length > 0 && plan.recordGaps.every((gap) => gap.includes(`${R}:next-rollout (build order unknown)`)), plan.recordGaps.join("; "));
+  assert.deepEqual(plan.candidates, []);
+
+  // Across retention options the epoch-0 Created never adds a candidate compared with the same
+  // image carrying a real (post-in-use) Created: it is only ever kept, never removed because of it.
+  for (const keepRollback of [0, 1]) {
+    for (const keepNewer of [0, 1]) {
+      for (const includeNewer of [false, true]) {
+        const options = { nowMs: NOW, isRoot: true, keepRollback, keepNewer, includeNewer };
+        const label = JSON.stringify({ keepRollback, keepNewer, includeNewer });
+        const unknown = planRunnerImagePrune(inventory({ images: epoch, deployRecords }), options);
+        const known = planRunnerImagePrune(inventory({ images: ordered, deployRecords }), options);
+        const knownCandidates = new Set(known.candidates.map((tag) => tag.tag));
+        for (const tag of unknown.candidates) assert.ok(knownCandidates.has(tag.tag), `${label}: ${tag.tag} removed only because of the epoch-0 Created`);
+        const needOrder = keepRollback > 0 || keepNewer > 0 || !includeNewer;
+        if (needOrder) {
+          assert.ok(!unknown.candidates.some((tag) => tag.tag.includes("next-rollout")), label);
+          assert.ok(unknown.unknownOrderToReview.includes(`${R}:next-rollout`), label);
+          // With no rollback slot the record is not taken: the existing unknown-build-order keep applies.
+          assert.equal(reasonOf(unknown, "next-rollout"), keepRollback > 0 ? "rollback" : "unknown-build-order", label);
+        }
+      }
+    }
+  }
+});
+
 // ── #2554 / #2559: order-independent gap counting, own fallback, open floor ──
 
 const AAA = "/etc/default/a2a-aaa-worker";
