@@ -417,6 +417,13 @@ function buildRunnerTask(task, env = process.env) {
 
   if (subagentContextBrief) runnerTask.subagentContextBrief = subagentContextBrief;
   if (issueUrl) runnerTask.issueUrl = issueUrl;
+  // #2565: carry the requested PR title and issue link style to the runner.
+  // The runner sanitises/caps the title and defaults the link to `refs`
+  // (finalizer owns issue closure); only the two known link values pass.
+  const patchTitle = safeText(payload.title, "");
+  if (patchTitle) runnerTask.title = patchTitle;
+  const issueLink = safeText(payload.issueLink, safeText(payload.issue_link, "")).toLowerCase();
+  if (issueLink === "closes" || issueLink === "refs") runnerTask.issueLink = issueLink;
   if (issue) runnerTask.issue = issue;
   if (issueNumber) runnerTask.issueNumber = issueNumber;
   if (reportLanguage) runnerTask.reportLanguage = reportLanguage;

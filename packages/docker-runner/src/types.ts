@@ -876,6 +876,9 @@ export interface RunnerReproducibilityMetadata {
   };
 }
 
+/** #2565: PR-body issue link style for the default patch pipeline. */
+export type RunnerIssueLink = "closes" | "refs";
+
 export interface RunnerTask {
   id: string;
   intent: string;
@@ -921,6 +924,18 @@ export interface RunnerTask {
   issueUrl?: string;
   /** Safe issue title supplied by the broker for terminal/operator evidence. */
   issueTitle?: string;
+  /**
+   * #2565: requested PR title / commit subject for the default patch pipeline
+   * (broker `payload.title`). Sanitised to one line and length-capped by the
+   * normalizer; when absent the pipeline keeps `Patch: <task id>`.
+   */
+  title?: string;
+  /**
+   * #2565: how the default patch PR body links `issueUrl`. `refs` (default)
+   * leaves issue closure to the finalizer; `closes` emits a GitHub closing
+   * keyword. Unknown values fall back to `refs`.
+   */
+  issueLink?: RunnerIssueLink;
   /** Safe one-line task brief supplied by the broker for terminal/operator evidence. */
   taskBrief?: string;
   /** Existing PR URL for closeout/comment-only evidence tasks. */

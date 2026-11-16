@@ -184,7 +184,7 @@ to use. The default commands already handle this:
 cd /work/repo
 git checkout -b "$BRANCH"
 # ... coding agent modifies files ...
-git add -A && git commit -m "Auto-patch: ..."
+git add -A && git commit --message="<payload.title or Auto-patch: <task id>>" --message="A2A task: <task id>"
 git push origin HEAD:"$BRANCH"
 ```
 

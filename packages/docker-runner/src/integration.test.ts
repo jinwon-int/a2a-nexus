@@ -180,6 +180,24 @@ test("shouldUseDockerRunnerForGithub: a stale preset never overrides the repo sc
 // buildRunnerTaskFromHandlerPayload — Env passthrough tests
 // ═══════════════════════════════════════════════════════════════════════════
 
+test("buildRunnerTaskFromHandlerPayload: carries payload.title and a known issueLink (#2565)", () => {
+  const titled = buildRunnerTaskFromHandlerPayload({
+    id: "task-2565",
+    intent: "propose_patch",
+    payload: { mode: "github-propose-patch", repo: "jinwon-int/a2a-nexus", title: "fix: a\nb", issueLink: "CLOSES" },
+  } as HandlerTask, baseEnv);
+  assert.equal(titled.title, "fix: a b");
+  assert.equal(titled.issueLink, "closes");
+
+  const plain = buildRunnerTaskFromHandlerPayload({
+    id: "task-2565-plain",
+    intent: "propose_patch",
+    payload: { mode: "github-propose-patch", repo: "jinwon-int/a2a-nexus", issueLink: "fixes" },
+  } as HandlerTask, baseEnv);
+  assert.equal(plain.title, undefined);
+  assert.equal(plain.issueLink, undefined);
+});
+
 test("buildRunnerTaskFromHandlerPayload: stale payload.runnerPreset is dropped, not carried (#2048)", () => {
   const task: HandlerTask = {
     id: "task-abc",
