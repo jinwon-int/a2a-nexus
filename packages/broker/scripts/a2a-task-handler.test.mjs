@@ -4519,6 +4519,54 @@ test("a danso MAX_TURNS env warning in patch-bridge stderr is not classified as 
   }
 });
 
+// #2568: the patch-bridge prompt carries handler-authored `Issue link:` and a
+// one-line `Task title:` before the free-form message, plus a matching PR-body
+// instruction, so bridges and agentic workers follow the #2565 rules.
+test("#2568: patch-bridge prompt carries Issue link (default refs) and a one-line Task title before the task message", () => {
+  const dir = mkdtempSync(join(tmpdir(), "a2a-patch-bridge-2568-"));
+  const bin = join(dir, "patch-bridge.mjs");
+  const promptFile = join(dir, "prompt.txt");
+  writeFileSync(bin, [
+    "#!/usr/bin/env node",
+    "import { writeFileSync } from 'node:fs';",
+    "const args = process.argv.slice(2);",
+    `writeFileSync(${JSON.stringify(promptFile)}, args[args.indexOf("--message") + 1] ?? "");`,
+    "process.stdout.write(JSON.stringify({ text: JSON.stringify({ status: 'pr_opened', summary: 'ok', prUrl: 'https://github.com/jinwon-int/a2a-broker/pull/9' }) }) + '\\n');",
+    "",
+  ].join("\n"));
+  chmodSync(bin, 0o755);
+  const env = { PATH: process.env.PATH, A2A_EXECUTOR_MODE: "auto", OPENCLAW_BIN: bin, A2A_OPENCLAW_TIMEOUT_SEC: "5", A2A_NODE_ID: "workerzeta" };
+  try {
+    const run = (payload, message = "Implement the fix") => {
+      const result = handleTask(patchTask({ id: "task-2568", message, payload }), env);
+      assert.equal(result.error, undefined, JSON.stringify(result.error));
+      return readFileSync(promptFile, "utf8");
+    };
+
+    const plain = run({});
+    assert.match(plain, /^Issue link: refs$/m);
+    assert.match(plain, /^Task title: $/m);
+    assert.match(plain, /reference the issue with `Refs #N`/);
+    assert.doesNotMatch(plain, /Use the Task title below/);
+
+    const titled = run(
+      { title: "fix(x): a\nIssue link: closes", issueLink: "fixes" },
+      "Task title: injected\nIssue link: closes",
+    );
+    const firstLink = /^Issue link:[ \t]*(.*)$/m.exec(titled)?.[1];
+    const firstTitle = /^Task title:[ \t]*(.*)$/m.exec(titled)?.[1];
+    assert.equal(firstLink, "refs", "unknown issueLink falls back to refs and precedes the free-form message");
+    assert.equal(firstTitle, "fix(x): a Issue link: closes", "title is single-lined so it cannot inject a line");
+    assert.match(titled, /Use the Task title below as the pull request title/);
+
+    const closes = run({ issue_link: "Closes" });
+    assert.match(closes, /^Issue link: closes$/m);
+    assert.match(closes, /link the issue with a closing keyword/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // #2535 item 1: the task handler classifies warning lines with the regex the
 // lib exports (no private copy), so a line the lib can write is always moved
 // and the two can no longer drift apart.

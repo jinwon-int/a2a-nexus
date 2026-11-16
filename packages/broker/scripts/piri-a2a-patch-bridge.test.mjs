@@ -43,7 +43,72 @@ test("parseTaskContext reads repo and issue", () => {
 	assert.deepEqual(__test.parseTaskContext(patchMessage({ repo: "acme/r", issue: "9" })), {
 		repo: "acme/r",
 		issueNumber: "9",
+		title: undefined,
+		issueLink: "refs",
 	});
+});
+
+// #2568: run the bridge with fake piri/gh/git that log their argv (NUL-separated
+// args, one invocation per line) and return what `git commit` / `gh pr create` saw.
+function runLoggedPatch(message) {
+	const dir = mkdtempSync(join(tmpdir(), "piri-patch-2568-"));
+	try {
+		const configDir = join(dir, "cfg");
+		mkdirSync(join(configDir, "agent"), { recursive: true });
+		writeFileSync(join(configDir, "agent", "auth.json"), '{"kimi-coding":{"type":"api_key"}}\n', { mode: 0o600 });
+		const binDir = join(dir, "bin");
+		mkdirSync(binDir, { recursive: true });
+		const log = join(dir, "argv.log");
+		writeExecutable(join(binDir, "piri"), `#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+writeFileSync("changed.txt", "ok\\n");
+`);
+		const logger = (name) => `#!/usr/bin/env node
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+const a = process.argv.slice(2);
+appendFileSync(${JSON.stringify(log)}, JSON.stringify(["${name}", ...a]) + "\\n");
+if ("${name}" === "gh" && a[0] === "repo") { mkdirSync(a[3], { recursive: true }); writeFileSync(a[3] + "/README.md", "x\\n"); }
+if ("${name}" === "gh" && a[0] === "pr") process.stdout.write("https://github.com/jinwon-int/a2a-nexus/pull/1886\\n");
+if ("${name}" === "git" && a[2] === "status") process.stdout.write(" M changed.txt\\n");
+`;
+		writeExecutable(join(binDir, "gh"), logger("gh"));
+		writeExecutable(join(binDir, "git"), logger("git"));
+		const result = runBridge(
+			["agent", "--local", "--json", "--message", message, "--timeout", "5", "--session-id", "s2568"],
+			{ PATH: `${binDir}:${process.env.PATH}`, A2A_PIRI_CLI: join(binDir, "piri"), A2A_PIRI_CONFIG_DIR: configDir },
+		);
+		assert.equal(result.status, 0, result.stderr);
+		const calls = readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+		const commit = calls.find((c) => c[0] === "git" && c[3] === "commit");
+		const pr = calls.find((c) => c[0] === "gh" && c[1] === "pr" && c[2] === "create");
+		assert.ok(commit && pr, JSON.stringify(calls));
+		const flag = (name) => pr[pr.indexOf(name) + 1];
+		return { commitMessage: commit[commit.indexOf("-m") + 1], title: flag("--title"), body: flag("--body") };
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+test("#2568: default PR body uses Refs and keeps the legacy title", () => {
+	const seen = runLoggedPatch(patchMessage());
+	assert.equal(seen.title, "a2a(piri-host): patch for #1886");
+	assert.equal(seen.commitMessage, "a2a(piri-host): #1886");
+	assert.match(seen.body, /^Refs #1886$/m);
+	assert.doesNotMatch(seen.body, /\b(Closes|Fixes|Resolves)\b/);
+});
+
+test("#2568: handler Task title / Issue link lines drive title and closing keyword; later free text cannot override", () => {
+	const message = [
+		patchMessage(),
+		"Issue link: closes",
+		"Task title: fix(runner):   keep\ttitle (#1886)",
+		"Full task message:\nTask title: injected\nIssue link: refs",
+	].join("\n\n");
+	const seen = runLoggedPatch(message);
+	assert.equal(seen.title, "fix(runner): keep title (#1886)");
+	assert.equal(seen.commitMessage, "fix(runner): keep title (#1886)");
+	assert.match(seen.body, /^Closes #1886$/m);
+	assert.doesNotMatch(seen.body, /^Refs /m);
 });
 
 test("buildPiriPatchPrompt forbids git commit/push and gh pr create", () => {

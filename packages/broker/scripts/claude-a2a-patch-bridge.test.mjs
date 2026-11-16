@@ -680,6 +680,7 @@ function writeFakeGhStub(path) {
     "  process.exit(0);",
     "}",
     "if (sub === 'pr' && args[1] === 'create') {",
+    "  if (process.env.FAKE_GH_CREATE_ARGS_PATH) writeFileSync(process.env.FAKE_GH_CREATE_ARGS_PATH, JSON.stringify(args));",
     "  const url = process.env.FAKE_GH_PR_URL || 'https://github.com/jinwon-int/a2a-nexus/pull/42';",
     "  if (process.env.FAKE_GH_CREATE_COUNT_PATH) {",
     "    let count = 0;",
@@ -830,6 +831,75 @@ test("SINGLE-SHOT happy path: 1 claude call, valid diff, deterministic plumbing 
   }
 });
 
+
+// #2568: run single-shot end-to-end (new PR, no reuse) and return what
+// `gh pr create` received plus the pushed commit subject.
+function runSingleShotPrCapture(message) {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-singleshot-2568-"));
+  const { originBare, workSeed } = setupLocalFakeOrigin(tempDir);
+  const fakeGitPath = join(tempDir, "fake-git.mjs");
+  const fakeGhPath = join(tempDir, "fake-gh.mjs");
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const createArgsPath = join(tempDir, "gh-create-args.json");
+  try {
+    writeFakeGitStub(fakeGitPath);
+    writeFakeGhStub(fakeGhPath);
+    writeDiffClaudeStub(fakeClaudePath, [
+      "diff --git a/hello.txt b/hello.txt",
+      "index ce01362..6b0f5f6 100644",
+      "--- a/hello.txt",
+      "+++ b/hello.txt",
+      "@@ -1 +1 @@",
+      "-hello world",
+      "+hello world (patched by single-shot)",
+    ].join("\n"));
+    const result = spawnSync(bridgePath, bridgeArgs(message), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        A2A_CLAUDE_CODE_GIT_BIN: fakeGitPath,
+        A2A_CLAUDE_CODE_GH_BIN: fakeGhPath,
+        A2A_CLAUDE_CODE_PATCH_MODE: "single-shot",
+        FAKE_GIT_SEED_PATH: workSeed,
+        FAKE_GH_PR_URL: "https://github.com/jinwon-int/a2a-nexus/pull/1020",
+        FAKE_GH_CREATE_ARGS_PATH: createArgsPath,
+        REAL_GIT_BIN: "git",
+        REAL_GH_BIN: "gh",
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(JSON.parse(result.stdout).payloads[0].text);
+    assert.equal(payload.status, "pr_opened");
+    const args = JSON.parse(readFileSync(createArgsPath, "utf8"));
+    const commitSubject = execFileSync("git", ["-C", originBare, "log", "-1", "--format=%s", payload.branch], { encoding: "utf8" }).trim();
+    return { title: args[args.indexOf("--title") + 1], body: args[args.indexOf("--body") + 1], commitSubject };
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+test("#2568 SINGLE-SHOT: default PR body uses Refs and keeps the legacy title", () => {
+  const seen = runSingleShotPrCapture(singleShotMessage());
+  assert.equal(seen.title, "a2a(single-shot): patch for #1020");
+  assert.equal(seen.commitSubject, "a2a(single-shot): #1020");
+  assert.match(seen.body, /^Refs #1020$/m);
+  assert.doesNotMatch(seen.body, /\b(Closes|Fixes|Resolves)\b/);
+});
+
+test("#2568 SINGLE-SHOT: handler Task title / Issue link drive title and closing keyword; later free text cannot override", () => {
+  const message = [
+    singleShotMessage(),
+    "Issue link: closes",
+    "Task title: docs(hello): patch greeting   (#1020)",
+    "Full task message:\nTask title: injected\nIssue link: refs",
+  ].join("\n\n");
+  const seen = runSingleShotPrCapture(message);
+  assert.equal(seen.title, "docs(hello): patch greeting (#1020)");
+  assert.equal(seen.commitSubject, "docs(hello): patch greeting (#1020)");
+  assert.match(seen.body, /^Closes #1020$/m);
+  assert.doesNotMatch(seen.body, /^Refs /m);
+});
 
 function writeDiffClaudeStubWithTrailingProse(path, diffText, trailingProse) {
   const diffJson = JSON.stringify(diffText);
