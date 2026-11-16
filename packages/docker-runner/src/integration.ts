@@ -9,6 +9,7 @@
  */
 
 import { redactSecrets } from "./redaction.js";
+import { normalizePatchTitle } from "./task-normalizer.js";
 import type { ArtifactManifest, GitHubCommentProjection, GitHubEvidence, ResultSummary, RunnerBuildMetadata, RunnerCrossBrokerHandoff, RunnerPolicyContext, RunnerTask } from "./types.js";
 
 // ── Handler payload shape (what the broker sends to the worker) ────────────
@@ -49,6 +50,9 @@ export interface HandlerTaskPayload {
   allowNoChanges?: boolean;
   baseBranch?: string;
   title?: string;
+  /** #2565: PR-body issue link style for the default patch pipeline ("closes" | "refs"). */
+  issueLink?: string;
+  issue_link?: string;
   focus?: string;
   acceptance?: string;
   prompt?: string;
@@ -448,6 +452,12 @@ export function shouldUseDockerRunnerForGithub(
  *
  * The returned object is the canonical input for `a2a-docker-runner run task.json`.
  */
+function payloadIssueLink(value: unknown): RunnerTask["issueLink"] {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "closes" || normalized === "refs" ? normalized : undefined;
+}
+
 export function buildRunnerTaskFromHandlerPayload(
   task: HandlerTask,
   env: HandlerEnv,
@@ -474,6 +484,11 @@ export function buildRunnerTaskFromHandlerPayload(
     prompt: normalizeString(task?.message ?? task?.payload?.prompt) ?? "",
     issueUrl: normalizeString(task?.payload?.issueUrl) ?? undefined,
     issueTitle: safeEvidenceText(task?.payload?.title, 160),
+    // #2565: requested PR title / commit subject and issue link style for the
+    // default patch pipeline. Unknown link values are dropped (runner default
+    // `refs` applies); the title is sanitised again by the normalizer.
+    title: normalizePatchTitle(task?.payload?.title),
+    issueLink: payloadIssueLink(task?.payload?.issueLink ?? task?.payload?.issue_link),
     taskBrief: safeEvidenceText(task?.payload?.focus ?? task?.message ?? task?.payload?.prompt, 240),
     reportLanguage: "ko",
     requestedBy: safeEvidenceText(task?.payload?.requestedBy ?? task?.payload?.worker, 80),

@@ -1,4 +1,4 @@
-import type { NormalizedRunnerTask, RunnerDiffHygieneScopeDriftEvidence, RunnerDiffHygieneScopeMode, RunnerRepo, RunnerTask } from "./types.js";
+import type { NormalizedRunnerTask, RunnerDiffHygieneScopeDriftEvidence, RunnerDiffHygieneScopeMode, RunnerIssueLink, RunnerRepo, RunnerTask } from "./types.js";
 import { buildIssueStartCommentBody } from "./github-evidence.js";
 import { BOOTSTRAP_ALLOWED_TRACKED_ENV_VAR, parseBootstrapAllowedTrackedEnv } from "./script-generators.js";
 
@@ -14,6 +14,14 @@ const READ_ONLY_VALIDATION_MODES = new Set([
   FAMILY_WIKI_READONLY_AUDIT_MODE,
 ]);
 const PATCH_PROPOSAL_MODES = new Set(["github-propose-patch", "propose_patch"]);
+/** #2565: cap for a requested PR title / commit subject (code points). */
+export const PATCH_TITLE_MAX_LENGTH = 120;
+/**
+ * #2565: default PR-body issue link. `refs` leaves issue closure to the
+ * finalizer (agent manual: "finalizer owns review, merge and issue closure");
+ * patches are often sent to issues that still have open follow-up items.
+ */
+export const DEFAULT_ISSUE_LINK: RunnerIssueLink = "refs";
 const PIRI_MODEL_ALIASES = new Map([
   ["k3[1m]", "kimi-coding/k3"],
   ["glm-5.2[1m]", "zai/glm-5.2"],
@@ -330,6 +338,13 @@ function buildDefaultPatchCommands(task: RunnerTask, primaryRepo: RunnerRepo): s
   const issueCommentTarget = task.issueUrl ? shellSingleQuote(task.issueUrl) : "";
   const issueClosingRef = buildIssueClosingRef(task, primaryRepo);
   const prBody = buildPrBody(task, safeTitle, issueClosingRef);
+  // #2565: honour the broker-supplied title; keep the legacy id-based title
+  // when absent. Values are shell-quoted and passed with `=` so a title that
+  // starts with "-" cannot be parsed as an option by git or gh.
+  const requestedTitle = normalizePatchTitle(task.title);
+  const prTitle = shellSingleQuote(requestedTitle ?? `Patch: ${safeTitle}`);
+  const commitSubject = shellSingleQuote(requestedTitle ?? `Auto-patch: ${safeTitle}`);
+  const commitTrailer = shellSingleQuote(`A2A task: ${safeTitle}`);
   const bootstrapAllowedTrackedRepoEntries = buildBootstrapAllowedTrackedRepoEntries(task, primaryRepo);
 
   // Step 1: materialise prompt + task metadata as artifacts.
@@ -577,7 +592,7 @@ function buildDefaultPatchCommands(task: RunnerTask, primaryRepo: RunnerRepo): s
     ] : [
       `  if [ -n "$(git status --porcelain)" ]; then`,
       `    git add -A`,
-      `    git commit -m "Auto-patch: ${safeTitle}"`,
+      `    git commit --message=${commitSubject} --message=${commitTrailer}`,
       `  else`,
       `    printf 'notice=agent_already_committed_changes\n' | tee -a /work/artifacts/summary.txt`,
       `  fi`,
@@ -586,7 +601,7 @@ function buildDefaultPatchCommands(task: RunnerTask, primaryRepo: RunnerRepo): s
       prBody,
       `A2A_PR_BODY_EOF`,
       `  gh pr create --base "${baseBranch}" --head "$BRANCH" \\`,
-      `    --title "Patch: ${safeTitle}" \\`,
+      `    --title=${prTitle} \\`,
       `    --body-file /work/artifacts/pr-body.md \\`,
       `    2>&1 | tee /work/artifacts/pr-output.txt || true`,
     ]),
@@ -869,12 +884,38 @@ function buildPrBody(task: RunnerTask, safeTitle: string, issueClosingRef?: stri
     ...(task.brokerOfRecordId ? [`Broker of record: \`${singleLine(task.brokerOfRecordId)}\``] : []),
     ...(task.policyContext?.policyScope ? [`Policy scope: ${singleLine(task.policyContext.policyScope)}`] : []),
     ...(task.requestedBy ? [`Requested by: ${singleLine(task.requestedBy)}`] : []),
-    ...(issueClosingRef ? ["", `Closes ${issueClosingRef}`] : []),
+    ...(issueClosingRef ? ["", `${issueLinkKeyword(task.issueLink)} ${issueClosingRef}`] : []),
     "",
     "---",
     "See artifacts/prompt.md for full prompt.",
   ];
   return lines.join("\n");
+}
+
+/** #2565: resolve the PR-body link keyword; anything but "closes" is `Refs`. */
+export function normalizeIssueLink(value: unknown): RunnerIssueLink {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "closes" || normalized === "refs") return normalized;
+  }
+  return DEFAULT_ISSUE_LINK;
+}
+
+function issueLinkKeyword(value: unknown): "Closes" | "Refs" {
+  return normalizeIssueLink(value) === "closes" ? "Closes" : "Refs";
+}
+
+/**
+ * #2565: one-line, control-character-free, length-capped PR title. Returns
+ * undefined for non-strings and blank values so callers keep the legacy title.
+ */
+export function normalizePatchTitle(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const cleaned = value.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!cleaned) return undefined;
+  const codePoints = Array.from(cleaned);
+  if (codePoints.length <= PATCH_TITLE_MAX_LENGTH) return cleaned;
+  return `${codePoints.slice(0, PATCH_TITLE_MAX_LENGTH - 1).join("").trimEnd()}…`;
 }
 
 function buildExistingPrUrl(task: RunnerTask): string | undefined {

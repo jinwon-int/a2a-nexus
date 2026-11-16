@@ -733,6 +733,34 @@ test("normal source-only task uses the Codex fleet baseline model and high reaso
   assert.equal(runnerTask.workerThinking, "high");
 });
 
+test("#2565: payload.title and issueLink reach the runner task; unknown link values are dropped", () => {
+  const base = {
+    mode: "github-propose-patch",
+    repo: "jinwon-int/a2a-nexus",
+    issueUrl: "https://github.com/jinwon-int/a2a-nexus/issues/2554",
+  };
+  const withBoth = __test.buildRunnerTask(task({
+    intent: "propose_patch",
+    payload: { ...base, title: "  test(docker-runner): wiring (#2554)  ", issueLink: " Closes " },
+  }), {});
+  assert.equal(withBoth.title, "test(docker-runner): wiring (#2554)");
+  assert.equal(withBoth.issueLink, "closes");
+
+  const snake = __test.buildRunnerTask(task({
+    intent: "propose_patch",
+    payload: { ...base, issue_link: "refs" },
+  }), {});
+  assert.equal(snake.issueLink, "refs");
+  assert.equal(snake.title, undefined);
+
+  const unknown = __test.buildRunnerTask(task({
+    intent: "propose_patch",
+    payload: { ...base, title: "   ", issueLink: "fixes" },
+  }), {});
+  assert.equal(unknown.title, undefined);
+  assert.equal(unknown.issueLink, undefined, "runner default (refs) applies to unknown values");
+});
+
 test("worker reasoning follows A2A_WORKER_THINKING when the task has no override", () => {
   const runnerTask = __test.buildRunnerTask(task({
     intent: "propose_patch",

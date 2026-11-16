@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildIssueStartCommentBody } from "./github-evidence.js";
-import { buildToolchainDetectedCommandsForRepo, defaultCheckoutPath, isPatchMode, normalizeRepoUrl, normalizeTask } from "./task-normalizer.js";
+import { buildToolchainDetectedCommandsForRepo, defaultCheckoutPath, isPatchMode, normalizeIssueLink, normalizePatchTitle, normalizeRepoUrl, normalizeTask, PATCH_TITLE_MAX_LENGTH } from "./task-normalizer.js";
 
 test("normalizes GitHub shorthand repo URLs", () => {
   assert.equal(normalizeRepoUrl("jinwon-int/openclaw-plugin-a2a"), "https://github.com/jinwon-int/openclaw-plugin-a2a.git");
@@ -222,11 +222,13 @@ test("generates PR-producing default commands for github-propose-patch mode with
   // Step 2: PR-producing pipeline.
   const pipeline = task.commands[1] ?? "";
   assert.ok(pipeline.includes("git checkout -b"), "Expected branch creation");
-  assert.ok(pipeline.includes("git commit -m"), "Expected commit step");
+  assert.ok(pipeline.includes("git commit --message="), "Expected commit step");
   assert.ok(pipeline.includes("git push origin"), "Expected push step");
   assert.ok(pipeline.includes("gh pr create"), "Expected PR create step");
   assert.ok(pipeline.includes("--body-file /work/artifacts/pr-body.md"), "Expected PR body file use");
-  assert.ok(pipeline.includes("Closes #5"), "Expected same-repo closing keyword in PR body");
+  // #2565: default link is `Refs` — the finalizer owns issue closure.
+  assert.ok(pipeline.includes("Refs #5"), "Expected same-repo Refs link in PR body");
+  assert.ok(!pipeline.includes("Closes #5"), "Default PR body must not carry a closing keyword");
   const startBody = buildIssueStartCommentBody(task);
   assert.ok(startBody.startsWith("Start\n"), "Expected literal Start first line");
   const startB64 = Buffer.from(startBody, "utf8").toString("base64");
@@ -462,6 +464,7 @@ test("cross-repo closing ref uses owner/repo#N format in PR body", () => {
     repo: "jinon86/other-repo",
     baseBranch: "main",
     issueUrl: "https://github.com/jinon86/test-repo/issues/7",
+    issueLink: "closes",
   });
 
   const pipeline = task.commands[1] ?? "";
@@ -478,6 +481,7 @@ test("same-repo closing ref uses bare #N format in PR body", () => {
     repo: "jinon86/test-repo",
     baseBranch: "main",
     issueUrl: "https://github.com/jinon86/test-repo/issues/12",
+    issueLink: "closes",
   });
 
   const pipeline = task.commands[1] ?? "";
@@ -499,6 +503,83 @@ test("no Closes keyword in PR body when issueUrl is absent", () => {
   const pipeline = task.commands[1] ?? "";
   const prBody = extractPrBodyFromPipeline(pipeline);
   assert.ok(!prBody.includes("Closes"), `PR body should not have Closes when no issueUrl, got: ${prBody}`);
+  assert.ok(!prBody.includes("Refs"), `PR body should not have Refs when no issueUrl, got: ${prBody}`);
+});
+
+// #2565: issue link style and requested PR title.
+function patchTask(overrides: Partial<Parameters<typeof normalizeTask>[0]> = {}) {
+  return normalizeTask({
+    id: "nexus-2554-tests-20261116:nosuk",
+    intent: "propose_patch",
+    mode: "github-propose-patch",
+    repo: "jinon86/test-repo",
+    baseBranch: "main",
+    issueUrl: "https://github.com/jinon86/test-repo/issues/2554",
+    ...overrides,
+  });
+}
+
+test("#2565: default issue link is Refs for same-repo and cross-repo issues", () => {
+  const same = extractPrBodyFromPipeline(patchTask().commands[1] ?? "");
+  assert.ok(same.includes("\nRefs #2554\n"), `Expected Refs #2554, got: ${same}`);
+  assert.ok(!/\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\b #/i.test(same), `No closing keyword expected, got: ${same}`);
+
+  const cross = extractPrBodyFromPipeline(patchTask({ repo: "jinon86/other-repo" }).commands[1] ?? "");
+  assert.ok(cross.includes("Refs jinon86/test-repo#2554"), `Expected cross-repo Refs, got: ${cross}`);
+  assert.ok(!cross.includes("Closes"), `No closing keyword expected, got: ${cross}`);
+});
+
+test("#2565: issueLink closes keeps the legacy closing keyword; unknown values fall back to Refs", () => {
+  const closes = extractPrBodyFromPipeline(patchTask({ issueLink: "closes" }).commands[1] ?? "");
+  assert.ok(closes.includes("Closes #2554"), `Expected Closes #2554, got: ${closes}`);
+
+  for (const issueLink of ["refs", "fixes", "close", "", " CLOSES-ALL "]) {
+    const body = extractPrBodyFromPipeline(
+      patchTask({ issueLink: issueLink as unknown as "refs" }).commands[1] ?? "",
+    );
+    assert.ok(body.includes("Refs #2554"), `issueLink=${JSON.stringify(issueLink)} should yield Refs, got: ${body}`);
+    assert.ok(!body.includes("Closes"), `issueLink=${JSON.stringify(issueLink)} must not close, got: ${body}`);
+  }
+  assert.equal(normalizeIssueLink(" Closes "), "closes");
+  assert.equal(normalizeIssueLink(undefined), "refs");
+});
+
+test("#2565: requested title is used for PR title and commit subject; absent title keeps the legacy id title", () => {
+  const titled = patchTask({ title: "test(docker-runner): images next-rollout 1970 + imagesEnvFiles CLI wiring (#2554)" }).commands[1] ?? "";
+  assert.ok(
+    titled.includes("--title='test(docker-runner): images next-rollout 1970 + imagesEnvFiles CLI wiring (#2554)'"),
+    "Expected requested PR title",
+  );
+  assert.ok(
+    titled.includes("git commit --message='test(docker-runner): images next-rollout 1970 + imagesEnvFiles CLI wiring (#2554)' --message='A2A task: nexus-2554-tests-20261116_nosuk'"),
+    "Expected requested commit subject plus task trailer",
+  );
+  assert.ok(!titled.includes("Patch: nexus-2554"), "Legacy title must not be used when a title is supplied");
+
+  const legacy = patchTask().commands[1] ?? "";
+  assert.ok(legacy.includes("--title='Patch: nexus-2554-tests-20261116_nosuk'"), "Expected legacy PR title");
+  assert.ok(legacy.includes("git commit --message='Auto-patch: nexus-2554-tests-20261116_nosuk'"), "Expected legacy commit subject");
+
+  const blank = patchTask({ title: "  \n\t " }).commands[1] ?? "";
+  assert.ok(blank.includes("--title='Patch: nexus-2554-tests-20261116_nosuk'"), "Blank title keeps legacy PR title");
+});
+
+test("#2565: requested title is one line, capped, and shell-safe", () => {
+  assert.equal(normalizePatchTitle("fix: a\r\nb\u0000c\u2028d"), "fix: a b c d");
+  const long = "가".repeat(PATCH_TITLE_MAX_LENGTH + 30);
+  const capped = normalizePatchTitle(long) ?? "";
+  assert.equal(Array.from(capped).length, PATCH_TITLE_MAX_LENGTH);
+  assert.ok(capped.endsWith("…"));
+  assert.equal(normalizePatchTitle(42), undefined);
+
+  const hostile = "it's $(touch /tmp/pwned) `id` \"q\" -- --body x";
+  const pipeline = patchTask({ title: hostile }).commands[1] ?? "";
+  const quoted = `'${hostile.replace(/'/g, "'\\''")}'`;
+  assert.ok(pipeline.includes(`--title=${quoted} \\`), "Hostile title must be single-quoted as one argument");
+  assert.ok(pipeline.includes(`git commit --message=${quoted} `), "Hostile commit subject must be single-quoted");
+
+  const dash = patchTask({ title: "--draft" }).commands[1] ?? "";
+  assert.ok(dash.includes("--title='--draft'"), "Leading-dash title is bound with = so it cannot become an option");
 });
 
 test("PR body contains issue URL and requestedBy when set", () => {
@@ -780,7 +861,7 @@ test("github-verify: isPatchMode recognises the mode and generates branchless re
   assert.ok(pipeline.includes("status=no_changes_allowed"), "Expected no_changes_allowed for verify mode");
   assert.ok(!pipeline.includes("error=no_changes_after_patch_command"), "Must not emit no-changes error for verify mode");
   assert.ok(!pipeline.includes("git checkout -b"), "Verify lane must not create a branch");
-  assert.ok(!pipeline.includes("git commit -m"), "Verify lane must not commit");
+  assert.ok(!pipeline.includes("git commit "), "Verify lane must not commit");
   assert.ok(!pipeline.includes("git push origin"), "Verify lane must not push");
   assert.ok(!pipeline.includes("gh pr create"), "Verify lane must not create PR");
   assert.ok(
@@ -893,7 +974,7 @@ test("readOnlyValidation: patch/proposal mode fails preflight before model, bran
   assert.ok(!pipeline.includes("/work/patch-command.sh"), "Read-only patch/proposal conflict must not invoke model command");
   assert.ok(!pipeline.includes("A2A_PATCH_COMMAND"), "Read-only patch/proposal conflict must not expose patch command env path");
   assert.ok(!pipeline.includes("git checkout -b"), "Read-only validation must not create a branch before checking changes");
-  assert.ok(!pipeline.includes("git commit -m"), "Read-only validation must not commit repository changes");
+  assert.ok(!pipeline.includes("git commit "), "Read-only validation must not commit repository changes");
   assert.ok(!pipeline.includes("git push origin"), "Read-only validation must not push branches");
   assert.ok(!pipeline.includes("gh pr create"), "Read-only validation must not create PRs");
 });
