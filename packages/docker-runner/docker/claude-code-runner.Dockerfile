@@ -57,6 +57,7 @@ RUN set -eux; \
   install -m 0755 packages/broker/scripts/lib/analysis-lane-skill-hints.mjs /opt/a2a-broker/scripts/lib/analysis-lane-skill-hints.mjs; \
   install -m 0755 packages/broker/scripts/lib/utf8-byte-budget.mjs /opt/a2a-broker/scripts/lib/utf8-byte-budget.mjs; \
   install -m 0755 packages/broker/scripts/lib/analysis-execution-telemetry.mjs /opt/a2a-broker/scripts/lib/analysis-execution-telemetry.mjs; \
+  install -m 0755 packages/broker/scripts/lib/patch-pr-metadata.mjs /opt/a2a-broker/scripts/lib/patch-pr-metadata.mjs; \
   node --input-type=module -e "import('/opt/a2a-broker/scripts/claude-a2a-patch-bridge.mjs')"; \
   rm -rf /tmp/a2a-nexus
 
