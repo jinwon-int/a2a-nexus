@@ -17,6 +17,7 @@ import {
 import { sourceCarrierStats } from "./lib/source-carriers.mjs";
 import { payloadWithRetrievalSnapshotSourceCarriers } from "./lib/retrieval-snapshot-carriers.mjs";
 import { normalizeAnalysisExecutionTelemetry, parseExecutionTelemetryLine } from "./lib/analysis-execution-telemetry.mjs";
+import { normalizeIssueLink, normalizePatchTitle } from "./lib/patch-pr-metadata.mjs";
 import { analysisHarnessPreflight } from "./lib/analysis-harness-fingerprint.mjs";
 import { ENV_WARNING_LINE_RE, normalizePromptViewTelemetry } from "./lib/analysis-source-bundle.mjs";
 import { evaluateDeclaredWriteSetGate } from "../dist/core/dispatch/runtime-safety-gates.js";
@@ -2508,10 +2509,20 @@ function runOpenClawBridgeCore(task, env, spend) {
   const nodeId = safeText(env.A2A_NODE_ID || env.NODE_ID || env.WORKER_ID, "unknown-node");
   const timeoutSec = String(Math.max(1, Number(env.A2A_OPENCLAW_TIMEOUT_SEC || DEFAULT_OPENCLAW_TIMEOUT_SEC)));
   const sessionId = safeText(env.A2A_OPENCLAW_SESSION_ID, `a2a-${nodeId}-${safeText(task.id, String(Date.now()))}-github`);
+  // #2568: PR title / issue link for bridge-opened PRs (same rules as the
+  // docker-runner pipeline, #2565). These lines precede the free-form task
+  // message so bridges reading the first `Task title:` / `Issue link:` line
+  // always get the handler-authored value.
+  const patchTitle = normalizePatchTitle(payload.title);
+  const issueLink = normalizeIssueLink(payload.issueLink ?? payload.issue_link);
   const prompt = [
     `You are A2A worker ${nodeId}. Complete this GitHub development assignment end-to-end.`,
     "Leave a Start marker on the GitHub issue before work begins.",
     "Do not report success unless you opened a pull request, posted a Done comment, or posted a Block comment on GitHub.",
+    issueLink === "closes"
+      ? "In the pull request body, link the issue with a closing keyword (`Closes #N`)."
+      : "In the pull request body, reference the issue with `Refs #N` (or `Refs owner/repo#N`). Do not use closing keywords (Closes/Fixes/Resolves): the finalizer owns issue closure.",
+    ...(patchTitle ? [`Use the Task title below as the pull request title and commit subject.`] : []),
     "Use the local workspace and GitHub tools available in this OpenClaw session. If the repo is not present, clone/fetch it into a temporary or appropriate workspace directory.",
     "Never commit sensitive data, raw private paths, or session dumps.",
     "If implementation is unsafe, unclear, or cannot finish within the available time, post a Block comment on the issue with blocker evidence and return its URL.",
@@ -2522,10 +2533,11 @@ function runOpenClawBridgeCore(task, env, spend) {
     `Repository: ${repo}`,
     `Issue: ${issue ? `#${issue}` : issueUrl}`,
     `Issue URL: ${issueUrl}`,
+    `Issue link: ${issueLink}`,
     `Current workspace root: ${env.A2A_HANDLER_CWD || process.cwd()}`,
     `Effective model: ${effectiveModel}${modelFromPayload ? " (from payload override)" : ""}`,
     `Effective thinking: ${effectiveThinking}${thinkingFromPayload ? " (from payload override)" : ""}`,
-    `Task title: ${safeText(payload.title, "")}`,
+    `Task title: ${patchTitle ?? ""}`,
     `Task focus: ${safeText(payload.focus, "")}`,
     `Acceptance: ${safeText(payload.acceptance, "")}`,
     `Full task message:\n${safeText(task.message, "")}`,
