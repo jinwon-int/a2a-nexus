@@ -73,6 +73,9 @@ jobs:
               - 'packages/broker/**'
             docker-runner:
               - 'packages/docker-runner/**'
+              # The Claude Code runner image installs broker bridge scripts and
+              # docker-runner tests read them (#2571: #2569 skipped this job).
+              - 'packages/broker/scripts/**'
             policy-referee:
               - 'packages/policy-referee/**'
             attestation:
