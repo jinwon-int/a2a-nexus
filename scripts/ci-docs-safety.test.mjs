@@ -327,6 +327,29 @@ test('root path filter fans out only on executable .github paths; check covers m
   }
 });
 
+// The Claude Code runner image installs packages/broker/scripts/** and the
+// docker-runner tests read those files, so a broker-scripts-only change must
+// run the docker-runner job. #2569 skipped it and the import-closure regression
+// surfaced only at the deploy gate (#2571).
+test('docker-runner path filter covers the broker scripts its runner image installs (#2571)', () => {
+  const ci = ciText();
+  const block = ci.match(/^ {12}docker-runner:\n((?: {14}.*\n)+)/m)?.[1];
+  assert.ok(block, 'paths-filter docker-runner block not found');
+  const paths = [...block.matchAll(/^ {14}- '([^']+)'$/gm)].map((m) => m[1]);
+  assert.ok(paths.includes('packages/docker-runner/**'));
+  assert.ok(paths.includes('packages/broker/scripts/**'), 'broker script edits must run the docker-runner job');
+
+  const dockerfile = readFileSync(join(repoRoot, 'packages/docker-runner/docker/claude-code-runner.Dockerfile'), 'utf8');
+  const installed = [...dockerfile.matchAll(/\b(packages\/[a-z-]+\/[^\s;]+)\s+\/opt\//g)].map((m) => m[1]);
+  assert.ok(installed.length > 0, 'expected the runner image to install repo files');
+  for (const src of installed) {
+    assert.ok(
+      paths.some((p) => src.startsWith(p.replace(/\*\*$/, ''))),
+      `${src} is installed into the runner image but not covered by the docker-runner filter`,
+    );
+  }
+});
+
 // The promoted TCK jobs run only when tck-promoted-gate's `changes` filter
 // matches, so the composite setup action every one of them runs must be in that
 // filter — otherwise an edit to it skips exactly the jobs it changes (#2257 B4).
