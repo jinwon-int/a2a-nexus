@@ -199,6 +199,14 @@ const SAFE_CHILD_ENV_KEYS = new Set([
   "CLAUDE_CONFIG_DIR",
   "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
   "DISABLE_AUTOUPDATER",
+  // Same as claude-a2a-patch-bridge (#2373 option 2): a worker that runs on a
+  // long-lived subscription OAuth token (claude setup-token) must hand it to the
+  // claude child. Without it the analysis lane silently falls back to the
+  // interactive ~/.claude/.credentials.json login, and once that login expires
+  // every analysis lane fails with "this login reached its time limit" although
+  // the worker env holds a valid token (nclex#1048 evidence_adversarial, daegyo,
+  // 2026-11-19). The bridge never logs env values; redactSecrets covers sk-ant-.
+  "CLAUDE_CODE_OAUTH_TOKEN",
   "A2A_CODEX_ADAPTER_MODE",
   "A2A_CODEX_BIN",
   "A2A_CODEX_MODEL",
