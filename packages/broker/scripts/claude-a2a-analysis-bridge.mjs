@@ -204,7 +204,7 @@ const SAFE_CHILD_ENV_KEYS = new Set([
   // claude child. Without it the analysis lane silently falls back to the
   // interactive ~/.claude/.credentials.json login, and once that login expires
   // every analysis lane fails with "this login reached its time limit" although
-  // the worker env holds a valid token (nclex#1048 evidence_adversarial, daegyo,
+  // the worker env holds a valid token (nclex#1048 evidence_adversarial lane,
   // 2026-11-19). The bridge never logs env values; redactSecrets covers sk-ant-.
   "CLAUDE_CODE_OAUTH_TOKEN",
   "A2A_CODEX_ADAPTER_MODE",
