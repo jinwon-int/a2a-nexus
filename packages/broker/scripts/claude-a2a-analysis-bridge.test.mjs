@@ -255,11 +255,15 @@ test("Claude Code A2A analysis bridge does not pass broker/API secret env vars t
         A2A_EDGE_SECRET: "a2a-edge-secret-must-not-reach-child",
         GITHUB_TOKEN: "github-token-must-not-reach-child",
         Authorization: "Bearer must-not-reach-child",
+        CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat01-test-oauth-token-for-claude-child",
       },
     });
 
     assert.equal(result.status, 0, result.stderr);
     const childEnv = JSON.parse(readFileSync(envCapturePath, "utf8"));
+    // The subscription OAuth token is the claude child's credential and must survive
+    // the allowlist (otherwise the lane falls back to an expiring interactive login).
+    assert.equal(childEnv.CLAUDE_CODE_OAUTH_TOKEN, "sk-ant-oat01-test-oauth-token-for-claude-child");
     assert.equal(childEnv.EDGE_SECRET, undefined);
     assert.equal(childEnv.A2A_EDGE_SECRET, undefined);
     assert.equal(childEnv.GITHUB_TOKEN, undefined);
@@ -1049,11 +1053,12 @@ test("#2256 A4 bridge redaction keeps identifiers and digests, redacts secrets",
   const sha256 = "a".repeat(64);
   const gh = ["ghp", "A".repeat(36)].join("_");
   const sk = ["sk", "ant", "x".repeat(24)].join("-");
+  const oat = ["sk", "ant", "oat01", "Ab1".repeat(10)].join("-"); // setup-token shape (CLAUDE_CODE_OAUTH_TOKEN)
   const opaque = "Zq9".repeat(12);
-  const out = redact(`claude-a2a-patch-bridge failed at ${sha1} digest ${sha256} token ${gh} key ${sk} blob ${opaque} TOKEN=abc Authorization: Bearer xyz`);
+  const out = redact(`claude-a2a-patch-bridge failed at ${sha1} digest ${sha256} token ${gh} key ${sk} oauth ${oat} blob ${opaque} TOKEN=abc Authorization: Bearer xyz`);
   assert.ok(out.includes("claude-a2a-patch-bridge"), "ordinary identifiers under 32 chars survive");
   assert.ok(out.includes(sha1) && out.includes(sha256), "40/64-hex digests survive");
-  for (const secret of [gh, sk, opaque, "TOKEN=abc", "Bearer xyz"]) {
+  for (const secret of [gh, sk, oat, opaque, "TOKEN=abc", "Bearer xyz"]) {
     assert.equal(out.includes(secret), false, `leaked ${secret}`);
   }
   const more = redact(`task-2256-redaction-precision-scan AKIA${"Q".repeat(16)} ${"f".repeat(32)}.${"Ab1".repeat(5)}x tok Ab3dEf5hIj7lMn9pQr1tUv3x`);
