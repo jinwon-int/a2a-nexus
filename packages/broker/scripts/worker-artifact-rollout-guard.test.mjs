@@ -573,6 +573,40 @@ test('deployed guard passes deployed-build-info for a clean 40-hex revision (#24
   assert.equal(check?.ok, true);
   assert.equal(check?.detail?.revision, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
 });
+
+test('deployed guard warns (does not fail) when .deploy-source-sha disagrees with build-info (#2576)', () => {
+  const { root } = makeWorkerRoot();
+  writeFileSync(join(root, '.deploy-source-sha'), 'cd77567167a17012d51fa95a5c9875a398dcfad9\n');
+  const result = runGuard(root);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const output = JSON.parse(result.stdout);
+  const check = output.results.find((r) => r.guard === 'deployed-build-info');
+  assert.equal(check?.ok, true);
+  assert.equal(check?.detail?.deploySourceSha?.matchesRevision, false);
+  assert.equal(check?.detail?.warnings?.length, 1);
+  assert.match(check.detail.warnings[0], /#2576/);
+  assert.match(check.detail.warnings[0], /aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/);
+});
+
+test('deployed guard accepts a .deploy-source-sha that matches build-info, full or short (#2576)', () => {
+  for (const marker of ['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'aaaaaaaa']) {
+    const { root } = makeWorkerRoot();
+    writeFileSync(join(root, '.deploy-source-sha'), `${marker}\n`);
+    const result = runGuard(root);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const check = JSON.parse(result.stdout).results.find((r) => r.guard === 'deployed-build-info');
+    assert.equal(check?.detail?.deploySourceSha?.matchesRevision, true);
+    assert.equal(check?.detail?.warnings, undefined);
+  }
+});
+
+test('deployed guard reports nothing about .deploy-source-sha when the worker root has none (#2576)', () => {
+  const { root } = makeWorkerRoot();
+  const result = runGuard(root);
+  const check = JSON.parse(result.stdout).results.find((r) => r.guard === 'deployed-build-info');
+  assert.equal(check?.detail?.deploySourceSha, undefined);
+  assert.equal(check?.detail?.warnings, undefined);
+});
 // ---------------------------------------------------------------------------
 // #2429 — a configured analysis bridge that resolves outside the worker root
 // is never refreshed by an artifact rollout (a Termux worker ran a live checkout 229
