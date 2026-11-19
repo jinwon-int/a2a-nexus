@@ -1433,10 +1433,33 @@ guard('deployed-build-info', () => {
     );
   }
 
+  // #2576: `.deploy-source-sha` is a docker-runner checkout marker. Some worker
+  // roots still carry one from an earlier rollout, and later rollouts did not
+  // touch it, so it can name a revision the worker no longer runs. build-info
+  // stays the authority; a disagreeing marker only warns so operators do not
+  // read it as the deployed version.
+  const markerWarnings = [];
+  const markerRoot = workerRoot ? resolve(workerRoot) : resolve(distRoot, '..');
+  const markerPath = join(markerRoot, '.deploy-source-sha');
+  let deploySourceSha;
+  if (existsSync(markerPath)) {
+    const marker = (readFileSafe(markerPath) ?? '').trim().toLowerCase();
+    const matches = marker.length >= 7 && revision.toLowerCase().startsWith(marker);
+    deploySourceSha = { path: markerPath, value: marker || undefined, matchesRevision: matches };
+    if (!matches) {
+      markerWarnings.push(
+        `${markerPath} says "${marker || '(empty)'}" but dist/build-info.json revision is ${revision}; `
+          + 'build-info is the deployed version — rewrite the marker with this revision or remove it (#2576)',
+      );
+    }
+  }
+
   return ok('deployed-build-info', {
     path: buildInfoPath,
     revision,
     targetRevision: targetRevision || undefined,
+    ...(deploySourceSha ? { deploySourceSha } : {}),
+    ...(markerWarnings.length ? { warnings: markerWarnings } : {}),
   });
 });
 
