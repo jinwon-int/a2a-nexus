@@ -660,23 +660,34 @@ test("#2558 r2 review: more than RECORD_GAP_APPLY_LIMIT images kept only as reco
   assert.deepEqual(four.candidates, [], "the refusal changes nothing kept: all gap images stay");
 });
 
+// A rolled out daily v1→…→v7 (its own records name v2..v6); B went v1→v7 in one step.
+const cadenceInventory = (): RunnerImageInventory => inventory({
+  images: [7, 6, 5, 4, 3, 2, 1].map((v) => image(`v${v}`, [`${R}:v${v}`], 12 - v - (v >= 6 ? 1 : 0))),
+  live: { refs: [], unreadable: 0, scanned: 40, units: [] },
+  configured: [...inUse(`${R}:v7`).configured, ...inUse(`${R}:v7`, SECOND).configured],
+  deployRecords: [
+    ...[6, 5, 4, 3, 2].map((v, i) => record(`${R}:v${v}`, ENV, 1 + i)),
+    record(`${R}:v1`, SECOND, 9),
+  ],
+});
+
 test("#2558 r3 review: another worker's history never counts toward the refusal (workers on different cadences)", () => {
-  // A rolled out daily v1→…→v7 (its own records name v2..v6); B went v1→v7 in one step.
-  const images = [7, 6, 5, 4, 3, 2, 1].map((v) => image(`v${v}`, [`${R}:v${v}`], 12 - v - (v >= 6 ? 1 : 0)));
-  const plan = planRunnerImagePrune(
-    inventory({
-      images,
-      live: { refs: [], unreadable: 0, scanned: 40, units: [] },
-      configured: [...inUse(`${R}:v7`).configured, ...inUse(`${R}:v7`, SECOND).configured],
-      deployRecords: [
-        ...[6, 5, 4, 3, 2].map((v, i) => record(`${R}:v${v}`, ENV, 1 + i)),
-        record(`${R}:v1`, SECOND, 9),
-      ],
-    }),
-    { nowMs: NOW, isRoot: true },
-  );
+  const plan = planRunnerImagePrune(cadenceInventory(), { nowMs: NOW, isRoot: true });
   const bOther = plan.recordGaps.filter((gap) => gap.startsWith(`${SECOND}:`) && /a record of \/etc\/default\/a2a-hermes-worker does/.test(gap));
   assert.ok(bOther.length > RECORD_GAP_APPLY_LIMIT, JSON.stringify(plan.recordGaps));
+  assert.equal(plan.applyAllowed, true, JSON.stringify(plan.applyRefusals));
+});
+
+test("#2559 cadence: A's history inside B's range (v2..v5) is kept as rollback and each image is counted once", () => {
+  const plan = planRunnerImagePrune(cadenceInventory(), { nowMs: NOW, isRoot: true });
+  // v6 is A's record pick, v1 is B's; v2..v5 lie in B's range (built after v1, before v7) and are
+  // named only by A's records: not counted toward B's refusal, but still kept, never candidates.
+  assert.equal(reasonOf(plan, "v6"), "rollback");
+  assert.equal(reasonOf(plan, "v1"), "rollback");
+  for (const v of [2, 3, 4, 5]) assert.equal(reasonOf(plan, `:v${v}`), "rollback", `v${v} is kept as rollback`);
+  assert.deepEqual(plan.recordGapImages, [`${R}:v5`, `${R}:v4`, `${R}:v3`, `${R}:v2`], "the 4 images B's gap pass added, newest first");
+  assert.equal(plan.recordGapImages.length, 4);
+  assert.deepEqual(plan.candidates, []);
   assert.equal(plan.applyAllowed, true, JSON.stringify(plan.applyRefusals));
 });
 
@@ -1120,6 +1131,82 @@ test("#2559 a gap image tagged in two runner repositories is listed once", () =>
   assert.equal(plan.recordGaps.length, 2, JSON.stringify(plan.recordGaps));
   assert.equal(plan.recordGapImages.length, 1, JSON.stringify(plan.recordGapImages));
   assert.deepEqual(plan.candidates, []);
+});
+
+test("#2559 floors use the passes 1-3 snapshot: another worker's gap addition never raises a worker's floor", () => {
+  // `outr`'s newest-mtime record names o30, so its own record of gap-x (built later) is outranked.
+  // `plain` records only the old image: its gap pass keeps gap-x (and mid). Had that addition counted
+  // as "kept anyway" for `outr`, gap-x would become `outr`'s floor whenever `plain` is visited first.
+  const planFor = (plain: string, outr: string) => planRunnerImagePrune(
+    inventory({
+      images: [
+        image("ffc", [`${R}:ffc530e-claude-2.1.322`], 5),
+        image("gpx", [`${R}:gap-x`], 6),
+        image("mid", [`${R}:mid`], 7),
+        image("o30", [`${R}:o30`], 30),
+        image("old", [`${R}:a038bb7-claude-2.1.280`], 40),
+      ],
+      live: { refs: [], unreadable: 0, scanned: 40, units: [] },
+      configured: [...inUse(`${R}:ffc530e-claude-2.1.322`, plain).configured, ...inUse(`${R}:ffc530e-claude-2.1.322`, outr).configured],
+      deployRecords: [record(`${R}:a038bb7-claude-2.1.280`, plain, 3), record(`${R}:o30`, outr, 1), record(`${R}:gap-x`, outr, 5)],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  for (const [plan, outr] of [[planFor(AAA, ZZZ), ZZZ], [planFor(ZZZ, AAA), AAA]] as const) {
+    const own = plan.recordGaps.filter((gap) => gap.startsWith(`${outr}:`));
+    assert.equal(own.length, 2, JSON.stringify(plan.recordGaps));
+    assert.ok(own.some((gap) => gap.includes("gap-x ") && /built after its newest recorded rollback \(.*:o30\).*its own deploy record names it/.test(gap)), JSON.stringify(own));
+    assert.ok(own.some((gap) => gap.includes(":mid ") && /built after its newest recorded rollback \(.*:o30\)/.test(gap)), JSON.stringify(own));
+    assert.equal(reasonOf(plan, "gap-x"), "rollback");
+    assert.equal(reasonOf(plan, ":mid"), "rollback");
+    assert.deepEqual(plan.candidates, []);
+  }
+});
+
+test("#2559 a recent own-record image is a floor: an older unrecorded image below it stays a candidate", () => {
+  // The worker's newest record names 666becb, re-loaded a day ago (recent): it takes no slot, so
+  // the older 573ca08 record does. 666becb is still kept anyway (recent) and is the floor, so
+  // x-between (built before it) is no gap — with 573ca08 as the floor it would be kept and reported.
+  const images = [
+    image("ffc", [`${R}:ffc530e-claude-2.1.322`], 5),
+    image("666", [`${R}:666becb-claude-2.1.322`], 6, { lastTagTime: new Date(NOW - 1 * DAY).toISOString() }),
+    image("x65", [`${R}:x-between`], 6.5),
+    image("573", [`${R}:573ca08-claude-2.1.322`], 7),
+    image("old", [`${R}:a038bb7-claude-2.1.280`], 40),
+  ];
+  const plan = planRunnerImagePrune(
+    inventory({ images, ...inUse(`${R}:ffc530e-claude-2.1.322`), deployRecords: [record(`${R}:666becb-claude-2.1.322`, ENV, 1), record(`${R}:573ca08-claude-2.1.322`, ENV, 3)] }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.equal(reasonOf(plan, "666becb"), "recent");
+  assert.equal(reasonOf(plan, "573ca08"), "rollback");
+  assert.deepEqual(plan.recordGaps, []);
+  assert.deepEqual(plan.recordGapImages, []);
+  assert.deepEqual(tagsOf(plan.candidates), [`${R}:a038bb7-claude-2.1.280`, `${R}:x-between`]);
+});
+
+test("#2559 the record-gap refusal changes no keep/remove set: same inventory just under and just over the limit", () => {
+  // A record-gap floor on the old image leaves gap-0..gap-3 in range. A --min-age that makes gap-0
+  // (6d) recent keeps it as "recent" instead: 3 gap images, allowed. The default counts 4: refused.
+  const inv = inventory({
+    images: [image("ffc", [`${R}:ffc530e-claude-2.1.322`], 5), ...gapImages(RECORD_GAP_APPLY_LIMIT + 1), image("old", [`${R}:a038bb7-claude-2.1.280`], 40), image("anc", [`${R}:ancient`], 50)],
+    ...inUse(`${R}:ffc530e-claude-2.1.322`),
+    deployRecords: [record(`${R}:a038bb7-claude-2.1.280`, ENV, 3)],
+  });
+  const under = planRunnerImagePrune(inv, { nowMs: NOW, isRoot: true, minAgeMs: 6.2 * DAY });
+  const over = planRunnerImagePrune(inv, { nowMs: NOW, isRoot: true });
+  assert.equal(reasonOf(under, "gap-0"), "recent");
+  assert.equal(under.recordGapImages.length, RECORD_GAP_APPLY_LIMIT);
+  assert.equal(under.applyAllowed, true, JSON.stringify(under.applyRefusals));
+  assert.equal(over.recordGapImages.length, RECORD_GAP_APPLY_LIMIT + 1);
+  assert.equal(over.applyAllowed, false);
+  assert.match(over.applyRefusals.join(" "), /4 images that no deploy record names are kept as record gaps/);
+  const sets = (plan: ReturnType<typeof planRunnerImagePrune>) => ({
+    keep: tagsOf(plan.repositories.flatMap((repo) => repo.keep)),
+    remove: tagsOf(plan.repositories.flatMap((repo) => repo.remove)),
+  });
+  assert.deepEqual(sets(over), sets(under), "refused or not, the same tags are kept and removed");
+  assert.deepEqual(sets(over).remove, [`${R}:ancient`]);
 });
 
 test("#2560 r3 doctor counts tags kept for unknown build order", async () => {
