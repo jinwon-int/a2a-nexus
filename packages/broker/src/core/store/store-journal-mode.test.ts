@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
-import { isSqliteBusyError, switchToWal, type JournalModeDb } from "./store-journal-mode.js";
+import { isSqliteBusyError, switchToWal, type JournalModeDb } from "./store.js";
 
 function busyError(): Error {
   return Object.assign(new Error("database is locked"), { code: "ERR_SQLITE_ERROR", errcode: 5 });
