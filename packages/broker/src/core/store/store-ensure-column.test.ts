@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
-import { ensureColumnWith, isDuplicateColumnError, type EnsureColumnOps } from "./store-ensure-column.js";
+import { ensureColumnWith, isDuplicateColumnError, type EnsureColumnOps } from "./store.js";
 
 function columnsOf(db: DatabaseSync, table: string): string[] {
   return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((row) => row.name);
