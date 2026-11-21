@@ -147,6 +147,7 @@ import {
   parseSnapshotPayload,
 } from "./store-snapshot-io.js";
 import { fitSnapshotToBudget, SnapshotOverflowError } from "./store-snapshot-fit.js";
+import { ensureColumnWith } from "./store-ensure-column.js";
 
 export {
   JsonFileBrokerStateStore,
@@ -2790,11 +2791,19 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   private ensureColumn(tableName: string, columnName: string, columnDefinition: string): void {
-    const rows = this.stmt(`PRAGMA table_info(${tableName})`).all() as Array<{ name?: string }>;
-    if (rows.some((row) => row.name === columnName)) {
-      return;
-    }
-    this.db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`);
+    // #2573: tolerate a concurrent writer adding the same column first.
+    ensureColumnWith(
+      {
+        listColumns: () =>
+          (this.stmt(`PRAGMA table_info(${tableName})`).all() as Array<{ name?: string }>)
+            .map((row) => row.name)
+            .filter((name): name is string => typeof name === "string"),
+        exec: (sql) => this.db.exec(sql),
+      },
+      tableName,
+      columnName,
+      columnDefinition,
+    );
   }
 }
 
