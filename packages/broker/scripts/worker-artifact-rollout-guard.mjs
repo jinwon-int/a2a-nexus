@@ -1443,14 +1443,34 @@ guard('deployed-build-info', () => {
   const markerPath = join(markerRoot, '.deploy-source-sha');
   let deploySourceSha;
   if (existsSync(markerPath)) {
-    const marker = (readFileSafe(markerPath) ?? '').trim().toLowerCase();
-    const matches = marker.length >= 7 && revision.toLowerCase().startsWith(marker);
-    deploySourceSha = { path: markerPath, value: marker || undefined, matchesRevision: matches };
-    if (!matches) {
+    // #2578: a marker that exists but cannot be read (a directory, EACCES, …)
+    // used to fold into the empty-marker case and warn `says "(empty)"`. Keep
+    // "unreadable — not compared" apart from "empty" so neither operators nor
+    // JSON consumers are told to rewrite a marker nobody actually compared.
+    let rawMarker;
+    let readError;
+    try {
+      if (statSync(markerPath).isFile()) rawMarker = readFileSync(markerPath, 'utf8');
+      else readError = 'not a regular file';
+    } catch (error) {
+      readError = error?.code || 'read failed';
+    }
+    if (rawMarker === undefined) {
+      deploySourceSha = { path: markerPath, readable: false, error: readError, matchesRevision: null };
       markerWarnings.push(
-        `${markerPath} says "${marker || '(empty)'}" but dist/build-info.json revision is ${revision}; `
-          + 'build-info is the deployed version — rewrite the marker with this revision or remove it (#2576)',
+        `${markerPath} exists but is unreadable (${readError}) — not compared with dist/build-info.json `
+          + `revision ${revision}; build-info is the deployed version (#2578)`,
       );
+    } else {
+      const marker = rawMarker.trim().toLowerCase();
+      const matches = marker.length >= 7 && revision.toLowerCase().startsWith(marker);
+      deploySourceSha = { path: markerPath, readable: true, value: marker || undefined, matchesRevision: matches };
+      if (!matches) {
+        markerWarnings.push(
+          `${markerPath} says "${marker || '(empty)'}" but dist/build-info.json revision is ${revision}; `
+            + 'build-info is the deployed version — rewrite the marker with this revision or remove it (#2576)',
+        );
+      }
     }
   }
 
