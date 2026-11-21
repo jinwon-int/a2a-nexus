@@ -607,6 +607,53 @@ test('deployed guard reports nothing about .deploy-source-sha when the worker ro
   assert.equal(check?.detail?.deploySourceSha, undefined);
   assert.equal(check?.detail?.warnings, undefined);
 });
+
+test('deployed guard reports an unreadable .deploy-source-sha as not compared, not as empty (#2578)', () => {
+  const { root } = makeWorkerRoot();
+  mkdirSync(join(root, '.deploy-source-sha'));
+  const result = runGuard(root);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const check = JSON.parse(result.stdout).results.find((r) => r.guard === 'deployed-build-info');
+  assert.equal(check?.ok, true);
+  assert.equal(check?.detail?.deploySourceSha?.readable, false);
+  assert.equal(check?.detail?.deploySourceSha?.matchesRevision, null);
+  assert.equal(check?.detail?.deploySourceSha?.value, undefined);
+  assert.equal(check?.detail?.warnings?.length, 1);
+  assert.match(check.detail.warnings[0], /unreadable/);
+  assert.match(check.detail.warnings[0], /not compared/);
+  assert.match(check.detail.warnings[0], /#2578/);
+  assert.doesNotMatch(check.detail.warnings[0], /\(empty\)/);
+});
+
+test('deployed guard reports a permission-denied .deploy-source-sha as unreadable (#2578)', {
+  skip: process.getuid?.() === 0 ? 'root can read a 0000 file' : false,
+}, () => {
+  const { root } = makeWorkerRoot();
+  const marker = join(root, '.deploy-source-sha');
+  writeFileSync(marker, 'aaaaaaaa\n');
+  chmodSync(marker, 0o000);
+  try {
+    const result = runGuard(root);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const check = JSON.parse(result.stdout).results.find((r) => r.guard === 'deployed-build-info');
+    assert.equal(check?.detail?.deploySourceSha?.readable, false);
+    assert.equal(check?.detail?.deploySourceSha?.error, 'EACCES');
+    assert.match(check.detail.warnings[0], /unreadable \(EACCES\)/);
+  } finally {
+    chmodSync(marker, 0o600);
+  }
+});
+
+test('deployed guard still reports a readable but empty .deploy-source-sha as "(empty)" (#2578)', () => {
+  const { root } = makeWorkerRoot();
+  writeFileSync(join(root, '.deploy-source-sha'), '\n');
+  const result = runGuard(root);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const check = JSON.parse(result.stdout).results.find((r) => r.guard === 'deployed-build-info');
+  assert.equal(check?.detail?.deploySourceSha?.readable, true);
+  assert.equal(check?.detail?.deploySourceSha?.matchesRevision, false);
+  assert.match(check.detail.warnings[0], /says "\(empty\)"/);
+});
 // ---------------------------------------------------------------------------
 // #2429 — a configured analysis bridge that resolves outside the worker root
 // is never refreshed by an artifact rollout (a Termux worker ran a live checkout 229
