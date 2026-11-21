@@ -58,6 +58,7 @@ import {
 } from "./store-hot-select-projections.js";
 import { DEFAULT_HOT_RUNTIME_MAX_HEARTBEAT_AUDIT_EVENTS } from "./store-runtime-repositories.js";
 import * as hotDiagnostics from "./store-hot-diagnostics-read.js";
+import { switchToWal } from "./store-journal-mode.js";
 import {
   coerceSqliteCount,
   parseHotEntityPayloadResult,
@@ -1649,9 +1650,9 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
   }
 
   private initializeDatabase(): string {
-    const journal = this.stmt("PRAGMA journal_mode = WAL").get() as
-      | { journal_mode?: string }
-      | undefined;
+    // #2581: a concurrent opener of the same fresh file must not fail the
+    // WAL switch with an immediate SQLITE_BUSY.
+    const journalMode = switchToWal(this.db);
     this.db.exec(`
       PRAGMA foreign_keys = ON;
       CREATE TABLE IF NOT EXISTS broker_metadata (
@@ -1884,7 +1885,7 @@ export class SqliteBrokerStateStore implements BrokerStateStore {
         ON broker_tasks(${TASK_PARENT_ROUND_ID_SQL}, updated_at DESC, id ASC);
     `);
     this.writeMetadata("state_version", String(CURRENT_BROKER_STATE_VERSION_VALUE));
-    return journal?.journal_mode ?? "unknown";
+    return journalMode;
   }
 
   private saveImportedJsonSnapshot(snapshot: BrokerSnapshot, jsonFile: string): void {
