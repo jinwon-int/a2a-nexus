@@ -116,12 +116,27 @@ test("parallel role lanes of one head get separate lineages with separate intent
   assert.equal(a.request.binding.diffHash, b.request.binding.diffHash);
 });
 
-test("risk class gates the high_risk_safety role", () => {
-  assert.throws(() => spec({ role: "high_risk_safety" }), /not a lane for RISK_CLASS standard/);
-  const high = spec({ role: "high_risk_safety", prBody: body("high") });
-  assert.equal(high.lineageId, "nclex-pr624-high-risk-safety");
-  assert.equal(high.acceptanceCriteria.length, 3);
+test("standard and high both carry three role lanes (nclex#692 3-lane policy, #2584)", () => {
+  const roles = ["content_clinical", "evidence_adversarial", "high_risk_safety"];
+  for (const risk of ["standard", "high"]) {
+    const specs = roles.map((role) => spec({ role, prBody: body(risk) }));
+    assert.equal(new Set(specs.map((s) => s.lineageId)).size, 3);
+    const hrs = specs[2];
+    assert.equal(hrs.lineageId, "nclex-pr624-high-risk-safety");
+    assert.equal(hrs.acceptanceCriteria.length, 3);
+    assert.ok(hrs.nonGoals.includes("content_clinical 역할의 판정 범위"));
+    assert.ok(hrs.nonGoals.includes("evidence_adversarial 역할의 판정 범위"));
+    assert.ok(specs[0].nonGoals.includes("high_risk_safety 역할의 판정 범위"));
+    assert.ok(hrs.invariants.includes(`RISK_CLASS ${risk}의 역할 레인(${roles.join(", ")})은 각각 별도 lineage다`));
+    const hashes = specs.map((s) => buildCreateRequest(s, { now: NOW }).request.contract.intentHash);
+    assert.equal(new Set(hashes).size, 3);
+  }
+});
+
+test("unsupported RISK_CLASS still fails closed", () => {
   assert.throws(() => spec({ prBody: body("extreme") }), /unsupported RISK_CLASS/);
+  assert.throws(() => spec({ role: "high_risk_safety", prBody: body("extreme") }), /unsupported RISK_CLASS/);
+  assert.throws(() => spec({ role: "bogus_role" }), /unknown role/);
 });
 
 test("fails closed on missing contract fields and malformed subjects", () => {
@@ -163,8 +178,11 @@ test("CLI: usage errors exit 2, contract errors exit 1, success writes a 0600 sp
   const base = ["--pr", "624", "--base", BASE, "--head", HEAD_1, "--body-file", bodyFile, "--diff-file", diffFile];
 
   const bad = sink();
-  assert.equal(main([...base, "--role", "high_risk_safety"], { stdout: sink(), stderr: bad }), 1);
-  assert.match(bad.text, /not a lane/);
+  assert.equal(main([...base, "--role", "unknown_role"], { stdout: sink(), stderr: bad }), 1);
+  assert.match(bad.text, /unknown role/);
+  const hrsOut = path.join(dir, "spec-hrs.json");
+  assert.equal(main([...base, "--role", "high_risk_safety", "--out", hrsOut], { stdout: sink(), stderr: sink() }), 0);
+  assert.equal(JSON.parse(fs.readFileSync(hrsOut, "utf8")).lineageId, "nclex-pr624-high-risk-safety");
 
   const out = path.join(dir, "spec.json");
   assert.equal(main([...base, "--role", "evidence_adversarial", "--out", out], { stdout: sink(), stderr: sink() }), 0);

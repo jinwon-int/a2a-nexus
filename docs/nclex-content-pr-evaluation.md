@@ -242,6 +242,7 @@ GitHub를 호출하지 않는다. 그 payload를 실제로 게시하거나 requi
 T2 리뷰 레인을 review lineage에 묶으면, 리뷰어 워커가 끝날 때 서명된 review-report를 보냅니다(#2351). 이렇게 쌓인 기록이 #2274 scorecard의 실제 terminal lineage가 됩니다. NCLEX 콘텐츠 PR은 다음 규칙으로 붙입니다.
 
 - **단위**: lineage 1개 = (PR, 역할) 1개입니다. lineage는 리뷰어 한 명의 흐름을 전제합니다(`packages/review-lifecycle/src/lifecycle.ts`). 첫 `pass`에 열린 blocking finding이 없으면 `passed`로 끝나고, 이후 보고는 `report_out_of_state`가 됩니다. 그래서 같은 head의 병렬 역할 레인(`content_clinical`, `evidence_adversarial`, `high_risk_safety`)은 **lineage를 공유하면 안 됩니다**.
+- **역할 수**: `RISK_CLASS`가 `standard`든 `high`든 세 역할 모두 spec을 만듭니다. nclex는 2026-10-21부터 위험도와 관계없이 3레인을 보내고(nclex#692), 역할 표는 nclex `tools/a2a_dispatch.js`의 `LANES_BY_RISK`를 따릅니다(#2584). 표에 없는 `RISK_CLASS`는 거부합니다.
 - **고정 intent**: `scripts/lib/nclex-lineage-spec.mjs`가 head와 무관한 입력만으로 spec을 만듭니다. 입력은 PR 번호, 역할, PR 본문 8필드 계약(`TASK_ID`…`RISK_CLASS`)입니다. lineageId는 결정적으로 정합니다(`nclex-pr<N>-<role>`). NCLEX 자체 `intentContract`(head 의존)는 그대로 둡니다.
 - **절차** (`A2A_EDGE_SECRET`는 env로만 넘깁니다)
   1. 첫 head를 dispatch하기 전에 역할마다 spec을 만들고 lineage를 생성합니다.
