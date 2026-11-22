@@ -455,7 +455,7 @@
       "file": "scripts/lib/nclex-lineage-spec.test.mjs",
       "class": "gate",
       "round": null,
-      "note": "Offline contract tests for #2362 NCLEX review-lineage spec: one lineage per (PR, role) with deterministic ids, frozen intent independent of head (correction keeps intent), RISK_CLASS role gating, fail-closed contract fields, review-lineage-client create compatibility, and CLI exit codes / 0600 output."
+      "note": "Offline contract tests for #2362 NCLEX review-lineage spec: one lineage per (PR, role) with deterministic ids, frozen intent independent of head (correction keeps intent), RISK_CLASS validation with three role lanes for both standard and high (nclex#692, #2584), fail-closed contract fields, review-lineage-client create compatibility, and CLI exit codes / 0600 output."
     },
     {
       "file": "scripts/nclex-content-pr-receipt.test.mjs",

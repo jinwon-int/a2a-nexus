@@ -68,8 +68,12 @@ export const NCLEX_LINEAGE_ROLES = Object.freeze({
   }),
 });
 
+// Mirrors nclex `tools/a2a_dispatch.js` LANES_BY_RISK (the source of truth).
+// Since nclex#692 (9ff5af9b, 2026-10-21) every content PR dispatches three
+// lanes regardless of risk, so standard carries high_risk_safety too (#2584).
+// RISK_CLASS is still validated: values outside this table fail closed.
 const ROLES_BY_RISK = Object.freeze({
-  standard: Object.freeze(["content_clinical", "evidence_adversarial"]),
+  standard: Object.freeze(["content_clinical", "evidence_adversarial", "high_risk_safety"]),
   high: Object.freeze(["content_clinical", "evidence_adversarial", "high_risk_safety"]),
 });
 
