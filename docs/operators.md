@@ -441,6 +441,29 @@ Live use needs separate approval for each of: worker rollout/restart, adding
 `review-lineage.report` to the key's scopes (keys that declare scopes need it),
 and dispatching lineage-bound lanes to a `record` broker.
 
+### Worker `kind=a2a` spans (ccc-node#2858)
+
+With `A2A_WORKER_SPANS_DIR` set (normally the bridge's
+`<project>/.telegram_bot/spans`), the worker appends one span per lifecycle
+step it owns to the ccc-node span ledger day file (`YYYY-MM-DD.jsonl`, UTC),
+which the nightly ccc-node `spans-rollup.py` counts (`aggregate_a2a`):
+
+| `gen_ai.operation.name` | `status` | `error.type` (non-ok only) | `ccc.outcome` |
+|---|---|---|---|
+| `a2a.claim` | `ok` / `error` (a lost claim race is `ok`) | `claim_http_<status>` · `broker_unreachable` · `claim_failed` | `claimed` · `claim_skipped` |
+| `a2a.dispatch` (start → settle) | `ok` / `error` / `timeout` | the `TaskError.code` (`handler_exit_nonzero`, `acceptance_failed`, …) | `completed` · `failed` |
+| `a2a.receipt` (complete/fail report) | `ok` / `error` | `receipt_http_<status>` · `broker_unreachable` · `receipt_failed` | `complete` · `fail` |
+
+Body-free: task payloads and handler results appear only as
+`ccc.a2a.{payload,result}_bytes` + a 16-hex `..._sha256` prefix, the task id
+only as a salted `ccc.a2a.task_ref`, and `error.type` only when it is a
+lower-case code (anything else becomes `unclassified`); error messages are never
+written. Files are `0600` in a `0700` directory, opened `O_NOFOLLOW`, one
+`O_APPEND` write per line; a symlinked directory is refused and a span failure
+never changes task handling. Retention stays with the bridge ledger. Unset/blank
+= off (the default, including Termux workers); enabling it on a node is part of
+that node's worker rollout approval.
+
 For a lineage-bound review lane, `a2a-task-handler.mjs` asks the model for the
 structured block and copies it into `result.output.reviewLineage`. The analysis
 bridges (claude, hermes, piri, danso; codex forwards the wrapped bridge's

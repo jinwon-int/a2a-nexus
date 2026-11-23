@@ -48,6 +48,7 @@ export {
   validateTaskCompletionEvidence,
 } from "./workers/broker-worker-client.js";
 import { A2ABrokerWorker } from "./workers/broker-worker-client.js";
+import { createA2ASpanWriterFromEnv, type A2ASpanWriter } from "./workers/a2a-span-writer.js";
 export { buildSubagentDirectiveEnv, buildDynamicSubagentRuntime, resolveActiveFanoutFlagKey, FANOUT_FLAG_ENV_KEYS } from "./workers/subagent-runtime.js";
 export { createBuiltinWorkerHandler, createExternalWorkerHandler } from "./workers/task-handler-factories.js";
 export type { BuiltinWorkerHandlerKind, ExternalWorkerHandlerConfig, WorkerTaskHandler } from "./workers/task-handler-factories.js";
@@ -119,6 +120,12 @@ export interface BrokerWorkerConfig {
    * advertises canAnalyze nor claims analysis tasks until the pin is fixed.
    */
   analysisReadinessRefresh?: () => AnalysisReadinessSnapshot;
+  /**
+   * ccc-node#2858: body-free `kind=a2a` spans (claim / dispatch / receipt)
+   * appended to the node span ledger. Unset (the default, and whenever
+   * `A2A_WORKER_SPANS_DIR` is blank) writes nothing.
+   */
+  a2aSpanWriter?: A2ASpanWriter;
 }
 
 export interface AnalysisReadinessSnapshot {
@@ -207,6 +214,7 @@ export function createWorkerConfigFromEnv(env: NodeJS.ProcessEnv = process.env):
     reviewLineageReports: parseBooleanEnv(env.A2A_REVIEW_LINEAGE_REPORT_PRODUCER, true),
     userAgent: optionalTrimmed(env.WORKER_USER_AGENT ?? env.A2A_WORKER_USER_AGENT) ?? DEFAULT_USER_AGENT,
     handler: createWorkerHandlerFromEnv(env, handlerTimeoutMs, runtimeProfile),
+    a2aSpanWriter: createA2ASpanWriterFromEnv(env, worker.nodeId),
   };
 }
 
