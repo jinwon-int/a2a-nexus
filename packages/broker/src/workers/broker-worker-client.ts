@@ -28,6 +28,7 @@ import {
 } from "./external-handler.js";
 import { signA2AWorkerRequest, workerPrivateKeyPem } from "./worker-http-signature.js";
 import { planReviewReport } from "./review-report-producer.js";
+import type { A2ASpanInput, A2ASpanStatus } from "./a2a-span-writer.js";
 import type { FetchLike } from "../worker.js";
 import type { AnalysisReadinessSnapshot, BrokerWorkerConfig } from "../worker.js";
 
@@ -205,6 +206,21 @@ export function nextIdlePollDelayMs(options: {
   const grown = Math.min(Math.max(currentIdleDelayMs, pollIntervalMs) * 1.5 * jitter, maxIdlePollIntervalMs);
   return Math.max(pollIntervalMs, Math.round(grown));
 }
+/**
+ * ccc-node#2858: `error.type` for a failed claim/receipt broker call — the HTTP
+ * status or connection class only, never the error message.
+ */
+export function a2aBrokerErrorType(step: "claim" | "receipt", error: unknown): string {
+  if (isBrokerConnectionError(error)) return "broker_unreachable";
+  if (error instanceof BrokerApiError) return `${step}_http_${error.status}`;
+  return `${step}_failed`;
+}
+
+/** ccc-node#2858: a timeout-class TaskError code (`handler_timeout`, …) spans as `timeout`. */
+export function a2aDispatchErrorStatus(error: TaskError): A2ASpanStatus {
+  return typeof error.code === "string" && error.code.includes("timeout") ? "timeout" : "error";
+}
+
 export class A2ABrokerWorker {
   private readonly brokerUrl: string;
   private readonly fetchImpl: FetchLike;
@@ -557,14 +573,60 @@ export class A2ABrokerWorker {
   }
 
   private async processTask(task: TaskRecord): Promise<boolean> {
+    const claimStartedAt = Date.now();
     try {
       await this.claimTask(task.id);
+      this.recordA2ASpan({
+        operation: "a2a.claim", status: "ok", outcome: "claimed",
+        startedAtMs: claimStartedAt, endedAtMs: Date.now(), taskId: task.id, payload: task.payload,
+      });
     } catch (error) {
       if (isSkippableClaimError(error)) {
+        this.recordA2ASpan({
+          operation: "a2a.claim", status: "ok", outcome: "claim_skipped",
+          startedAtMs: claimStartedAt, endedAtMs: Date.now(), taskId: task.id, payload: task.payload,
+        });
         return false;
       }
+      this.recordA2ASpan({
+        operation: "a2a.claim", status: "error", errorType: a2aBrokerErrorType("claim", error),
+        startedAtMs: claimStartedAt, endedAtMs: Date.now(), taskId: task.id, payload: task.payload,
+      });
       throw error;
     }
+
+    // ccc-node#2858: `a2a.dispatch` spans start → settle (handler run plus the
+    // worker-side acceptance/evidence checks) and is written once, carrying the
+    // TaskError code the broker will see; `a2a.receipt` spans each
+    // complete/fail report. Spans never change what the worker does.
+    const dispatchStartedAt = Date.now();
+    let handlerResult: unknown;
+    let dispatchRecorded = false;
+    const settle = async (error: TaskError | undefined, send: () => Promise<TaskRecord>): Promise<void> => {
+      if (!dispatchRecorded) {
+        dispatchRecorded = true;
+        this.recordA2ASpan({
+          operation: "a2a.dispatch", status: error ? a2aDispatchErrorStatus(error) : "ok",
+          errorType: error?.code, outcome: error ? "failed" : "completed",
+          startedAtMs: dispatchStartedAt, endedAtMs: Date.now(), taskId: task.id, result: handlerResult,
+        });
+      }
+      const receiptStartedAt = Date.now();
+      const receiptOutcome = error ? "fail" : "complete";
+      try {
+        await send();
+      } catch (sendError) {
+        this.recordA2ASpan({
+          operation: "a2a.receipt", status: "error", errorType: a2aBrokerErrorType("receipt", sendError),
+          outcome: receiptOutcome, startedAtMs: receiptStartedAt, endedAtMs: Date.now(), taskId: task.id,
+        });
+        throw sendError;
+      }
+      this.recordA2ASpan({
+        operation: "a2a.receipt", status: "ok", outcome: receiptOutcome,
+        startedAtMs: receiptStartedAt, endedAtMs: Date.now(), taskId: task.id,
+      });
+    };
 
     // #2082 C: task liveness rides the regular worker heartbeat (which now
     // names this task as active) instead of a dedicated heartbeat timer.
@@ -572,10 +634,12 @@ export class A2ABrokerWorker {
       const runningTask = await this.startTask(task.id);
       this.activeTaskId = task.id;
       const outcome = normalizeWorkerHandlerOutcome(await this.config.handler(runningTask));
+      handlerResult = outcome.result;
 
       if (outcome.error) {
         this.activeTaskId = null;
-        await this.failTask(task.id, outcome.error);
+        const handlerError = outcome.error;
+        await settle(handlerError, () => this.failTask(task.id, handlerError));
         console.warn(`[worker:${this.workerId}] task ${task.id} failed: ${outcome.error.message}`);
         return true;
       }
@@ -583,7 +647,8 @@ export class A2ABrokerWorker {
       const acceptance = parseTaskAcceptance(runningTask);
       if (acceptance?.error) {
         this.activeTaskId = null;
-        await this.failTask(task.id, acceptance.error);
+        const acceptanceSpecError = acceptance.error;
+        await settle(acceptanceSpecError, () => this.failTask(task.id, acceptanceSpecError));
         console.warn(`[worker:${this.workerId}] task ${task.id} failed: ${acceptance.error.message}`);
         return true;
       }
@@ -597,7 +662,8 @@ export class A2ABrokerWorker {
         outcome.result = { ...(outcome.result ?? {}), validation };
         if (validation.verdict !== "pass") {
           this.activeTaskId = null;
-          await this.failTask(task.id, { code: "acceptance_failed", message: validation.note ?? "acceptance command failed" });
+          const acceptanceError: TaskError = { code: "acceptance_failed", message: validation.note ?? "acceptance command failed" };
+          await settle(acceptanceError, () => this.failTask(task.id, acceptanceError));
           console.warn(`[worker:${this.workerId}] task ${task.id} failed: ${validation.note}`);
           return true;
         }
@@ -619,19 +685,19 @@ export class A2ABrokerWorker {
         const verdictEvidence = completionEvidenceError.code === "review_verdict_failed"
           ? outcome.result
           : undefined;
-        await this.failTask(task.id, completionEvidenceError, verdictEvidence);
+        await settle(completionEvidenceError, () => this.failTask(task.id, completionEvidenceError, verdictEvidence));
         console.warn(`[worker:${this.workerId}] task ${task.id} failed: ${completionEvidenceError.message}`);
         return true;
       }
 
       this.activeTaskId = null;
-      await this.completeTask(task.id, this.attachResultProvenance(runningTask, outcome.result));
+      await settle(undefined, () => this.completeTask(task.id, this.attachResultProvenance(runningTask, outcome.result)));
       return true;
     } catch (error) {
       const taskError = toTaskError(error);
       this.activeTaskId = null;
       try {
-        await this.failTask(task.id, taskError);
+        await settle(taskError, () => this.failTask(task.id, taskError));
       } catch (failError) {
         console.error(`[worker:${this.workerId}] failed to mark task ${task.id} as failed`, failError);
         throw error;
@@ -640,6 +706,15 @@ export class A2ABrokerWorker {
       return true;
     } finally {
       this.activeTaskId = null;
+    }
+  }
+
+  /** ccc-node#2858: optional node span ledger write; never throws. */
+  private recordA2ASpan(input: A2ASpanInput): void {
+    try {
+      this.config.a2aSpanWriter?.record(input);
+    } catch {
+      // Spans are telemetry: a writer failure must never touch task handling.
     }
   }
 
