@@ -157,6 +157,13 @@ export interface RunnerImagePlan {
   recordGaps: string[];
   /** tags kept only because of a record gap (unique images the gap pass added). */
   recordGapImages: string[];
+  /**
+   * Workers whose record-gap range keeps more than RECORD_GAP_APPLY_LIMIT
+   * images that only another worker's, a moved worker's or an orphaned record
+   * names (#2559 minor 1). Those never refuse --apply (other cadences are
+   * normal), but past the limit the accumulation is surfaced: doctor warns.
+   */
+  recordGapWarnings: string[];
   /** tags kept only because their creation time carries no build order (sentinel / unparseable): review by hand. */
   unknownOrderToReview: string[];
   /** candidate tags whose image keeps another (non-runner or kept) tag — untag only, frees nothing. */
@@ -394,12 +401,15 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
   // One entry per image id: a tag of the same image in a second runner
   // repository must not count the image twice (#2559).
   const recordGapImageIds = new Set<string>();
+  const recordGapWarnings: string[] = [];
   const unknownOrderToReview: string[] = [];
-  const resolvedRecords = inventory.deployRecords
-    .filter((record) => !record.orphan)
+  // Every resolvable record, orphans included: only used to tell whose history
+  // a record-gap image may be (#2559 minor 2). Orphans still never fill a slot.
+  const historyRecords = inventory.deployRecords
     .map((record) => ({ record, id: resolveRef(record.ref, images) }))
     .filter((entry): entry is { record: ImageRef; id: string } => Boolean(entry.id))
     .sort((a, b) => (b.record.mtimeMs ?? 0) - (a.record.mtimeMs ?? 0));
+  const resolvedRecords = historyRecords.filter((entry) => !entry.record.orphan);
   // An env file name shared by several workers (same name in different
   // directories, any repository) cannot tell whose history an owner-less deploy
   // record is: such records fill no slot and are kept for review.
@@ -453,6 +463,17 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
       const owner = record.owner;
       if (owner) return repoWorkers.find((worker) => worker.files.has(owner));
       return record.file ? nameOwner.get(basename(record.file)) : undefined;
+    };
+    // Why a record-gap image named only by a record that is not the worker's
+    // own may be someone else's history (#2559 minor 2).
+    const otherRecordCause = (record: ImageRef): string => {
+      const owner = recordWorker(record);
+      if (owner) return `none of its deploy records names it; a record of ${owner.key} does — it may be that worker's history`;
+      if (record.orphan) return `none of its deploy records names it; an orphaned backup does (${record.source}, its live env file is gone) — it may be a removed worker's history`;
+      if (record.owner) {
+        return `none of its deploy records names it; a backup of ${record.owner} does (${record.source}), ${runsOtherRunner(record.owner) ? "which now runs another repository" : "whose env file names no running runner image"} — it may be that file's history`;
+      }
+      return `none of its deploy records names it; deploy record ${record.source} does, which no worker of this repository claims — it may be another worker's history`;
     };
     const restTag = (id: string): PlannedTag | undefined => rest.find((tag) => tag.id === id);
     // A rollback must be an image the worker ran before: built before its
@@ -600,6 +621,7 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
           .sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
         let unrecordedAdded = 0; // kept although no record of any worker names it
         let outrankedAdded = 0; // kept although the worker's own record names it (slot lost to an older record)
+        let otherAdded = 0; // kept although only a record that is not this worker's names it
         for (const tag of range) {
           if (seen.has(tag.id)) continue;
           seen.add(tag.id);
@@ -608,7 +630,11 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
           if (fallbackPicks.get(worker) === tag.id) continue;
           // An own record image in the range was eligible but lost to the slot limit.
           const outranked = ownIds.has(tag.id);
-          const other = outranked ? undefined : resolvedRecords.find((entry) => entry.id === tag.id && recordWorker(entry.record) && recordWorker(entry.record) !== worker);
+          // Any record that is not this worker's — another worker's, a moved
+          // worker's (owner runs another repository) or an orphaned backup — says
+          // the image is someone else's history, not this worker's missing record:
+          // it counts toward no refusal the --deploy-record-dir hint cannot fix (#2559 minor 2).
+          const other = outranked ? undefined : historyRecords.find((entry) => entry.id === tag.id && recordWorker(entry.record) !== worker);
           // "Already kept" means kept by passes 1-3 (or unattributed), never by
           // another worker's gap pass: the count, the refusal and the wording do
           // not depend on the order the workers are visited in (#2559).
@@ -616,7 +642,7 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
           const cause = outranked
             ? "its own deploy record names it but a record of an older image took the slot (records are taken owner backups first, then by file mtime)"
             : other
-              ? `none of its deploy records names it; a record of ${recordWorker(other.record)?.key} does — it may be that worker's history`
+              ? otherRecordCause(other.record)
               : openFloor
                 ? "none of its deploy records names it, and the image its records do name has no usable creation time — any older image may be the one it ran before"
                 : "none of its deploy records names it — check that every directory holding its env backups is passed with --deploy-record-dir";
@@ -625,14 +651,15 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
             if (!rollback.has(tag.id)) {
               rollback.set(tag.id, openFloor
                 ? `built before the in-use image of ${worker.key}, whose records name only ${floorTag} — its previous deploy cannot be told apart; kept besides the records`
-                : `built after ${floorTag} (the newest image ${worker.key}'s records keep) and before its in-use image — ${outranked ? "its own record was outranked" : "the latest switch may be unrecorded"}; kept besides the records`);
+                : `built after ${floorTag} (the newest image ${worker.key}'s records keep) and before its in-use image — ${outranked ? "its own record was outranked" : other ? "another deploy record names it" : "the latest switch may be unrecorded"}; kept besides the records`);
             }
             if (!recordGapImageIds.has(tag.id)) {
               recordGapImageIds.add(tag.id);
               recordGapImages.push(tag.tag);
             }
             if (outranked) outrankedAdded += 1;
-            else if (!other) unrecordedAdded += 1;
+            else if (other) otherAdded += 1;
+            else unrecordedAdded += 1;
           }
           recordGaps.push(openFloor
             ? `${worker.key}: ${tag.tag} was built before its in-use image and its deploy records name only ${floorTag}; ${cause}${already ? ` (already kept: ${already})` : " — kept"}`
@@ -649,7 +676,16 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
             : `${worker.key} in ${repository}: ${unrecordedAdded} images that no deploy record names are kept as record gaps (more than ${RECORD_GAP_APPLY_LIMIT}) — its deploy records look incomplete; pass every directory holding its env backups with --deploy-record-dir`);
         }
         if (outrankedAdded > RECORD_GAP_APPLY_LIMIT) {
-          applyRefusals.push(`${worker.key} in ${repository}: ${outrankedAdded} images its own deploy records name are kept as record gaps (more than ${RECORD_GAP_APPLY_LIMIT}) — an older record keeps taking its rollback slot (owner backups are taken first); rotate its old env backups (env-backups --prune)`);
+          // Name the records holding the slot, so the operator removes those
+          // (and can check env-backups --prune really did) (#2559 minor 4).
+          const holders = [...new Set(resolvedRecords
+            .filter((entry) => recordWorker(entry.record) === worker && floorIds.includes(entry.id))
+            .map((entry) => entry.record.source))];
+          const shown = holders.slice(0, 3).join(", ") + (holders.length > 3 ? `, +${holders.length - 3} more` : "");
+          applyRefusals.push(`${worker.key} in ${repository}: ${outrankedAdded} images its own deploy records name are kept as record gaps (more than ${RECORD_GAP_APPLY_LIMIT}) — an older record keeps taking its rollback slot (owner backups are taken first)${shown ? `: ${shown}` : ""}; rotate its old env backups (env-backups --prune) or remove that record`);
+        }
+        if (otherAdded > RECORD_GAP_APPLY_LIMIT) {
+          recordGapWarnings.push(`${worker.key} in ${repository}: ${otherAdded} images that only another worker's, a moved worker's or an orphaned deploy record names are kept as record gaps (more than ${RECORD_GAP_APPLY_LIMIT}) — they accumulate each rollout until those records are rotated; review plan.recordGaps`);
         }
       }
     }
@@ -738,6 +774,7 @@ export function planRunnerImagePrune(inventory: RunnerImageInventory, options: P
     recordsToReview,
     recordGaps,
     recordGapImages,
+    recordGapWarnings,
     unknownOrderToReview,
     reclaimableIsUpperBound: true,
     applyAllowed: applyRefusals.length === 0,
@@ -1295,6 +1332,7 @@ export async function checkRunnerImageDisk(options: RunnerImageDiskCheckOptions)
         detail.recordGapImages = plan.recordGapImages.length;
       }
       if (plan.unknownOrderToReview.length > 0) detail.unknownOrderToReview = plan.unknownOrderToReview.length;
+      if (plan.recordGapWarnings.length > 0) detail.recordGapWarnings = plan.recordGapWarnings;
       if (!plan.applyAllowed) detail.evidenceIncomplete = plan.applyRefusals;
       if (plan.candidates.length > 0) {
         const note = plan.applyAllowed ? "" : " (evidence incomplete — list is indicative only)";
@@ -1312,6 +1350,12 @@ export async function checkRunnerImageDisk(options: RunnerImageDiskCheckOptions)
   const describe = (usage: DiskUsage): string => `${formatBytes(usage.freeBytes)} free on ${usage.path} (${Math.round(usage.freeRatio * 1000) / 10}%)`;
   if (low) {
     return { status: "warn", message: `low disk: ${describe(low)}, below ${DISK_WARN_FREE_RATIO * 100}% or ${formatBytes(DISK_WARN_FREE_BYTES)}${reclaim}`, detail };
+  }
+  // Record-gap images only another worker's / a moved worker's / an orphaned
+  // record names refuse nothing, so past the limit doctor is the only signal (#2559 minor 1).
+  const gapWarnings = Array.isArray(detail.recordGapWarnings) ? detail.recordGapWarnings.length : 0;
+  if (gapWarnings > 0) {
+    return { status: "warn", message: `${describe(worst)}; ${gapWarnings} worker(s) accumulate record-gap images other deploy records name — review plan.recordGaps in: a2a-docker-runner images (dry-run)${reclaim}`, detail };
   }
   return { status: "ok", message: `${describe(worst)}${reclaim}`, detail };
 }

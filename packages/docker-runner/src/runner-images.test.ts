@@ -1727,3 +1727,99 @@ test("#2547 CLI: --dry-run --apply and a value-less --keep are rejected before t
     );
   }
 });
+
+// ── #2559 minor 1/2/4: records that are not the worker's own, outranked refusal ──
+
+const CODEX = "a2a-docker-runner-codex";
+const CODEX_ENV = "/etc/default/a2a-codex-worker";
+
+test("#2559 m2 a gap image only a moved worker's backup names counts as other: no refusal, warned past the limit", () => {
+  // ENV's record names `old`; gap-0..gap-4 are named only by backups of the codex worker's env
+  // file, which now runs another repository. The newest of those is that file's rollback (foreign
+  // pass); the other four sit in ENV's gap range as someone else's history.
+  const plan = planRunnerImagePrune(
+    inventory({
+      images: [image("ffc", [`${R}:ffc530e-claude-2.1.322`], 5), ...gapImages(5), image("old", [`${R}:a038bb7-claude-2.1.280`], 40), image("cdx", [`${CODEX}:c1`], 5)],
+      live: { refs: [], unreadable: 0, scanned: 40, units: [] },
+      configured: [...inUse(`${R}:ffc530e-claude-2.1.322`).configured, ...inUse(`${CODEX}:c1`, CODEX_ENV).configured],
+      deployRecords: [record(`${R}:a038bb7-claude-2.1.280`, ENV, 3), ...[0, 1, 2, 3, 4].map((i) => record(`${R}:gap-${i}`, CODEX_ENV, 10 + i))],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.equal(plan.applyAllowed, true, JSON.stringify(plan.applyRefusals));
+  assert.equal(plan.recordGapWarnings.length, 1, JSON.stringify(plan.recordGapWarnings));
+  assert.match(plan.recordGapWarnings[0], new RegExp(`^${ENV} in ${R}: 4 images that only another worker's, a moved worker's or an orphaned deploy record names`));
+  const own = plan.recordGaps.filter((gap) => gap.startsWith(`${ENV}:`));
+  // Five report lines: the foreign rollback is reported as "already kept", the other four were added.
+  assert.equal(own.length, 5, JSON.stringify(plan.recordGaps));
+  assert.equal(plan.recordGapImages.length, 4, JSON.stringify(plan.recordGapImages));
+  assert.ok(own.every((gap) => gap.includes(`a backup of ${CODEX_ENV} does`) && gap.includes("which now runs another repository")), JSON.stringify(own));
+  assert.match(plan.repositories[0].keep.find((tag) => tag.tag.endsWith(":gap-4"))?.why ?? "", /another deploy record names it; kept besides the records$/);
+  assert.ok(own.every((gap) => !gap.includes("--deploy-record-dir")), "not a missing-directory problem");
+  assert.deepEqual(plan.candidates, [], "every gap image is still kept");
+});
+
+test("#2559 m2 a gap image only an orphaned backup names counts as other; at the limit there is no warning", () => {
+  const planFor = (n: number) => planRunnerImagePrune(
+    inventory({
+      images: [image("ffc", [`${R}:ffc530e-claude-2.1.322`], 5), ...gapImages(n), image("old", [`${R}:a038bb7-claude-2.1.280`], 40)],
+      ...inUse(`${R}:ffc530e-claude-2.1.322`),
+      deployRecords: [
+        record(`${R}:a038bb7-claude-2.1.280`, ENV, 3),
+        ...Array.from({ length: n }, (_, i) => record(`${R}:gap-${i}`, undefined, 10 + i, { orphan: true, file: `/etc/default/a2a-dead-worker.bak-${i}`, source: `/etc/default/a2a-dead-worker.bak-${i} A2A_DOCKER_RUNNER_IMAGE` })),
+      ],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  const over = planFor(RECORD_GAP_APPLY_LIMIT + 1);
+  assert.equal(over.applyAllowed, true, JSON.stringify(over.applyRefusals));
+  assert.equal(over.recordGapWarnings.length, 1, JSON.stringify(over.recordGapWarnings));
+  assert.ok(over.recordGaps.every((gap) => gap.includes("an orphaned backup does (/etc/default/a2a-dead-worker.bak-")), JSON.stringify(over.recordGaps));
+  assert.equal(over.recordGapImages.length, RECORD_GAP_APPLY_LIMIT + 1);
+  assert.deepEqual(over.candidates, []);
+  const at = planFor(RECORD_GAP_APPLY_LIMIT);
+  assert.equal(at.applyAllowed, true);
+  assert.deepEqual(at.recordGapWarnings, []);
+});
+
+test("#2559 m4 the outranked refusal names the record that holds the rollback slot", () => {
+  // ENV's newest-mtime record names o30, which takes the one slot; its own records of gap-0..gap-3
+  // (built later) are outranked: 4 > limit refuses --apply, naming the o30 record to remove.
+  const plan = planRunnerImagePrune(
+    inventory({
+      images: [image("ffc", [`${R}:ffc530e-claude-2.1.322`], 5), ...gapImages(4), image("o30", [`${R}:o30`], 30)],
+      ...inUse(`${R}:ffc530e-claude-2.1.322`),
+      deployRecords: [record(`${R}:o30`, ENV, 1), ...[0, 1, 2, 3].map((i) => record(`${R}:gap-${i}`, ENV, 2 + i))],
+    }),
+    { nowMs: NOW, isRoot: true },
+  );
+  assert.equal(plan.applyAllowed, false);
+  assert.equal(plan.applyRefusals.length, 1, JSON.stringify(plan.applyRefusals));
+  assert.match(plan.applyRefusals[0], new RegExp(`4 images its own deploy records name are kept as record gaps \\(more than 3\\) — an older record keeps taking its rollback slot \\(owner backups are taken first\\): ${ENV}\\.bak-1d A2A_DOCKER_RUNNER_IMAGE; rotate its old env backups \\(env-backups --prune\\) or remove that record$`));
+  assert.ok(!plan.applyRefusals[0].includes("bak-2d"), "an outranked record is not named as the holder");
+  assert.deepEqual(plan.recordGapWarnings, []);
+  assert.deepEqual(plan.candidates, []);
+});
+
+test("#2559 m1 doctor warns when a worker accumulates gap images only orphaned records name", async () => {
+  await withNode(async (paths) => {
+    // The live backup names 573ca08-2.1.318 (ddd, 9d): the floor. bbb and ccc are unrecorded (2, under
+    // the limit); gap-0..gap-3 are named only by backups of an env file that no longer exists.
+    for (let i = 0; i < 4; i += 1) await writeFile(join(paths.envDir, `a2a-dead-worker.bak-${i}`), `A2A_DOCKER_RUNNER_IMAGE=${R}:gap-${i}\n`);
+    const { exec } = fakeEngine([...ENGINE_IMAGES, ...gapImages(4)]);
+    const res = await checkRunnerImageDisk({ engine: "docker", engineReady: true, exec, ...paths, statfsFn, nowMs: NOW, isRoot: true, unitEnvFiles: noUnits });
+    assert.equal(res.status, "warn", res.message);
+    assert.equal((res.detail?.recordGapWarnings as string[] | undefined)?.length, 1, JSON.stringify(res.detail));
+    assert.equal(res.detail?.evidenceIncomplete, undefined, "the accumulation refuses nothing");
+    assert.match(res.message, /1 worker\(s\) accumulate record-gap images other deploy records name/);
+  });
+});
+
+test("#2559 m1 doctor stays ok without record-gap warnings", async () => {
+  await withNode(async (paths) => {
+    const { exec } = fakeEngine(ENGINE_IMAGES);
+    const res = await checkRunnerImageDisk({ engine: "docker", engineReady: true, exec, ...paths, statfsFn, nowMs: NOW, isRoot: true, unitEnvFiles: noUnits });
+    assert.equal(res.status, "ok", res.message);
+    assert.equal(res.detail?.recordGapWarnings, undefined);
+  });
+});
