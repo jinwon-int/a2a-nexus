@@ -13,6 +13,7 @@ import {
 } from "./task-projection.js";
 import { matchDefaultAgentConvention } from "./default-agent-conventions.js";
 import { isRecord } from "../core/value-guards.js";
+import { assertCanResolveCheckpoint } from "../core/execution/broker-task-checkpoint.js";
 import {
   pageSpecTasks,
   parseSpecListTaskFilters,
@@ -914,6 +915,12 @@ export function executeSendMessage(
     ) {
       assertRequesterCanSubscribeToTask(options.requesterIdentity, checkpointedTask);
     }
+    // #2595: a message is "the requested input" only for an ambiguous_scope
+    // checkpoint. An operator-decision checkpoint needs a hub/operator actor;
+    // refuse before the message is recorded so a denied send leaves no state.
+    if (checkpointedTask?.checkpoint?.state === "awaiting_operator") {
+      assertCanResolveCheckpoint(checkpointedTask, actor.role);
+    }
     const message = options.broker.addExchangeMessage(exchangeId, {
       actor,
       message: text,
@@ -930,7 +937,7 @@ export function executeSendMessage(
     // the task returns to working.
     const resumedTask =
       activeTask?.checkpoint?.state === "awaiting_operator"
-        ? options.broker.resumeTask(activeTask.id, actor.id)
+        ? options.broker.resumeTask(activeTask.id, actor.id, { actorRole: actor.role })
         : activeTask;
     return {
       contextId: exchangeId,
@@ -1055,9 +1062,14 @@ export function executeSendMessage(
     if ((options.broker.getTask(task.id) ?? inFlight).status === "claimed") {
       options.broker.startTask(task.id, assignedWorker.nodeId);
     }
+    // ambiguous_scope: the TCK's input-required task waits on requester
+    // input, which a follow-up context message from the requester supplies.
+    // Without a decision type the broker records approval_required, which
+    // only a hub/operator may resolve (#2595).
     options.broker.checkpointTask(task.id, assignedWorker.nodeId, {
       state: "awaiting_operator",
       reason: convention.reason,
+      decisionType: "ambiguous_scope",
     });
   }
 

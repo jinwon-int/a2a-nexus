@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -13,6 +13,7 @@ import {
   type BrokerStateStore,
 } from "./store/store.js";
 import { registerWorker, createWorkerTask } from "./broker-test-helpers.js";
+import { assertCanResolveCheckpoint, isOperatorDecisionCheckpoint } from "./execution/broker-task-checkpoint.js";
 
 test("snapshot roundtrip preserves lateEvidenceAfterCancel", () => {
   const broker = new InMemoryA2ABroker();
@@ -1996,8 +1997,10 @@ test("an active checkpoint blocks terminal worker mutations until resume or canc
   assert.throws(() => broker.failTask(task.id, "worker-ckgate", { code: "x", message: "boom" }), /checkpoint is active/);
   assert.equal(broker.getTask(task.id)?.status, "running", "gate must not mutate the task");
 
-  // Resume reopens the terminal path.
-  broker.resumeTask(task.id, "worker-ckgate");
+  // #2595: an unannotated interrupt is approval_required, so the worker that
+  // raised it cannot clear it itself; an operator resume reopens the path.
+  assert.throws(() => broker.resumeTask(task.id, "worker-ckgate"), /requires a hub or operator actor/);
+  broker.resumeTask(task.id, "operator-ckgate", { actorRole: "operator" });
   const done = broker.completeTask(task.id, "worker-ckgate", { summary: "done" });
   assert.equal(done.status, "succeeded");
   assert.equal(done.checkpoint, undefined, "no stale checkpoint metadata on a terminal task");
@@ -2084,10 +2087,55 @@ test("checkpoint inputs are bounded and decision-typed before becoming operator-
   assert.equal(interrupted.checkpoint?.decisionType, "safety_gate");
   assert.deepEqual(interrupted.checkpoint?.artifactRefs, ["contracts/a2a/checkpoint-interrupt.md"]);
 
+  // #2595: a safety_gate checkpoint is an operator decision.
+  assert.throws(() => broker.resumeTask(task.id, "worker-ckbounds"), /safety_gate checkpoint requires a hub or operator actor/);
+  broker.resumeTask(task.id, "operator-ckbounds", { actorRole: "operator" });
+
   // Default decision type for an unannotated interrupt is approval_required.
-  broker.resumeTask(task.id, "worker-ckbounds");
   const defaulted = broker.checkpointTask(task.id, "worker-ckbounds", { state: "awaiting_operator" });
   assert.equal(defaulted.checkpoint?.decisionType, "approval_required");
+});
+
+test("#2595 checkpoint resolution authority: only ambiguous_scope is party-resolvable, every other decision type needs hub/operator", () => {
+  // Deny by default: read the frozen decision-type union so a type added later
+  // is operator-only unless it is consciously made party-resolvable.
+  const source = readFileSync(join(process.cwd(), "src", "core", "types.ts"), "utf8");
+  const union = source.match(/export type TaskInterruptDecisionType =([\s\S]*?);/);
+  assert.ok(union, "TaskInterruptDecisionType union not found");
+  const decisionTypes = [...new Set([...union[1]!.matchAll(/"([a-z_]+)"/g)].map((m) => m[1]!))];
+  assert.ok(decisionTypes.length >= 4);
+
+  const cases: Array<[string | undefined, boolean]> = [[undefined, true], ...decisionTypes.map((d): [string, boolean] => [d, d !== "ambiguous_scope"])];
+  for (const [decisionType, operatorOnly] of cases) {
+    const checkpoint = { state: "awaiting_operator" as const, checkpointId: "cp", recordedAt: "t", recordedBy: "w", ...(decisionType ? { decisionType: decisionType as never } : {}) };
+    assert.equal(isOperatorDecisionCheckpoint(checkpoint), operatorOnly, `decision ${decisionType ?? "none"}`);
+    for (const role of [undefined, "analyst", "researcher", "live-trader", "publisher", "reviewer", "orchestrator"]) {
+      if (operatorOnly) {
+        assert.throws(() => assertCanResolveCheckpoint({ checkpoint }, role), { name: "BrokerError", code: "policy_denied" }, `${decisionType ?? "none"} / ${role ?? "no role"}`);
+      } else {
+        assert.doesNotThrow(() => assertCanResolveCheckpoint({ checkpoint }, role));
+      }
+    }
+    for (const role of ["hub", "operator"]) {
+      assert.doesNotThrow(() => assertCanResolveCheckpoint({ checkpoint }, role), `${decisionType ?? "none"} / ${role}`);
+    }
+  }
+  // paused checkpoints and no checkpoint never need an operator.
+  assert.equal(isOperatorDecisionCheckpoint({ state: "paused", checkpointId: "cp", recordedAt: "t", recordedBy: "w" }), false);
+  assert.doesNotThrow(() => assertCanResolveCheckpoint({ checkpoint: undefined }, undefined));
+
+  // Through the broker: the denied resume leaves the checkpoint and writes no resume audit.
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-ckauth");
+  const task = createWorkerTask(broker, "ckauth-1", "worker-ckauth");
+  broker.claimTask(task.id, "worker-ckauth");
+  broker.startTask(task.id, "worker-ckauth");
+  broker.checkpointTask(task.id, "worker-ckauth", { state: "awaiting_operator", decisionType: "approval_required" });
+  assert.throws(() => broker.resumeTask(task.id, "worker-ckauth", { actorRole: "analyst" }), /approval_required checkpoint requires a hub or operator actor/);
+  assert.equal(broker.getTask(task.id)?.checkpoint?.decisionType, "approval_required");
+  assert.equal(broker.listAuditEvents().filter((e) => e.action === "task.resumed" && e.targetId === task.id).length, 0);
+  broker.resumeTask(task.id, "hub-ckauth", { actorRole: "hub" });
+  assert.equal(broker.getTask(task.id)?.checkpoint, undefined);
 });
 
 test("checkpoint and resume emit dedicated task event reasons", () => {

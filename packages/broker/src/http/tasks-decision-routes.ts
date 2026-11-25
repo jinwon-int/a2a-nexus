@@ -86,7 +86,7 @@ function sendTask(ctx: TaskScopedContext, task: TaskRecord): void {
 
 /** POST /tasks/:id/resume — clear an operator checkpoint and resume the task. */
 export async function handleResumeTaskRequest(ctx: TaskScopedContext): Promise<void> {
-  const body = await readJson<{ actorId?: string; checkpointId?: string }>(ctx.req);
+  const body = await readJson<{ actorId?: string; actorRole?: string; checkpointId?: string }>(ctx.req);
   const actorId = body?.actorId ?? ctx.requesterIdentity?.id;
   if (!actorId) {
     throw new BrokerError("bad_request", "actorId is required");
@@ -103,7 +103,14 @@ export async function handleResumeTaskRequest(ctx: TaskScopedContext): Promise<v
     // awaiting_operator checkpoint.
     assertRequesterCanSubscribeToTask(ctx.requesterIdentity, resumeTarget);
   }
-  const task = ctx.broker.resumeTask(ctx.taskId, actorId, { checkpointId: body?.checkpointId });
+  // #2595: an operator-decision checkpoint needs a hub/operator role. With
+  // identity enforcement the role is the authenticated requester's; without
+  // it the broker trusts the claimed role, as the approval route trusts the
+  // body actor.role in that mode.
+  const actorRole = ctx.enforceRequesterIdentity
+    ? ctx.requesterIdentity?.role
+    : (ctx.requesterIdentity?.role ?? body?.actorRole);
+  const task = ctx.broker.resumeTask(ctx.taskId, actorId, { checkpointId: body?.checkpointId, actorRole });
   await awaitDurablePersistenceAck(ctx.stateStore);
   sendTask(ctx, task);
 }

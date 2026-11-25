@@ -3926,12 +3926,21 @@ export class InMemoryA2ABroker {
     // task with an awaiting_operator checkpoint (the input-required projection)
     // resumes it exactly once. Converged replays never reach here, and
     // resumeTask is itself idempotent, so there is no double resume.
+    // #2595: an operator-decision checkpoint (anything but ambiguous_scope)
+    // resumes only for an operator-kind sender. A worker or broker message is
+    // still accepted into the conversation; it just leaves that checkpoint in
+    // place for an operator to resolve.
     if (result.outcome === "accepted" && RESUMING_MESSAGE_KINDS.has(result.message.kind)) {
+      const senderRole = result.message.sender.kind === "operator" ? "operator" : undefined;
       for (const taskId of taskReferencesOf(result.message)) {
         const task = this.tasks.get(taskId);
         if (task?.checkpoint?.state === "awaiting_operator") {
+          if (taskCheckpoint.isOperatorDecisionCheckpoint(task.checkpoint) && !taskCheckpoint.isCheckpointResolverRole(senderRole)) {
+            continue;
+          }
           this.resumeTask(taskId, result.message.sender.id, {
             checkpointId: task.checkpoint.checkpointId,
+            actorRole: senderRole,
           });
         }
       }
@@ -6221,7 +6230,7 @@ export class InMemoryA2ABroker {
   }
 
   /** Clear an active checkpoint (operator approval, requester input, or worker resume). */
-  resumeTask(taskId: string, actorId: string, request: { checkpointId?: string } = {}): TaskRecord {
+  resumeTask(taskId: string, actorId: string, request: { checkpointId?: string; actorRole?: string } = {}): TaskRecord {
     return taskCheckpoint.resumeTask(taskId, actorId, request, this.taskCheckpointContext());
   }
 

@@ -69,6 +69,7 @@ When evidence cannot be collected, the proof object should say `missing` rather 
 | Create a documentation or source-only PR | Yes, through normal PR workflow | Usually no beyond the current workstream |
 | Enable a new network fetch path or egress proxy | No | Yes |
 | Change broker policy enforcement posture | No | Yes |
+| Clear an operator-decision checkpoint (`approval_required`, `safety_gate`, `conflict_detected`, or unset) | No — resume, A2A context message, and conversation reply all require a hub/operator actor ([checkpoint contract §2.2](../contracts/a2a/checkpoint-interrupt.md)); only `ambiguous_scope` is party-resolvable | Yes (hub/operator) |
 | Answer an operator-decision wait through MCP `tasks/update` | Never accepted — the [MCP Tasks facade](specs/mcp-tasks-facade.md) rejects every payload; decide through the broker operator route | Yes (operator route only) |
 | Deploy/restart broker, Gateway, worker, or runner | No | Yes |
 | ACK/replay/prune/migrate terminal outbox or DB state | No | Yes |

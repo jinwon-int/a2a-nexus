@@ -104,6 +104,15 @@ or a block — it is a bounded paused state with a required decision path.
 | `approval_required` | Task requires permission the worker cannot self-grant | Present the required permission and the proposed action; wait for operator approval |
 | `conflict_detected` | Worker detected a conflict (e.g., branch, lock, concurrent task) | Present the conflict and resolution options; wait for operator direction |
 
+**Resolution authority (#2595, clarification of the v0 freeze — no new states or decision types).**
+Only `ambiguous_scope` may be resolved by a task party (requester, target node, assigned
+worker) supplying the requested input. `safety_gate`, `approval_required`, `conflict_detected`,
+and an interrupt recorded without a decision type (the broker stores it as
+`approval_required`) are operator decisions: clearing them requires a hub or operator actor on
+every resume path (explicit resume, A2A context message, conversation-plane reply). A worker
+cannot clear its own operator-decision interrupt. The rule is deny by default: a decision type
+added later is operator-only until it is explicitly made party-resolvable.
+
 ### 2.3 Human-interrupt lifecycle
 
 ```

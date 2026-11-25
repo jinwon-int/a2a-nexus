@@ -11,7 +11,8 @@
  * The MCP status is derived from the existing A2A projection
  * ({@link mapTaskState}) so the two protocol faces cannot drift apart.
  */
-import type { TaskCheckpointInfo, TaskInterruptDecisionType, TaskRecord } from "../core/types.js";
+import type { TaskRecord } from "../core/types.js";
+import { isOperatorDecisionCheckpoint } from "../core/execution/broker-task-checkpoint.js";
 import { mapTaskState, type A2ATaskState } from "./task-projection.js";
 
 export const MCP_TASK_STATUSES = ["working", "input_required", "completed", "failed", "cancelled"] as const;
@@ -46,8 +47,6 @@ export const MCP_INPUT_REQUEST_KEY: Readonly<Record<McpInputKind, string>> = Obj
   operator_decision: "operator_decision",
 });
 
-/** Only this decision type accepts a requester answer; every other one is an operator decision (deny by default). */
-const CLARIFICATION_DECISION_TYPES: ReadonlySet<TaskInterruptDecisionType> = new Set(["ambiguous_scope"]);
 
 export interface McpTask {
   taskId: string;
@@ -117,10 +116,15 @@ export function mcpTaskStatusForTask(task: TaskStateFields): McpTaskStatus {
   return mcpTaskStatusForA2AState(mapTaskState(task));
 }
 
-function checkpointInputKind(checkpoint: TaskCheckpointInfo): McpInputKind {
-  return checkpoint.decisionType && CLARIFICATION_DECISION_TYPES.has(checkpoint.decisionType)
-    ? "clarification"
-    : "operator_decision";
+/**
+ * Same classification the broker enforces when a checkpoint is resumed
+ * (#2595, `isOperatorDecisionCheckpoint`): only `ambiguous_scope` is a
+ * clarification, every other decision type — or none — is an operator
+ * decision. One source of truth, so the facade cannot offer input the broker
+ * would refuse.
+ */
+function checkpointInputKind(checkpoint: TaskRecord["checkpoint"]): McpInputKind {
+  return isOperatorDecisionCheckpoint(checkpoint) ? "operator_decision" : "clarification";
 }
 
 /** Input kind for an `input_required` task, or `undefined` when the task is not waiting for input. */

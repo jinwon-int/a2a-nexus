@@ -98,13 +98,61 @@ test("buildTaskResultReplyEnvelope bounds oversized summaries and refuses unclai
   );
 });
 
-test("input-required resume: a conversation reply resumes an awaiting_operator checkpoint exactly once", () => {
+const OPERATOR_O = { kind: "operator", id: "operator-o", homeBrokerId: "broker-alpha" };
+
+test("#2595 a worker reply cannot clear an operator-decision checkpoint; an operator reply can", () => {
+  for (const decisionType of [undefined, "approval_required", "safety_gate", "conflict_detected"] as const) {
+    const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-alpha" });
+    const conversationId = openConversation(broker);
+    const task = makeClaimedTask(broker);
+    broker.checkpointTask(task.id, task.claimedBy as string, {
+      state: "awaiting_operator",
+      reason: "need approval to proceed",
+      ...(decisionType ? { decisionType } : {}),
+    });
+
+    // The worker "approves" its own interrupt: the message is accepted into
+    // the conversation, but the checkpoint stays for an operator.
+    const selfApproval = broker.addConversationMessage(conversationId, {
+      messageId: "msg-w",
+      kind: "decision",
+      sender: WORKER_B,
+      recipients: [WORKER_A],
+      idempotencyKey: "idem-w",
+      taskId: task.id,
+      content: { text: "Approved — proceed with the plan." },
+    });
+    assert.equal(selfApproval.outcome, "accepted", `${decisionType ?? "none"}: message still accepted`);
+    assert.equal(broker.getTask(task.id)?.checkpoint?.state, "awaiting_operator", `${decisionType ?? "none"}: checkpoint kept`);
+    assert.equal(
+      broker.listAuditEvents().filter((event) => event.action === "task.resumed" && event.targetId === task.id).length,
+      0,
+      `${decisionType ?? "none"}: no resume`,
+    );
+
+    const operatorDecision = broker.addConversationMessage(conversationId, {
+      messageId: "msg-o",
+      kind: "decision",
+      sender: OPERATOR_O,
+      recipients: [WORKER_B],
+      idempotencyKey: "idem-o",
+      taskId: task.id,
+      content: { text: "Approved." },
+    });
+    assert.equal(operatorDecision.outcome, "accepted");
+    assert.equal(broker.getTask(task.id)?.checkpoint, undefined, `${decisionType ?? "none"}: operator resumes`);
+  }
+});
+
+test("input-required resume: a conversation reply resumes an ambiguous_scope checkpoint exactly once", () => {
   const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: "broker-alpha" });
   const conversationId = openConversation(broker);
   const task = makeClaimedTask(broker);
+  // #2595: only ambiguous_scope is resolvable by a task party's reply.
   broker.checkpointTask(task.id, task.claimedBy as string, {
     state: "awaiting_operator",
-    reason: "need approval to proceed",
+    reason: "which branch should the plan target?",
+    decisionType: "ambiguous_scope",
   });
   assert.equal(broker.getTask(task.id)?.checkpoint?.state, "awaiting_operator");
 
@@ -116,7 +164,7 @@ test("input-required resume: a conversation reply resumes an awaiting_operator c
     recipients: [WORKER_A],
     idempotencyKey: "idem-2",
     taskId: task.id,
-    content: { text: "Approved — proceed with the plan." },
+    content: { text: "Target the staging branch." },
   });
   assert.equal(reply.outcome, "accepted");
   assert.equal(broker.getTask(task.id)?.checkpoint, undefined, "awaiting_operator cleared");
@@ -136,7 +184,7 @@ test("input-required resume: a conversation reply resumes an awaiting_operator c
     recipients: [WORKER_A],
     idempotencyKey: "idem-2",
     taskId: task.id,
-    content: { text: "Approved — proceed with the plan." },
+    content: { text: "Target the staging branch." },
   });
   assert.equal(replay.outcome, "converged");
   assert.equal(

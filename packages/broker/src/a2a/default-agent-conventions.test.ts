@@ -303,6 +303,27 @@ test("tck-input-required: response shows input-required, follow-up resumes to co
   assert.equal(broker.getTask(task.id)?.status, "succeeded");
 });
 
+test("#2595 tck-input-required is requester input (ambiguous_scope): an authenticated non-hub requester's follow-up resumes it", () => {
+  const broker = new InMemoryA2ABroker();
+  startDefaultAgent(broker);
+  // Not the anonymous default-agent client (which acts as hub): a real
+  // requester whose role carries no operator authority.
+  const options: ExecuteJsonRpcOptions = {
+    ...createConformanceOptions(broker),
+    requesterIdentity: { id: "tck-client", kind: "service", role: "analyst" },
+    enforceRequesterIdentity: true,
+  };
+  const send = (message: Record<string, unknown>, id: number) =>
+    executeA2AJsonRpc({ jsonrpc: "2.0", id, method: "SendMessage", params: { message } }, options);
+  const task = successResult(send({ role: "ROLE_USER", parts: [{ text: "TCK prerequisite" }], messageId: "tck-input-required-s2" }, 1))
+    .task as { id: string; contextId: string };
+  assert.equal(broker.getTask(task.id)?.checkpoint?.decisionType, "ambiguous_scope");
+
+  const followup = send({ role: "ROLE_USER", parts: [{ text: "requested input" }], messageId: "m-resume-2", contextId: task.contextId }, 2);
+  assert.ok("result" in followup, `requester input must resume the TCK task: ${JSON.stringify(followup)}`);
+  assert.equal(broker.getTask(task.id)?.checkpoint, undefined, "checkpoint cleared by the requester's input");
+});
+
 test("anonymous CancelTask works in default-agent mode (input-required task)", () => {
   const broker = new InMemoryA2ABroker();
   startDefaultAgent(broker);
