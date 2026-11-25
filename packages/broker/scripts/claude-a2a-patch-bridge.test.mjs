@@ -236,6 +236,53 @@ function settingSourcesOf(args) {
   return { count: positions.length, value: positions.length === 1 ? args[positions[0] + 1] : null };
 }
 
+// MCP Tasks (Claude Code GA 2026-11-24): a remote task keeps running after the
+// session exits, so a patch lane that could start one would leave work outside
+// the finalizer's evidence. Same two locks as the analysis bridge (see
+// claude-a2a-analysis-bridge.test.mjs): no MCP server route, and the host's
+// MCP Tasks / auto-background / protocol-generation knobs never reach the child.
+test("MCP Tasks: PATCH lane child claude gets no MCP server route and no MCP Tasks/background env", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-mcp-tasks-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const argsCapturePath = join(tempDir, "claude-args.json");
+  const envCapturePath = join(tempDir, "child-env.json");
+  const hostEnv = {
+    CLAUDE_AUTO_BACKGROUND_TASKS: "1",
+    CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS: "1",
+    CLAUDE_CODE_DISABLE_MCP_TASK_BACKGROUND: "0",
+    MCP_SDK_GENERATION: "v2",
+    MCP_PROTOCOL_NEGOTIATION: "latest",
+  };
+  try {
+    writeStubClaude(fakeClaudePath, [
+      "import { writeFileSync } from 'node:fs';",
+      "writeFileSync(process.env.CAPTURE_ARGS_PATH, JSON.stringify(process.argv.slice(2)));",
+      "writeFileSync(process.env.CAPTURE_ENV_PATH, JSON.stringify(process.env));",
+      "const result = { status: 'pr_opened', summary: 'ok', prUrl: 'https://github.com/jinwon-int/example/pull/1' };",
+      "console.log(JSON.stringify({ type: 'result', result: JSON.stringify(result) }));",
+    ]);
+    const result = spawnSync(bridgePath, bridgeArgs(patchMessage()), {
+      encoding: "utf8",
+      env: { ...process.env, ...hostEnv, A2A_CLAUDE_CODE_BIN: fakeClaudePath, CAPTURE_ARGS_PATH: argsCapturePath, CAPTURE_ENV_PATH: envCapturePath },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const childEnv = JSON.parse(readFileSync(envCapturePath, "utf8"));
+    for (const key of Object.keys(hostEnv)) {
+      assert.equal(childEnv[key], undefined, `${key} must not reach the patch lane's claude`);
+    }
+    assert.deepEqual(
+      Object.keys(childEnv).filter((key) => /^(CLAUDE_AUTO_BACKGROUND|CLAUDE_CODE_MCP_|CLAUDE_CODE_DISABLE_MCP_|MCP_)/.test(key)),
+      [],
+    );
+    const args = JSON.parse(readFileSync(argsCapturePath, "utf8"));
+    assert.equal(args.filter((value) => value === "--strict-mcp-config").length, 1);
+    assert.equal(args.some((value) => value === "--mcp-config" || value.startsWith("--mcp-config=")), false);
+    assert.equal(args.includes("-p"), true, "the patch lane stays a one-shot print run (MCP Tasks are not offered to `claude -p`)");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("#2425 PATCH lane keeps only non-cwd setting sources from the knob (legacy user,project,local -> user)", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "claude-patch-iso-knob-"));
   const fakeClaudePath = join(tempDir, "fake-claude.mjs");

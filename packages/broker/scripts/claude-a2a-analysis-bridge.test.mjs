@@ -277,6 +277,66 @@ test("Claude Code A2A analysis bridge does not pass broker/API secret env vars t
   }
 });
 
+// MCP Tasks (GA in Claude Code 2026-11-24, protocol 2026-07-28) lets a session
+// start remote tasks that keep running after the session exits. An A2A lane must
+// not: work that outlives the lane escapes the finalizer's evidence. The lane is
+// kept out of MCP Tasks by two independent locks, pinned together here so a
+// later change to either one is caught:
+//   1. no MCP server reaches the lane (`--strict-mcp-config`, no `--mcp-config`);
+//   2. the host env knobs that switch MCP Tasks / auto-background on, or pick
+//      the protocol generation, never reach the child (env allowlist).
+// The names are the ones the Claude Code MCP docs list for Tasks.
+const MCP_TASKS_HOST_ENV = Object.freeze({
+  CLAUDE_AUTO_BACKGROUND_TASKS: "1",
+  CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS: "1",
+  CLAUDE_CODE_DISABLE_MCP_TASK_BACKGROUND: "0",
+  MCP_SDK_GENERATION: "v2",
+  MCP_PROTOCOL_NEGOTIATION: "latest",
+});
+const MCP_TASKS_ENV_PATTERN = /^(CLAUDE_AUTO_BACKGROUND|CLAUDE_CODE_MCP_|CLAUDE_CODE_DISABLE_MCP_|MCP_)/;
+
+test("MCP Tasks: analysis lane child claude gets no MCP server route and no MCP Tasks/background env", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-mcp-tasks-"));
+  const fakeClaudePath = join(tempDir, "fake-claude.mjs");
+  const envCapturePath = join(tempDir, "child-env.json");
+  const argsPath = join(tempDir, "child-args.json");
+  try {
+    writeFileSync(fakeClaudePath, [
+      "#!/usr/bin/env node",
+      "import { writeFileSync } from 'node:fs';",
+      "writeFileSync(process.env.CAPTURE_ENV_PATH, JSON.stringify(process.env));",
+      "writeFileSync(process.env.CAPTURE_ARGS_PATH, JSON.stringify(process.argv.slice(2)));",
+      "const analysis = { status: 'done', summary: 'env captured', findings: [], risks: [], recommendations: [], evidenceRefs: [] };",
+      "console.log(JSON.stringify({ type: 'result', result: JSON.stringify(analysis) }));",
+      "",
+    ].join("\n"));
+    chmodSync(fakeClaudePath, 0o755);
+    const result = spawnSync(bridgePath, bridgeArgs("Payload JSON:\n" + JSON.stringify({ mode: "analysis-only" })), {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        ...MCP_TASKS_HOST_ENV,
+        A2A_CLAUDE_CODE_BIN: fakeClaudePath,
+        CAPTURE_ENV_PATH: envCapturePath,
+        CAPTURE_ARGS_PATH: argsPath,
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const childEnv = JSON.parse(readFileSync(envCapturePath, "utf8"));
+    for (const key of Object.keys(MCP_TASKS_HOST_ENV)) {
+      assert.equal(childEnv[key], undefined, `${key} must not reach the lane's claude`);
+    }
+    assert.deepEqual(Object.keys(childEnv).filter((key) => MCP_TASKS_ENV_PATTERN.test(key)), []);
+    const childArgs = JSON.parse(readFileSync(argsPath, "utf8"));
+    assert.equal(childArgs.filter((value) => value === "--strict-mcp-config").length, 1);
+    assert.equal(childArgs.some((value) => value === "--mcp-config" || value.startsWith("--mcp-config=")), false);
+    assert.equal(childArgs[0], "-p", "the lane stays a one-shot print run (MCP Tasks are not offered to `claude -p`)");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("Claude Code A2A analysis bridge lets an explicit host CCC_DISTILL_RESUME_POLICY win (#2383)", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "claude-a2a-bridge-resume-policy-"));
   const fakeClaudePath = join(tempDir, "fake-claude.mjs");
