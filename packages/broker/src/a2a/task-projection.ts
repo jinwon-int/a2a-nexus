@@ -180,7 +180,7 @@ export function projectBrokerTaskForList(task: TaskRecord): A2ATaskListProjectio
  * A2A state (`completed`, `failed`, `canceled`, `rejected`) is likewise
  * immutable.
  */
-function mapTaskState(task: Pick<TaskRecord, "status" | "approvalOutcome" | "checkpoint">): A2ATaskState {
+export function mapTaskState(task: Pick<TaskRecord, "status" | "approvalOutcome" | "checkpoint">): A2ATaskState {
   switch (task.status) {
     case "blocked":
       return "auth-required";
