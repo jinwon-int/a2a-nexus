@@ -80,7 +80,7 @@ the player would act as the judge ([trust boundaries](../trust-boundaries.md),
 Rules:
 
 1. An `operator_decision` wait rejects **every** `tasks/update` payload with
-   `operator_decision_out_of_band`. This includes `true`, `"approve"`, `"승인"`,
+   `operator_decision_out_of_band`. This includes `true`, `"approve"`, a localized approval word,
    a well-formed elicitation result, and any approval id (genuine or forged).
 2. The only way past an operator decision is the broker's own operator route:
    `approveTask` for an approval-gated (`blocked`) task, which enforces a hub or
