@@ -814,7 +814,8 @@ test("explicit task resume requires task-party authorization (a2a-nexus#617 revi
     const taskId = send.result.task.id;
     await fetch(`${server.baseUrl}/tasks/${taskId}/claim`, { method: "POST", headers: worker, body: JSON.stringify({ workerId: "worker-rz" }) });
     await fetch(`${server.baseUrl}/tasks/${taskId}/start`, { method: "POST", headers: worker, body: JSON.stringify({ workerId: "worker-rz" }) });
-    await fetch(`${server.baseUrl}/tasks/${taskId}/checkpoint`, { method: "POST", headers: worker, body: JSON.stringify({ workerId: "worker-rz", state: "awaiting_operator" }) });
+    // #2595: a party may resume only an ambiguous_scope checkpoint.
+    await fetch(`${server.baseUrl}/tasks/${taskId}/checkpoint`, { method: "POST", headers: worker, body: JSON.stringify({ workerId: "worker-rz", state: "awaiting_operator", decisionType: "ambiguous_scope" }) });
 
     // A stranger (analyst, not a party to this task) cannot resume it.
     const stranger = jsonHeaders({ "x-a2a-edge-secret": "test-edge-secret", "x-a2a-requester-id": "intruder", "x-a2a-requester-role": "analyst" });
@@ -828,6 +829,35 @@ test("explicit task resume requires task-party authorization (a2a-nexus#617 revi
     // The assigned worker (a party) can resume.
     const ok = await fetch(`${server.baseUrl}/tasks/${taskId}/resume`, { method: "POST", headers: worker, body: JSON.stringify({ actorId: "worker-rz" }) });
     assert.equal(ok.status, 200);
+
+    // #2595: an operator-decision checkpoint (here the default approval_required)
+    // is not the worker's to clear — not through /resume, not by claiming a
+    // role in the body, and not through an A2A context message.
+    await fetch(`${server.baseUrl}/tasks/${taskId}/checkpoint`, { method: "POST", headers: worker, body: JSON.stringify({ workerId: "worker-rz", state: "awaiting_operator" }) });
+    const selfResume = await fetch(`${server.baseUrl}/tasks/${taskId}/resume`, { method: "POST", headers: worker, body: JSON.stringify({ actorId: "worker-rz", actorRole: "operator" }) });
+    assert.equal(selfResume.status, 403, "worker cannot clear an approval_required checkpoint");
+    assert.match(JSON.stringify(await selfResume.json()), /approval_required checkpoint requires a hub or operator actor/);
+    const contextId = send.result.contextId as string;
+    assert.ok(contextId, "SendMessage response carries the contextId");
+    const messageCount = async () => {
+      const listed = await (await fetch(`${server.baseUrl}/exchanges/${contextId}/messages`, { headers: hub })).json();
+      assert.ok(Array.isArray(listed.items), "exchange messages list shape");
+      return listed.items.length as number;
+    };
+    const messagesBefore = await messageCount();
+    assert.ok(messagesBefore >= 1, "the context already holds the root message");
+    const viaMessage = await (await fetch(`${server.baseUrl}/a2a/jsonrpc`, {
+      method: "POST", headers: worker,
+      body: JSON.stringify({ jsonrpc: "2.0", id: "rz-msg", method: "SendMessage", params: { message: { contextId, parts: [{ text: "approved, go ahead" }] } } }),
+    })).json();
+    assert.ok(viaMessage.error, "a context message from the worker must not clear the approval checkpoint");
+    assert.match(viaMessage.error.message, /requires a hub or operator actor/);
+    assert.equal(await messageCount(), messagesBefore, "a refused context message is not recorded");
+    const stillWaiting = await (await fetch(`${server.baseUrl}/tasks/${taskId}`, { headers: hub })).json();
+    assert.equal(stillWaiting.checkpoint?.state, "awaiting_operator");
+    assert.equal(stillWaiting.checkpoint?.decisionType, "approval_required");
+    const hubResume = await fetch(`${server.baseUrl}/tasks/${taskId}/resume`, { method: "POST", headers: hub, body: JSON.stringify({ actorId: "hub-a" }) });
+    assert.equal(hubResume.status, 200, "hub resolves the operator decision");
 
     // Resuming a missing task is not_found.
     const missing = await fetch(`${server.baseUrl}/tasks/no-such-task/resume`, { method: "POST", headers: hub, body: JSON.stringify({ actorId: "hub-a" }) });

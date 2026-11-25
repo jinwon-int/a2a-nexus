@@ -154,11 +154,51 @@ export function checkpointTask(
   return task;
 }
 
-/** Clear an active checkpoint (operator approval, requester input, or worker resume). */
+/**
+ * Decision types a task party may resolve (#2595). Only `ambiguous_scope`
+ * asks the requester for input; every other `awaiting_operator` decision —
+ * `approval_required`, `safety_gate`, `conflict_detected`, or none (which
+ * {@link checkpointTask} records as `approval_required`) — belongs to an
+ * operator (contracts/a2a/checkpoint-interrupt.md §2.2, "Resolution
+ * authority"). Deny by default: a decision type added later is operator-only
+ * until it is listed here on purpose.
+ */
+const PARTY_RESOLVABLE_DECISION_TYPES: ReadonlySet<TaskInterruptDecisionType> = new Set(["ambiguous_scope"]);
+
+/** True when clearing this checkpoint needs a hub or operator actor (#2595). `paused` never does. */
+export function isOperatorDecisionCheckpoint(checkpoint: TaskRecord["checkpoint"]): boolean {
+  if (checkpoint?.state !== "awaiting_operator") return false;
+  return !(checkpoint.decisionType && PARTY_RESOLVABLE_DECISION_TYPES.has(checkpoint.decisionType));
+}
+
+/** Same privilege test as task approval (`isPrivilegedTaskApprover`). */
+export function isCheckpointResolverRole(role: string | undefined): boolean {
+  return role === "hub" || role === "operator";
+}
+
+/**
+ * Throws `policy_denied` when `actorRole` may not clear the task's active
+ * checkpoint. Exported so entry points that record state before resuming
+ * (A2A SendMessage) can refuse up front instead of leaving a half-applied
+ * request.
+ */
+export function assertCanResolveCheckpoint(task: Pick<TaskRecord, "checkpoint">, actorRole: string | undefined): void {
+  if (!isOperatorDecisionCheckpoint(task.checkpoint)) return;
+  if (isCheckpointResolverRole(actorRole)) return;
+  const decision = task.checkpoint?.decisionType ?? "approval_required";
+  throw new BrokerError("policy_denied", `resolving a ${decision} checkpoint requires a hub or operator actor`);
+}
+
+/**
+ * Clear an active checkpoint (operator approval, requester input, or worker
+ * resume). An operator-decision checkpoint (#2595) needs `actorRole` hub or
+ * operator; `ambiguous_scope` and `paused` checkpoints keep the caller's
+ * existing party authorization.
+ */
 export function resumeTask(
   taskId: string,
   actorId: string,
-  request: { checkpointId?: string },
+  request: { checkpointId?: string; actorRole?: string },
   context: TaskCheckpointContext,
 ): TaskRecord {
   const task = context.requireTask(taskId);
@@ -171,6 +211,7 @@ export function resumeTask(
   if (request.checkpointId && request.checkpointId !== task.checkpoint.checkpointId) {
     throw new BrokerError("bad_request", "checkpointId does not match the active checkpoint");
   }
+  assertCanResolveCheckpoint(task, request.actorRole);
 
   const cleared = task.checkpoint;
   task.checkpoint = undefined;

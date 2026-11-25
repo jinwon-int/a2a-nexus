@@ -100,6 +100,9 @@ Rules:
    extra keys, and malformed content are rejected. Accepting a clarification
    only classifies it; delivering it (for example as a context message) goes
    through the broker's existing task-party authorization.
+6. The facade's classification is the broker's own
+   (`isOperatorDecisionCheckpoint`, #2595), so the facade never offers input
+   that the broker's resume paths would refuse.
 
 **Deviation from #2593's draft:** the draft allowed a reference to an existing
 approval record in `inputResponses`. This version accepts none. Once an operator
