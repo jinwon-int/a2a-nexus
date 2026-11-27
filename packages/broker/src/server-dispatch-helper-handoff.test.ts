@@ -2,8 +2,8 @@
 // against two brokers that run with a broker-team registry. Everything the
 // brokers receive comes from the helper's plan: the mint and anchor pre-steps,
 // the registration receipt, and the child task payload. The relay must then be
-// accepted by the parent through its registry entry, not the legacy task-id
-// check — the path that failed in three places before #2556 (literal broker
+// accepted by the parent through its registry entry — the path that failed in
+// three places before #2556 (literal broker
 // id in the Team2 gate, a team scope the minting broker refuses, and a child
 // payload that named the plan's local round).
 import assert from "node:assert/strict";
@@ -167,7 +167,7 @@ for (const scenario of CASES) {
 
       const counters = find((await call(parent.baseUrl, "GET", "/health", OPERATOR)).body, "crossBrokerTerminalBriefs") as Record<string, number>;
       assert.equal(counters.parentResolvedViaRegistry, 1);
-      assert.equal(counters.parentResolvedViaLegacyTask, 0);
+      assert.equal(counters.missingParent, 0);
       assert.equal(counters.missingAnchor, 0);
       const briefs = await call(parent.baseUrl, "GET", "/a2a/cross-broker/terminal-briefs", OPERATOR);
       const records = briefs.body.records as Array<Record<string, unknown>>;

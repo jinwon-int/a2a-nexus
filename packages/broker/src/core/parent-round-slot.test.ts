@@ -13,7 +13,25 @@ const PARENT = "brokeralpha";
 const CHILD = "brokerbeta";
 const ROUND = "brokeralpha-round-12";
 
-function parentWithLegacyRound(): InMemoryA2ABroker {
+/** Anchor the round registers; `request()` names it as the origin task (#2556). */
+const ORIGIN_ANCHOR = `${ROUND}-origin`;
+
+/** The round's registry entry — since #2556 the only thing that makes the broker its parent. */
+function registerRound(broker: InMemoryA2ABroker): void {
+  broker.mintParentRound({
+    parentRoundId: ROUND,
+    originBrokerId: PARENT,
+    parentBrokerId: PARENT,
+    initiatingBrokerId: PARENT,
+    // No handoff broker is pinned: the slot tests send children from two handoff brokers.
+    parentRoundTotal: 3,
+    kind: "local-origin",
+    mintedBy: { requesterId: "hub-a", role: "hub" },
+    anchors: [ORIGIN_ANCHOR],
+  });
+}
+
+function parentWithRound(): InMemoryA2ABroker {
   const broker = new InMemoryA2ABroker(undefined, undefined, { brokerId: PARENT, knownBrokerIds: [CHILD] });
   broker.registerWorker({
     nodeId: "worker-a",
@@ -29,6 +47,7 @@ function parentWithLegacyRound(): InMemoryA2ABroker {
     message: "parent round",
     payload: { parentRoundTotal: 3 },
   });
+  registerRound(broker);
   return broker;
 }
 
@@ -39,6 +58,7 @@ function request(overrides: Partial<CrossBrokerTerminalBriefProjectionRequest> =
     handoffBrokerId: CHILD,
     brokerOfRecordId: PARENT,
     childTaskId: `${ROUND}-t2`,
+    originTaskId: ORIGIN_ANCHOR,
     childWorkerId: "workerzeta",
     status: "failed",
     completedAt: "2026-10-01T06:00:00.000Z",
@@ -53,7 +73,7 @@ function rejectCode(result: ReturnType<InMemoryA2ABroker["ingestCrossBrokerTermi
 }
 
 test("PR-3b a retry child finishing later takes the slot; the first attempt is kept as superseded", () => {
-  const broker = parentWithLegacyRound();
+  const broker = parentWithRound();
   const r1 = broker.ingestCrossBrokerTerminalBriefProjection(request());
   assert.equal(r1.accepted, true);
 
@@ -84,7 +104,7 @@ test("PR-3b a retry child finishing later takes the slot; the first attempt is k
 });
 
 test("PR-3b a different child that completed at the same time or earlier is stale_replay", () => {
-  const broker = parentWithLegacyRound();
+  const broker = parentWithRound();
   broker.ingestCrossBrokerTerminalBriefProjection(request({ completedAt: "2026-10-01T06:20:00.000Z" }));
 
   for (const completedAt of ["2026-10-01T06:20:00.000Z", "2026-10-01T06:10:00.000Z"]) {
@@ -99,7 +119,7 @@ test("PR-3b a different child that completed at the same time or earlier is stal
 });
 
 test("PR-3b the same child's resend keeps duplicate_replay / stale_replay, and a later resend can win back the slot", () => {
-  const broker = parentWithLegacyRound();
+  const broker = parentWithRound();
   broker.ingestCrossBrokerTerminalBriefProjection(request());
   const replay = broker.ingestCrossBrokerTerminalBriefProjection(request());
   assert.ok(replay.accepted && replay.replayed, "an identical resend is duplicate_replay");
@@ -117,7 +137,7 @@ test("PR-3b the same child's resend keeps duplicate_replay / stale_replay, and a
 });
 
 test("PR-3b slots are per parent round, handoff broker, and order", () => {
-  const broker = parentWithLegacyRound();
+  const broker = parentWithRound();
   broker.ingestCrossBrokerTerminalBriefProjection(request());
   // A different order in the same round: a separate slot.
   assert.equal(broker.ingestCrossBrokerTerminalBriefProjection(request({ childTaskId: "lane-3", parentRoundOrder: 3 })).accepted, true);
@@ -131,7 +151,7 @@ test("PR-3b slots are per parent round, handoff broker, and order", () => {
 });
 
 test("PR-3b superseded records persist across a restart and stay out of the aggregate", () => {
-  const broker = parentWithLegacyRound();
+  const broker = parentWithRound();
   broker.ingestCrossBrokerTerminalBriefProjection(request());
   broker.ingestCrossBrokerTerminalBriefProjection(request({ childTaskId: `${ROUND}-t2r2`, completedAt: "2026-10-01T06:20:00.000Z" }));
 
@@ -166,6 +186,7 @@ test("PR-3b HTTP query hides superseded records unless include_superseded=true",
       message: "parent round",
       payload: { parentRoundTotal: 3 },
     });
+    registerRound(broker);
     broker.ingestCrossBrokerTerminalBriefProjection(request());
     broker.ingestCrossBrokerTerminalBriefProjection(request({ childTaskId: `${ROUND}-t2r2`, completedAt: "2026-10-01T06:20:00.000Z" }));
 

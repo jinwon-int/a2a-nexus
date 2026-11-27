@@ -241,6 +241,11 @@ getParentRoundRouting   = registry 항목(teamScope, initiatingBrokerId)로
                           resolveTerminalBriefParentOriginRoute(); 없으면 payload 폴백
 ```
 
+> **(갱신 2026-11-27, #2556) 위 판정에서 legacy 줄은 제거됐다.** 지금은
+> `hasParentRound(id) = registry.has(id) && registry.get(id).kind === "local-origin"`뿐이고,
+> `tasks.has(id)` · `tasks.get(id)?.brokerOfRecord` · 태스크 payload 기반 routing 폴백은 없다.
+> 등록되지 않은 라운드는 `missing_parent`다(아래 「legacy `tasks.has` 제거」).
+
 projection 수락 조건(기존 검사에 추가): 레지스트리 항목이 있고
 `entry.parentBrokerId == 받는 broker`, `request.handoffBrokerId == entry.handoffBrokerId`,
 그리고 `request.childTaskId` 또는 `request.originTaskId`가 **`entry.anchors`에 있을 때**
@@ -259,6 +264,27 @@ accepted. 앵커가 비어 있는 항목(자식을 아직 안 보냄)에 온 pro
 **legacy `tasks.has` 유지 기간.** 레지스트리 도입 PR에서는 `tasks.has` 폴백을 남기고
 receiver 카운터 `parent_resolved_via: registry | legacy_task`를 기록한다. 플릿에서
 `legacy_task`가 0인 상태로 2주가 지나면(별도 오너 결정) 폴백을 제거한다.
+
+**legacy `tasks.has` 제거 (#2556, 2026-11-27 오너 결정).** 폴백을 제거했다.
+
+- 근거: (1) 2026-11-13 ~ 11-27 관측 창에서 `parentResolvedViaLegacyTask`는 0이었지만
+  cross-broker parent-owned 트래픽 자체가 0건이라 그것만으로는 증거가 되지 않았다. (2) 그래서
+  정식 경로를 먼저 닫았다 — helper는 등록 영수증 없이는 `--execute` 계획을 내지 않는다(#2600).
+  (3) 그 경로를 운영에서 양방향 카나리로 실행해 둘 다 레지스트리로 수락됐고 legacy 경로는
+  타지 않았다(2026-11-27, case 4 · case 2).
+- 동작: 받는 broker에 `local-origin`으로 등록되지 않은 `parentRoundId`의 projection은
+  `missing_parent`다. 그 id의 태스크가 있든, 태스크 payload에 `teamScope` ·
+  `initiatingBrokerId`가 있든 상관없다. 태스크 payload로 하던 routing 검사(legacy
+  `getParentRoundRouting`)도 함께 없어졌고, routing은 레지스트리 항목의 `handoffBrokerId`로만
+  본다.
+- 카운터: `/health` `crossBrokerTerminalBriefs`에서 `parentResolvedViaLegacyTask`가 빠지고
+  `missingParent`(등록되지 않은 라운드로 거부한 수)가 생겼다. 배포 뒤 이 값이 오르면 등록
+  없이 보내는 dispatch가 남아 있다는 뜻이다. 옛 키를 읽는 점검 스크립트는 고쳐야 한다.
+- 자식 쪽 영향: `missing_parent`는 receiver가 이미 영구 거부로 분류하므로, 등록 없이 보낸
+  자식은 자식 broker에 로컬 fallback 행(「Terminal Brief relay failure」)으로 남는다(PR-5).
+  조용히 사라지지 않는다.
+- 배포: 바뀌는 것은 부모 broker의 ingest뿐이다. receiver와 프로토콜은 그대로라 두 broker를
+  따로 올려도 된다. broker 재시작이 필요하므로 배포는 broker별 별도 승인이다.
 
 **스냅샷.** 레지스트리는 hot-restart 안전해야 한다: `store.ts` 스냅샷 sidecar와
 `readHotRuntimeSnapshot`·`saveSnapshot` hint 세 곳 모두 등록(#2337에서 receipt가 빠져

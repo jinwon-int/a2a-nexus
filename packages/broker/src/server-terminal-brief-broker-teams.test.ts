@@ -60,18 +60,35 @@ function projection(handoffBrokerId: string, child: string) {
   };
 }
 
-test("legacy routing uses the configured registry: a wrong handoff broker is routing_mismatch", () => {
-  const broker = parentWithRoutedRound(TEAMS);
-  const wrong = broker.ingestCrossBrokerTerminalBriefProjection(projection("brokergamma", "c1"));
-  assert.equal(wrong.accepted, false);
-  assert.equal(wrong.accepted ? undefined : wrong.ack.code, "routing_mismatch");
-  assert.equal(broker.ingestCrossBrokerTerminalBriefProjection(projection("gwakga", "c2")).accepted, true);
+test("#2556 a task that carries routing metadata does not make this broker the parent, with or without a broker-team registry", () => {
+  for (const broker of [parentWithRoutedRound(TEAMS), parentWithRoutedRound()]) {
+    for (const handoff of ["gwakga", "brokergamma"]) {
+      const result = broker.ingestCrossBrokerTerminalBriefProjection(projection(handoff, "c1"));
+      assert.equal(result.accepted ? undefined : result.ack.code, "missing_parent");
+    }
+    assert.equal(broker.getCrossBrokerTerminalBriefDiagnostics().missingParent, 2);
+  }
+  assert.equal(parentWithRoutedRound().resolveConfiguredParentOriginRoute("seoseo", "team1+team2"), undefined);
 });
 
-test("without a registry the placeholder never resolves real broker ids, so routing stays unchecked (unchanged)", () => {
-  const broker = parentWithRoutedRound();
-  assert.equal(broker.ingestCrossBrokerTerminalBriefProjection(projection("brokergamma", "c1")).accepted, true);
-  assert.equal(broker.resolveConfiguredParentOriginRoute("seoseo", "team1+team2"), undefined);
+test("#2556 once the round is registered, its entry's handoff broker decides routing_mismatch", () => {
+  const broker = parentWithRoutedRound(TEAMS);
+  broker.mintParentRound({
+    parentRoundId: "legacy-routed-round",
+    originBrokerId: "seoseo",
+    parentBrokerId: "seoseo",
+    initiatingBrokerId: "seoseo",
+    teamScope: "team1+team2",
+    handoffBrokerId: "gwakga",
+    parentRoundTotal: 2,
+    kind: "local-origin",
+    mintedBy: { requesterId: "hub-a", role: "hub" },
+    anchors: ["c1", "c2"],
+  });
+  const wrong = broker.ingestCrossBrokerTerminalBriefProjection(projection("brokergamma", "c1"));
+  assert.equal(wrong.accepted ? undefined : wrong.ack.code, "routing_mismatch");
+  assert.equal(broker.ingestCrossBrokerTerminalBriefProjection(projection("gwakga", "c2")).accepted, true);
+  assert.equal(broker.getCrossBrokerTerminalBriefDiagnostics().parentResolvedViaRegistry, 1);
 });
 
 async function mint(baseUrl: string, body: Record<string, unknown>) {
