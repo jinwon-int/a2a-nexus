@@ -12,6 +12,20 @@ import type { A2AWorkModeDecisionEvidence } from "./work-mode-pre-dispatch-decis
 
 export type A2ADispatchTeamId = "team1" | "team2" | "common";
 
+/**
+ * #2556: one row of the broker-team registry the brokers run with
+ * (`A2A_TERMINAL_BRIEF_BROKER_TEAMS`). Declared here structurally — the
+ * dispatch domain does not import the completion domain's routing module; the
+ * CLI parses the env value and passes the rows in.
+ */
+export interface A2ADispatchBrokerTeam {
+  brokerId: string;
+  teamId: "team1" | "team2";
+}
+
+/** Team2's broker when no registry is given: the placeholder topology's id. */
+const PLACEHOLDER_TEAM2_BROKER_ID = "brokerbeta";
+
 export interface A2ADispatchSpec {
   teamId: A2ADispatchTeamId;
   lane: number;
@@ -46,6 +60,14 @@ export interface A2ADispatchConfig {
   dryRun: boolean;
   execute: boolean;
   now?: string;
+  /**
+   * #2556: the broker-team registry the brokers run with
+   * (`A2A_TERMINAL_BRIEF_BROKER_TEAMS`, for example
+   * `brokeralpha=team1,brokerbeta=team2`). The execute-mode Team2 gate reads
+   * the broker that owns Team2 from it. Unset keeps the placeholder default,
+   * which only matches a deployment whose brokers carry those placeholder ids.
+   */
+  brokerTeams?: readonly A2ADispatchBrokerTeam[];
   /**
    * #2556: the minting broker's own record of the handoff's parent round, read
    * after the `[registry]` pre-steps ran — the body of
@@ -316,16 +338,36 @@ function parentRoundMintingBroker(roundSpec: A2ADispatchSpec): string | undefine
   return roundSpec.crossBrokerHandoff?.originBrokerId?.trim() || roundSpec.originBrokerId?.trim() || undefined;
 }
 
+/**
+ * #2556: the team scope the minting broker is asked to register. A broker that
+ * runs with a broker-team registry routes the scope from the *initiating*
+ * broker: it refuses another team's `teamN-only` scope and accepts
+ * `team1+team2` for a round whose child goes to the other team's broker. So
+ * with a registry, a handoff to a different team is minted as `team1+team2`.
+ * Without one the helper keeps sending the round's team (and omits `common`).
+ */
+function mintTeamScope(
+  roundSpec: A2ADispatchSpec,
+  mintingBrokerId: string,
+  brokerTeams: readonly A2ADispatchBrokerTeam[] | undefined,
+): string | undefined {
+  if (roundSpec.teamId === "common") return undefined;
+  const mintingTeam = brokerTeams?.find((broker) => sameBrokerId(broker.brokerId, mintingBrokerId))?.teamId;
+  return mintingTeam && mintingTeam !== roundSpec.teamId ? "team1+team2" : roundSpec.teamId;
+}
+
 function buildParentRoundRegistrationPlan(
   roundSpec: A2ADispatchSpec,
   parentRound: A2AParentRoundDispatchMetadata,
   childTaskId: string,
+  brokerTeams?: readonly A2ADispatchBrokerTeam[],
 ): A2AParentRoundRegistrationPlan | null {
   const handoff = roundSpec.crossBrokerHandoff;
   const parentRoundId = handoff?.parentRoundId?.trim();
   const mintingBrokerId = parentRoundMintingBroker(roundSpec);
   if (!handoff || !parentRoundId || !mintingBrokerId) return null;
   const handoffBrokerId = handoff.handoffBrokerId?.trim();
+  const teamScope = mintTeamScope(roundSpec, mintingBrokerId, brokerTeams);
   const anchorPath = `/a2a/parent-rounds/${encodeURIComponent(parentRoundId)}/anchors`;
   const anchors = [handoff.originTaskId?.trim(), childTaskId]
     .filter((anchor): anchor is string => Boolean(anchor))
@@ -339,7 +381,7 @@ function buildParentRoundRegistrationPlan(
         parentRoundId,
         initiatingBrokerId: mintingBrokerId,
         // `common` is the helper default, not a team scope (spec item 2).
-        ...(roundSpec.teamId !== "common" ? { teamScope: roundSpec.teamId } : {}),
+        ...(teamScope ? { teamScope } : {}),
         ...(handoffBrokerId ? { handoffBrokerId } : {}),
         parentRoundTotal: parentRound.parentRoundTotal,
       },
@@ -567,8 +609,16 @@ export function buildA2ADispatchPlan(roundSpec: A2ADispatchSpec, config?: Partia
   for (const issue of crossBrokerHandoffIssues(roundSpec, parentRound.metadata?.parentRoundId)) {
     blockers.push(`[cross_broker_handoff_parent] ${issue}`);
   }
-  if (roundSpec.crossBrokerHandoff && !parentRoundMintingBroker(roundSpec)) {
+  const mintingBrokerForHandoff = roundSpec.crossBrokerHandoff ? parentRoundMintingBroker(roundSpec) : undefined;
+  if (roundSpec.crossBrokerHandoff && !mintingBrokerForHandoff) {
     blockers.push("[parent_round_registry] the minting (origin) broker id is required; provide --handoff-origin-broker-id or --origin-broker-id");
+  }
+  if (
+    mintingBrokerForHandoff && mergedConfig.brokerTeams
+    && !mergedConfig.brokerTeams.some((broker) => sameBrokerId(broker.brokerId, mintingBrokerForHandoff))
+  ) {
+    // #2556: the mint route would answer 400 unknown_initiating_broker.
+    blockers.push(`[parent_round_registry] the minting broker "${sanitizeText(mintingBrokerForHandoff)}" is not in the broker-team registry (--broker-teams)`);
   }
   if (!mergedConfig.dryRun && mergedConfig.execute) {
     warnings.push("[approval_boundary_respected] Execute mode active; write operations are permitted");
@@ -576,11 +626,23 @@ export function buildA2ADispatchPlan(roundSpec: A2ADispatchSpec, config?: Partia
       blockers.push("[work_mode_decision_evidence] Execute-mode Team1/common dispatch requires --work-mode-decision");
     }
     if (roundSpec.teamId === "team2") {
-      const isbrokerbetaLocal = roundSpec.originBrokerId === "brokerbeta" && roundSpec.brokerOfRecordId === "brokerbeta";
-      const isbrokerbetaHandoff = roundSpec.brokerOfRecordId === "brokerbeta"
-        && roundSpec.crossBrokerHandoff?.handoffBrokerId === "brokerbeta";
-      if (!isbrokerbetaLocal && !isbrokerbetaHandoff) {
-        blockers.push("[team2_broker_of_record_handoff] Execute-mode Team2 dispatch must target brokerbeta broker-of-record via explicit crossBrokerHandoff, not local brokeralpha /tasks");
+      // #2556: the broker that owns Team2 comes from the broker-team registry,
+      // not from a literal id — a deployment's brokers carry their own ids.
+      const team2BrokerId = mergedConfig.brokerTeams
+        ? mergedConfig.brokerTeams.find((broker) => broker.teamId === "team2")?.brokerId
+        : PLACEHOLDER_TEAM2_BROKER_ID;
+      if (!team2BrokerId) {
+        blockers.push("[team2_broker_of_record_handoff] no broker is registered for team2; pass --broker-teams with the brokers' A2A_TERMINAL_BRIEF_BROKER_TEAMS value");
+      } else {
+        const isTeam2Broker = (brokerId: string | undefined): boolean => brokerId !== undefined && sameBrokerId(brokerId, team2BrokerId);
+        const isTeam2Local = isTeam2Broker(roundSpec.originBrokerId) && isTeam2Broker(roundSpec.brokerOfRecordId);
+        const isTeam2Handoff = isTeam2Broker(roundSpec.brokerOfRecordId)
+          && isTeam2Broker(roundSpec.crossBrokerHandoff?.handoffBrokerId);
+        if (!isTeam2Local && !isTeam2Handoff) {
+          blockers.push(
+            `[team2_broker_of_record_handoff] Execute-mode Team2 dispatch must target ${sanitizeText(team2BrokerId)} (the broker registered for team2) as broker-of-record, locally or via explicit crossBrokerHandoff, not another broker's local /tasks`,
+          );
+        }
       }
     }
   }
@@ -596,7 +658,7 @@ export function buildA2ADispatchPlan(roundSpec: A2ADispatchSpec, config?: Partia
   }
 
   const parentRoundRegistration = blockers.length === 0 && parentRound.metadata
-    ? buildParentRoundRegistrationPlan(roundSpec, parentRound.metadata, deterministicTaskId.taskId)
+    ? buildParentRoundRegistrationPlan(roundSpec, parentRound.metadata, deterministicTaskId.taskId, mergedConfig.brokerTeams)
     : null;
   if (parentRoundRegistration) {
     dispatchActions.push(
