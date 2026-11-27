@@ -715,6 +715,12 @@ export function buildA2ADispatchPlan(roundSpec: A2ADispatchSpec, config?: Partia
     dispatchActions.push(
       `[metadata] parent round: id=${sanitizeText(parentRound.metadata.parentRoundId)} order=${parentRound.metadata.parentRoundOrder}/${parentRound.metadata.parentRoundTotal}`,
     );
+    const handoffRoundId = roundSpec.crossBrokerHandoff?.parentRoundId?.trim();
+    if (handoffRoundId) {
+      dispatchActions.push(
+        `[metadata] handoff parent round: task payload parentRoundId=${sanitizeText(handoffRoundId)} (the origin broker's round; the id above stays this plan's local round)`,
+      );
+    }
   }
 
   const handoffParentRoundId = roundSpec.crossBrokerHandoff?.parentRoundId?.trim();
@@ -725,7 +731,14 @@ export function buildA2ADispatchPlan(roundSpec: A2ADispatchSpec, config?: Partia
         lane: roundSpec.lane,
         worker: roundSpec.worker,
         runId: roundSpec.runId,
-        parentRoundId: parentRound.metadata.parentRoundId,
+        // #2556: a cross-broker child belongs to the origin broker's parent
+        // round, and the relay projects `payload.parentRoundId` to the parent
+        // broker. The payload therefore names the handoff's round — the one
+        // the `[registry]` pre-steps register — not this plan's local round id,
+        // which the parent broker has never heard of (`missing_parent`).
+        parentRoundId: roundSpec.crossBrokerHandoff && handoffParentRoundId
+          ? handoffParentRoundId
+          : parentRound.metadata.parentRoundId,
         parentRoundTotal: parentRound.metadata.parentRoundTotal,
         parentRoundOrder: parentRound.metadata.parentRoundOrder,
         ...(roundSpec.dispatchWorkers && roundSpec.dispatchWorkers.length > 0

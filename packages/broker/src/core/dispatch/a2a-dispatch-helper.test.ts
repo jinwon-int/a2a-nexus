@@ -801,3 +801,30 @@ test("#2556 a minting broker missing from the registry blocks the handoff plan",
   assert.ok(plan.decision.blockers.some((blocker) => blocker.startsWith("[parent_round_registry]") && /"eastbroker" is not in the broker-team registry/.test(blocker)));
   assert.equal(plan.parentRoundRegistration, null);
 });
+
+// ---- #2556: a cross-broker child's payload names the origin broker's parent round
+
+test("#2556 a cross-broker handoff payload carries the handoff parent round id, not the plan's local round", () => {
+  const plan = buildA2ADispatchPlan(RECEIPT_SPEC);
+
+  assert.equal(plan.taskPayload?.parentRoundId, "brokeralpha-parent-round");
+  assert.equal(plan.taskPayload?.parentRoundId, plan.taskPayload?.crossBrokerHandoff?.parentRoundId);
+  assert.equal(plan.taskPayload?.parentRoundId, plan.parentRoundRegistration?.mint.body.parentRoundId, "the round the pre-steps register");
+  // The plan's own round stays visible as planning metadata; the manifest keeps the plan's run.
+  assert.equal(plan.metadata.parentRoundId, "brokerbeta-child-round");
+  assert.equal(plan.roundManifest?.runId, BASE_SPEC.runId);
+  assert.ok(plan.dispatchActions.some((action) => action.startsWith("[metadata] handoff parent round: task payload parentRoundId=brokeralpha-parent-round")));
+  // Slot numbers are unchanged, and so is the child task id (its pre-image uses the local round).
+  assert.equal(plan.taskPayload?.parentRoundTotal, 8);
+  assert.equal(plan.taskPayload?.parentRoundOrder, 2);
+  const { crossBrokerHandoff: _handoff, ...localSpec } = RECEIPT_SPEC;
+  assert.equal(plan.deterministicTaskId.taskId, buildA2ADispatchPlan(localSpec).deterministicTaskId.taskId);
+});
+
+test("#2556 a plan without a cross-broker handoff keeps its local round id in the payload", () => {
+  const { crossBrokerHandoff: _handoff, ...localSpec } = RECEIPT_SPEC;
+  const plan = buildA2ADispatchPlan(localSpec);
+
+  assert.equal(plan.taskPayload?.parentRoundId, "brokerbeta-child-round");
+  assert.ok(!plan.dispatchActions.some((action) => action.startsWith("[metadata] handoff parent round")));
+});
