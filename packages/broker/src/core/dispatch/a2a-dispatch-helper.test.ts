@@ -654,6 +654,8 @@ test("#2556 with the deployment's broker-team registry a Team2 handoff reaches t
   assertReceiptBlocked(unproven, /registry entry for parent round northbroker-parent-round/);
   assert.equal(unproven.parentRoundRegistration?.mintingBrokerId, "northbroker");
   assert.equal(unproven.parentRoundRegistration?.mint.body.handoffBrokerId, "southbroker");
+  // The minting broker is team1's; its child goes to team2's broker, so the round is cross-team.
+  assert.equal(unproven.parentRoundRegistration?.mint.body.teamScope, "team1+team2");
 
   const proven = buildA2ADispatchPlan(DEPLOYED_HANDOFF_SPEC, {
     ...EXECUTE,
@@ -696,13 +698,21 @@ test("#2556 the Team2 gate still blocks a round aimed at another broker", () => 
   assert.match(team2GateBlockers(noTeam2Broker)[0]!, /no broker is registered for team2/);
 });
 
-test("#2556 the broker-team registry leaves dry-run plans and other teams alone", () => {
+test("#2556 in a dry-run plan the broker-team registry changes only the mint team scope", () => {
   const dryRun = buildA2ADispatchPlan(DEPLOYED_HANDOFF_SPEC, { brokerTeams: DEPLOYED_BROKER_TEAMS });
   const withoutRegistry = buildA2ADispatchPlan(DEPLOYED_HANDOFF_SPEC);
 
   assert.equal(dryRun.decision.value, "go");
-  assert.deepEqual(dryRun.taskPayload, withoutRegistry.taskPayload);
+  assert.deepEqual({ ...dryRun.taskPayload, teamScope: "team2" }, withoutRegistry.taskPayload);
+  assert.equal(dryRun.taskPayload?.teamScope, "team1+team2");
   assert.equal(dryRun.deterministicTaskId.taskId, withoutRegistry.deterministicTaskId.taskId);
+
+  // A round that stays on its own team's broker is untouched.
+  const local = { ...BASE_SPEC, brokerOfRecordId: "southbroker", originBrokerId: "southbroker" };
+  assert.deepEqual(
+    buildA2ADispatchPlan(local, { brokerTeams: DEPLOYED_BROKER_TEAMS }).taskPayload,
+    buildA2ADispatchPlan(local).taskPayload,
+  );
 });
 
 const DEPLOYED_CLI_ARGS = [
@@ -753,4 +763,41 @@ test("#2556 helper CLI: --broker-teams (or the env var) feeds the Team2 gate", (
   const malformed = runDeployedCli(["--broker-teams", "northbroker=team3"]);
   assert.equal(malformed.status, 2);
   assert.match(malformed.stderr, /broker teams error: .*must be <brokerId>=team1\|team2/);
+});
+
+test("#2556 with a registry the mint asks for the scope the minting broker can route", () => {
+  const registry = { brokerTeams: DEPLOYED_BROKER_TEAMS };
+  const scopeOf = (spec: Parameters<typeof buildA2ADispatchPlan>[0], config = registry) =>
+    buildA2ADispatchPlan(spec, config).parentRoundRegistration?.mint.body.teamScope;
+
+  // team1's broker hands a team2 child to team2's broker, and the reverse: cross-team.
+  assert.equal(scopeOf(DEPLOYED_HANDOFF_SPEC), "team1+team2");
+  const reverse = {
+    ...DEPLOYED_HANDOFF_SPEC,
+    teamId: "team1" as const,
+    brokerOfRecordId: "northbroker",
+    originBrokerId: "southbroker",
+    crossBrokerHandoff: { ...DEPLOYED_HANDOFF_SPEC.crossBrokerHandoff, originBrokerId: "southbroker", handoffBrokerId: "northbroker" },
+  };
+  assert.equal(scopeOf(reverse), "team1+team2");
+  assert.equal(buildA2ADispatchPlan(reverse, registry).taskPayload?.teamScope, "team1+team2");
+  // `common` still sends no scope; without a registry the round's team is sent as before.
+  assert.equal(scopeOf({ ...DEPLOYED_HANDOFF_SPEC, teamId: "common" }), undefined);
+  assert.equal(scopeOf(DEPLOYED_HANDOFF_SPEC, {} as typeof registry), "team2");
+  // The scope is planning input only: the child task id does not move.
+  assert.equal(
+    buildA2ADispatchPlan(DEPLOYED_HANDOFF_SPEC, registry).deterministicTaskId.taskId,
+    buildA2ADispatchPlan(DEPLOYED_HANDOFF_SPEC).deterministicTaskId.taskId,
+  );
+});
+
+test("#2556 a minting broker missing from the registry blocks the handoff plan", () => {
+  const plan = buildA2ADispatchPlan(
+    { ...DEPLOYED_HANDOFF_SPEC, originBrokerId: "eastbroker", crossBrokerHandoff: { ...DEPLOYED_HANDOFF_SPEC.crossBrokerHandoff, originBrokerId: "eastbroker" } },
+    { brokerTeams: DEPLOYED_BROKER_TEAMS },
+  );
+
+  assert.equal(plan.decision.value, "blocked");
+  assert.ok(plan.decision.blockers.some((blocker) => blocker.startsWith("[parent_round_registry]") && /"eastbroker" is not in the broker-team registry/.test(blocker)));
+  assert.equal(plan.parentRoundRegistration, null);
 });

@@ -338,16 +338,36 @@ function parentRoundMintingBroker(roundSpec: A2ADispatchSpec): string | undefine
   return roundSpec.crossBrokerHandoff?.originBrokerId?.trim() || roundSpec.originBrokerId?.trim() || undefined;
 }
 
+/**
+ * #2556: the team scope the minting broker is asked to register. A broker that
+ * runs with a broker-team registry routes the scope from the *initiating*
+ * broker: it refuses another team's `teamN-only` scope and accepts
+ * `team1+team2` for a round whose child goes to the other team's broker. So
+ * with a registry, a handoff to a different team is minted as `team1+team2`.
+ * Without one the helper keeps sending the round's team (and omits `common`).
+ */
+function mintTeamScope(
+  roundSpec: A2ADispatchSpec,
+  mintingBrokerId: string,
+  brokerTeams: readonly A2ADispatchBrokerTeam[] | undefined,
+): string | undefined {
+  if (roundSpec.teamId === "common") return undefined;
+  const mintingTeam = brokerTeams?.find((broker) => sameBrokerId(broker.brokerId, mintingBrokerId))?.teamId;
+  return mintingTeam && mintingTeam !== roundSpec.teamId ? "team1+team2" : roundSpec.teamId;
+}
+
 function buildParentRoundRegistrationPlan(
   roundSpec: A2ADispatchSpec,
   parentRound: A2AParentRoundDispatchMetadata,
   childTaskId: string,
+  brokerTeams?: readonly A2ADispatchBrokerTeam[],
 ): A2AParentRoundRegistrationPlan | null {
   const handoff = roundSpec.crossBrokerHandoff;
   const parentRoundId = handoff?.parentRoundId?.trim();
   const mintingBrokerId = parentRoundMintingBroker(roundSpec);
   if (!handoff || !parentRoundId || !mintingBrokerId) return null;
   const handoffBrokerId = handoff.handoffBrokerId?.trim();
+  const teamScope = mintTeamScope(roundSpec, mintingBrokerId, brokerTeams);
   const anchorPath = `/a2a/parent-rounds/${encodeURIComponent(parentRoundId)}/anchors`;
   const anchors = [handoff.originTaskId?.trim(), childTaskId]
     .filter((anchor): anchor is string => Boolean(anchor))
@@ -361,7 +381,7 @@ function buildParentRoundRegistrationPlan(
         parentRoundId,
         initiatingBrokerId: mintingBrokerId,
         // `common` is the helper default, not a team scope (spec item 2).
-        ...(roundSpec.teamId !== "common" ? { teamScope: roundSpec.teamId } : {}),
+        ...(teamScope ? { teamScope } : {}),
         ...(handoffBrokerId ? { handoffBrokerId } : {}),
         parentRoundTotal: parentRound.parentRoundTotal,
       },
@@ -589,8 +609,16 @@ export function buildA2ADispatchPlan(roundSpec: A2ADispatchSpec, config?: Partia
   for (const issue of crossBrokerHandoffIssues(roundSpec, parentRound.metadata?.parentRoundId)) {
     blockers.push(`[cross_broker_handoff_parent] ${issue}`);
   }
-  if (roundSpec.crossBrokerHandoff && !parentRoundMintingBroker(roundSpec)) {
+  const mintingBrokerForHandoff = roundSpec.crossBrokerHandoff ? parentRoundMintingBroker(roundSpec) : undefined;
+  if (roundSpec.crossBrokerHandoff && !mintingBrokerForHandoff) {
     blockers.push("[parent_round_registry] the minting (origin) broker id is required; provide --handoff-origin-broker-id or --origin-broker-id");
+  }
+  if (
+    mintingBrokerForHandoff && mergedConfig.brokerTeams
+    && !mergedConfig.brokerTeams.some((broker) => sameBrokerId(broker.brokerId, mintingBrokerForHandoff))
+  ) {
+    // #2556: the mint route would answer 400 unknown_initiating_broker.
+    blockers.push(`[parent_round_registry] the minting broker "${sanitizeText(mintingBrokerForHandoff)}" is not in the broker-team registry (--broker-teams)`);
   }
   if (!mergedConfig.dryRun && mergedConfig.execute) {
     warnings.push("[approval_boundary_respected] Execute mode active; write operations are permitted");
@@ -630,7 +658,7 @@ export function buildA2ADispatchPlan(roundSpec: A2ADispatchSpec, config?: Partia
   }
 
   const parentRoundRegistration = blockers.length === 0 && parentRound.metadata
-    ? buildParentRoundRegistrationPlan(roundSpec, parentRound.metadata, deterministicTaskId.taskId)
+    ? buildParentRoundRegistrationPlan(roundSpec, parentRound.metadata, deterministicTaskId.taskId, mergedConfig.brokerTeams)
     : null;
   if (parentRoundRegistration) {
     dispatchActions.push(
