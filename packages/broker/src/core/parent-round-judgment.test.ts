@@ -1,6 +1,7 @@
 // #2339 PR-1c: cross-broker projections for a registered parent round are
-// judged against the registry (parent broker, handoff broker, anchors); rounds
-// that were never registered keep the legacy task-id fallback.
+// judged against the registry (parent broker, handoff broker, anchors). Since
+// #2556 a round that was never registered is missing_parent — the legacy
+// "a task with this id exists" fallback is gone.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -77,7 +78,7 @@ test("PR-1c an anchored child is accepted via the registry and counted as parent
   assert.ok(broker.getTerminalTaskEventOutbox().size > 0, "the parent renders the aggregate");
   const diagnostics = broker.getCrossBrokerTerminalBriefDiagnostics();
   assert.equal(diagnostics.parentResolvedViaRegistry, 1);
-  assert.equal(diagnostics.parentResolvedViaLegacyTask, 0);
+  assert.equal(diagnostics.missingParent, 0);
 });
 
 test("PR-1c the origin task anchor admits a child whose task id was not pre-registered", () => {
@@ -137,7 +138,7 @@ test("PR-1c foreign-handoff entries never make this broker the parent", () => {
   assert.equal(rejectCode(broker.ingestCrossBrokerTerminalBriefProjection(request())), "missing_parent");
 });
 
-test("PR-1c unregistered rounds keep the legacy task-id fallback, and a self-referencing child is still missing_parent", () => {
+test("#2556 an unregistered round is missing_parent even when a task with that id exists (legacy fallback removed)", () => {
   const broker = parentBroker();
   broker.registerWorker({
     nodeId: "worker-a",
@@ -150,19 +151,30 @@ test("PR-1c unregistered rounds keep the legacy task-id fallback, and a self-ref
     requester: { id: "hub-a", kind: "node", role: "hub" },
     target: { id: "worker-a", kind: "node", role: "analyst" },
     assignedWorkerId: "worker-a",
-    message: "legacy parent round",
+    message: "a task whose id is used as a parent round id",
     payload: { parentRoundTotal: 2 },
   });
 
   const legacy = broker.ingestCrossBrokerTerminalBriefProjection(request({ parentRoundId: "legacy-round", childTaskId: "anything" }));
-  assert.equal(legacy.accepted, true, "no anchors are required for an unregistered round");
-  assert.equal(broker.getCrossBrokerTerminalBriefDiagnostics().parentResolvedViaLegacyTask, 1);
+  assert.equal(rejectCode(legacy), "missing_parent", "a task id alone no longer makes this broker the parent");
+  assert.match(legacy.ack.reason, /is not registered on this broker; mint it in the parent round registry/);
+  assert.equal(broker.getTerminalTaskEventOutbox().subscribe().filter((event) => event.id.includes("cross-broker")).length, 0, "nothing is projected");
 
-  // #2331 (f): the child's own round id never resolves on the parent.
+  // #2331 (f): the child's own round id never resolves on the parent either.
   assert.equal(
     rejectCode(broker.ingestCrossBrokerTerminalBriefProjection(request({ parentRoundId: "legacy-round-t2" }))),
     "missing_parent",
   );
+  const diagnostics = broker.getCrossBrokerTerminalBriefDiagnostics();
+  assert.equal(diagnostics.missingParent, 2);
+  assert.equal(diagnostics.parentResolvedViaRegistry, 0);
+  assert.ok(!("parentResolvedViaLegacyTask" in diagnostics), "the legacy counter is gone with the path it counted");
+
+  // Registering the round is what makes the same projection acceptable.
+  broker.mintParentRound(mint({ parentRoundId: "legacy-round" }));
+  broker.addParentRoundAnchor("legacy-round", "anything");
+  assert.equal(broker.ingestCrossBrokerTerminalBriefProjection(request({ parentRoundId: "legacy-round", childTaskId: "anything" })).accepted, true);
+  assert.equal(broker.getCrossBrokerTerminalBriefDiagnostics().parentResolvedViaRegistry, 1);
 });
 
 test("PR-1c a task payload cannot mint a registry entry", () => {

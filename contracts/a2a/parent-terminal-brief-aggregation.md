@@ -99,10 +99,14 @@ never against payload claims:
   payload-only packet cannot claim a registered round or pre-empt the real
   child with a future `completedAt`.
 
-Rounds that were never registered keep the legacy task-id check
-(`missing_parent` when no task with that id exists), and the broker counts
-which path accepted each projection (`parentResolvedViaRegistry` /
-`parentResolvedViaLegacyTask` in `/health` `crossBrokerTerminalBriefs`). A
+A round that is not registered on the receiving broker is rejected as
+`missing_parent`. The earlier fallback — accepting a round because a task with
+that id exists on the broker — was removed (#2556, 2026-11): registration is
+the only way a broker becomes a round's parent. `/health`
+`crossBrokerTerminalBriefs` counts accepted projections as
+`parentResolvedViaRegistry` and unregistered-round rejections as
+`missingParent`; the `parentResolvedViaLegacyTask` counter is gone with the
+path it counted. A
 `foreign-handoff` entry (registered by a destination broker's handoff
 receiver) names a relay destination and never makes that broker the parent.
 A task payload's `parentRoundId` / `crossBrokerHandoff` never creates a

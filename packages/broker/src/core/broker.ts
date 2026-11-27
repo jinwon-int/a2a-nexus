@@ -298,7 +298,6 @@ import {
 } from "./store-schemas.js";
 import {
   resolveTerminalBriefParentOriginRoute,
-  normalizeTerminalBriefTeamScope,
   type TerminalBriefBrokerTeamRegistration,
   type TerminalBriefParentOriginRouteResult,
 } from "./completion/terminal-brief-routing.js";
@@ -926,11 +925,10 @@ export class InMemoryA2ABroker {
     });
     this.crossBrokerTerminalBriefs = new CrossBrokerTerminalBriefProjectionStore([], {
       brokerId: this.brokerId,
-      // #2339 PR-1c: registered local-origin rounds are judged against the
-      // registry. foreign-handoff entries name a relay destination and never
-      // make this broker the parent. Unregistered rounds use the legacy
-      // task-id fallback below (spec: removed after 2 weeks of
-      // parent_resolved_via=legacy_task at 0, separate owner decision).
+      // #2339 PR-1c / #2556: only a registered local-origin round makes this
+      // broker the parent. foreign-handoff entries name a relay destination
+      // and never do. An unregistered round is rejected as missing_parent —
+      // the legacy "a task with this id exists" fallback was removed.
       resolveRegisteredParentRound: (parentRoundId) => {
         const entry = this.parentRounds.get(parentRoundId);
         if (!entry || entry.kind !== "local-origin") return undefined;
@@ -938,33 +936,6 @@ export class InMemoryA2ABroker {
           parentBrokerId: entry.parentBrokerId,
           ...(entry.handoffBrokerId ? { handoffBrokerId: entry.handoffBrokerId } : {}),
           anchors: entry.anchors,
-        };
-      },
-      hasParentRound: (parentRoundId) => this.tasks.has(parentRoundId),
-      parentBrokerOfRecord: (parentRoundId) => this.tasks.get(parentRoundId)?.brokerOfRecord,
-      getParentRoundRouting: (parentRoundId) => {
-        const task = this.tasks.get(parentRoundId);
-        if (!task) return undefined;
-        const payload = task.payload ?? {};
-        const teamScope = normalizeTerminalBriefTeamScope(
-          (payload["teamScope"] as string)
-          ?? (payload["requestedTeamScope"] as string)
-          ?? "",
-        );
-        const initiatingBrokerId = (payload["initiatingBrokerId"] as string)?.trim();
-        if (!teamScope || !initiatingBrokerId) return undefined;
-        const result = resolveTerminalBriefParentOriginRoute({
-          initiatingBrokerId,
-          requestedTeamScope: teamScope,
-          ...(this.terminalBriefBrokerTeams ? { brokers: this.terminalBriefBrokerTeams } : {}),
-        });
-        if (!result.ok) return undefined;
-        return {
-          initiatingBrokerId: result.route.initiatingBrokerId,
-          parentBrokerId: result.route.parentBrokerId,
-          operatorFacingTerminalBriefSender: result.route.operatorFacingTerminalBriefSender,
-          handoffBrokerId: result.route.handoff?.handoffBrokerId,
-          projectionDestinationBrokerId: result.route.handoff?.projectionDestinationBrokerId,
         };
       },
     });

@@ -54,7 +54,17 @@ function registerWorker(broker: InMemoryA2ABroker, nodeId = "worker-child"): voi
   });
 }
 
-function createParentRound(broker: InMemoryA2ABroker, id = "round-parent"): void {
+/** Anchor every test round registers; `projection()` names it as the origin task (#2556). */
+const ORIGIN_ANCHOR = "parent-origin-task";
+
+/**
+ * A parent round on `broker`: the parent task plus its `local-origin` registry
+ * entry. Since #2556 the registry entry is what makes the broker the parent;
+ * the task alone no longer does.
+ */
+function createParentRound(broker: InMemoryA2ABroker, id = "round-parent", handoffBrokerId?: string): void {
+  // Test-only peek at the broker's own id, so a round is always minted on the broker it is created for.
+  const brokerId = (broker as unknown as { brokerId?: string }).brokerId ?? "parent-broker";
   registerWorker(broker);
   broker.createTask({
     id,
@@ -64,6 +74,16 @@ function createParentRound(broker: InMemoryA2ABroker, id = "round-parent"): void
     assignedWorkerId: "worker-child",
     message: `parent ${id}`,
   });
+  broker.mintParentRound({
+    parentRoundId: id,
+    originBrokerId: brokerId,
+    parentBrokerId: brokerId,
+    initiatingBrokerId: brokerId,
+    ...(handoffBrokerId ? { handoffBrokerId } : {}),
+    kind: "local-origin",
+    mintedBy: { requesterId: "hub", role: "hub" },
+    anchors: [ORIGIN_ANCHOR],
+  });
 }
 
 function projection(overrides: Partial<Parameters<InMemoryA2ABroker["ingestCrossBrokerTerminalBriefProjection"]>[0]> = {}) {
@@ -72,6 +92,7 @@ function projection(overrides: Partial<Parameters<InMemoryA2ABroker["ingestCross
     originBrokerId: "child-broker-a",
     brokerOfRecordId: "parent-broker",
     childTaskId: "child-task-1",
+    originTaskId: ORIGIN_ANCHOR,
     parentRoundTotal: "5",
     parentRoundOrder: "1",
     status: "succeeded" as const,
@@ -1055,6 +1076,22 @@ function createParentRoundWithRouting(
       initiatingBrokerId,
     },
   });
+  // #2556: the registry entry is what makes this broker the parent. A
+  // cross-team round names the other team's broker as its handoff broker,
+  // which is what the projection's handoffBrokerId is checked against.
+  const brokerId = (broker as unknown as { brokerId?: string }).brokerId ?? initiatingBrokerId;
+  const handoffBrokerId = teamScope === "team1+team2" ? (brokerId === "brokeralpha" ? "brokerbeta" : "brokeralpha") : undefined;
+  broker.mintParentRound({
+    parentRoundId: id,
+    originBrokerId: brokerId,
+    parentBrokerId: brokerId,
+    initiatingBrokerId,
+    teamScope,
+    ...(handoffBrokerId ? { handoffBrokerId } : {}),
+    kind: "local-origin",
+    mintedBy: { requesterId: "hub", role: "hub" },
+    anchors: [ORIGIN_ANCHOR],
+  });
 }
 
 function routingProjection(
@@ -1065,6 +1102,7 @@ function routingProjection(
     originBrokerId: "brokerbeta",
     brokerOfRecordId: "brokeralpha",
     childTaskId: "child-task-routing-01",
+    originTaskId: ORIGIN_ANCHOR,
     childWorkerId: "workerepsilon",
     parentRoundTotal: "2",
     parentRoundOrder: "1",
@@ -1717,7 +1755,7 @@ test("#2331 projection clock-skew bound tolerates small skew and is configurable
   const now = new Date("2026-10-06T00:00:00.000Z");
   const store = new CrossBrokerTerminalBriefProjectionStore([], {
     brokerId: "parent-broker",
-    hasParentRound: () => true,
+    resolveRegisteredParentRound: () => ({ parentBrokerId: "parent-broker", anchors: ["child-task-1", "child-task-2", "child-task-3", "child-task-9"] }),
     now: () => now,
   });
   const base = {
@@ -1742,7 +1780,7 @@ test("#2331 projection clock-skew bound tolerates small skew and is configurable
 
   const strict = new CrossBrokerTerminalBriefProjectionStore([], {
     brokerId: "parent-broker",
-    hasParentRound: () => true,
+    resolveRegisteredParentRound: () => ({ parentBrokerId: "parent-broker", anchors: ["child-task-1", "child-task-9"] }),
     now: () => now,
     maxFutureSkewMs: 0,
   });
@@ -1780,9 +1818,9 @@ test("#2339 PR-6 explicit handoffBrokerId is stored, keyed and projected as the 
   assert.deepEqual(broker.getCrossBrokerTerminalBriefDiagnostics(), {
     legacyOriginAsHandoff: 0,
     explicitHandoffBroker: 1,
-    // #2339 PR-1c: an unregistered round still resolves through the legacy task-id fallback.
-    parentResolvedViaRegistry: 0,
-    parentResolvedViaLegacyTask: 1,
+    // #2556: every accepted projection resolves through the registry entry.
+    parentResolvedViaRegistry: 1,
+    missingParent: 0,
     missingAnchor: 0,
     slotSuperseded: 0,
   });
@@ -1802,8 +1840,8 @@ test("#2339 PR-6 a legacy packet without handoffBrokerId reads originBrokerId as
   assert.deepEqual(broker.getCrossBrokerTerminalBriefDiagnostics(), {
     legacyOriginAsHandoff: 1,
     explicitHandoffBroker: 0,
-    parentResolvedViaRegistry: 0,
-    parentResolvedViaLegacyTask: 1,
+    parentResolvedViaRegistry: 1,
+    missingParent: 0,
     missingAnchor: 0,
     slotSuperseded: 0,
   });
@@ -1832,17 +1870,9 @@ test("#2339 PR-6 wrong_origin is judged on the producer: a handoff broker equal 
 });
 
 test("#2339 PR-6 routing_mismatch compares the parent round's handoff broker with handoffBrokerId, not originBrokerId", () => {
-  const routing = {
-    initiatingBrokerId: "parent-broker",
-    parentBrokerId: "parent-broker",
-    operatorFacingTerminalBriefSender: "parent-broker",
-    handoffBrokerId: "child-broker-a",
-    projectionDestinationBrokerId: "parent-broker",
-  };
   const store = new CrossBrokerTerminalBriefProjectionStore([], {
     brokerId: "parent-broker",
-    hasParentRound: () => true,
-    getParentRoundRouting: () => routing,
+    resolveRegisteredParentRound: () => ({ parentBrokerId: "parent-broker", handoffBrokerId: "child-broker-a", anchors: [ORIGIN_ANCHOR] }),
   });
 
   const mismatch = store.ingest(projection({ originBrokerId: "parent-broker", handoffBrokerId: "child-broker-b" }));
@@ -1856,7 +1886,10 @@ test("#2339 PR-6 routing_mismatch compares the parent round's handoff broker wit
 });
 
 test("#2339 PR-6 a snapshot written before the split restores with a derived handoffBrokerId and still dedupes the same packet", () => {
-  const options = { brokerId: "parent-broker", hasParentRound: () => true };
+  const options = {
+    brokerId: "parent-broker",
+    resolveRegisteredParentRound: () => ({ parentBrokerId: "parent-broker", anchors: [ORIGIN_ANCHOR] }),
+  };
   const before = new CrossBrokerTerminalBriefProjectionStore([], options);
   const stored = before.ingest(projection());
   assert.equal(stored.accepted, true);

@@ -49,6 +49,7 @@ function projection(order: number, overrides: Record<string, unknown> = {}): Rec
     handoffBrokerId: CHILD,
     brokerOfRecordId: PARENT,
     childTaskId: `child-${order}`,
+    originTaskId: `${ROUND}-origin`,
     status: "succeeded",
     completedAt: "2026-10-01T05:00:00.000Z",
     parentRoundTotal: 9,
@@ -133,6 +134,18 @@ async function parentServer(options: { anchors?: Record<string, string>; mode?: 
     assignedWorkerId: "worker-a",
     message: "parent round",
     payload: { parentRoundTotal: 9 },
+  });
+  // #2556: the registry entry makes this broker the round's parent.
+  broker.mintParentRound({
+    parentRoundId: ROUND,
+    originBrokerId: PARENT,
+    parentBrokerId: PARENT,
+    initiatingBrokerId: PARENT,
+    // No handoff broker is pinned: the record-mode test also sends an unpinned broker's projection.
+    parentRoundTotal: 9,
+    kind: "local-origin",
+    mintedBy: { requesterId: "hub-a", role: "hub" },
+    anchors: [`${ROUND}-origin`],
   });
   const hub = jsonHeaders({ "x-a2a-requester-id": "brokerbeta-terminal-brief-receiver", "x-a2a-requester-role": "hub" });
   return {

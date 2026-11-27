@@ -347,6 +347,18 @@ test("PR-5 end to end: an accepted relay creates no fallback row", async () => {
     message: "parent round",
     payload: { parentRoundTotal: 3 },
   });
+  // #2556: the parent accepts a relay only for a round it registered.
+  parent.mintParentRound({
+    parentRoundId: ROUND,
+    originBrokerId: PARENT,
+    parentBrokerId: PARENT,
+    initiatingBrokerId: PARENT,
+    handoffBrokerId: CHILD,
+    parentRoundTotal: 3,
+    kind: "local-origin",
+    mintedBy: { requesterId: "hub-a", role: "hub" },
+    anchors: ["brokeralpha-parent-task-1"],
+  });
   completeParentOwnedChild(child);
   const { fetchImpl, calls } = brokerPairFetch(child, parent);
 
