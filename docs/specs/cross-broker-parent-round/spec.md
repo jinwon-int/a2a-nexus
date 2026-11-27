@@ -168,6 +168,29 @@ mintedAt, mintedBy: { requesterId, role }, anchors: Set<originTaskId>
      performed by this helper)`)로 출력하고, 실행은 운영자/실행 주체가 한다. mint 대상
      broker(`--handoff-origin-broker-id` 또는 `--origin-broker-id`)가 없으면
      `[parent_round_registry]` blocker. `teamScope`는 helper 기본값 `common`이면 넣지 않는다.
+   - **등록 영수증 (#2556, 2026-11-27 오너 결정).** helper는 선행 단계를 출력만 하므로,
+     `--execute` 계획은 그 단계가 실제로 실행됐다는 증거를 받는다.
+     `--parent-round-registration-receipt <entry.json>`에 mint broker의
+     `GET /a2a/parent-rounds/:id` 응답 본문(`{ entry }` 또는 entry 자체)을 넘긴다. helper는
+     `parentRoundId`, `kind == "local-origin"`, `parentBrokerId == mint broker`, 양쪽에 다
+     있을 때의 `handoffBrokerId`, `mintedAt`, 그리고 계획의 anchor(origin task id + 이 계획의
+     자식 task id)가 **모두** 등록돼 있는지를 대조한다. `teamScope` · `initiatingBrokerId` ·
+     `parentRoundTotal`은 mint 라우트가 정규화하므로 대조하지 않는다(차이가 있으면 mint
+     단계에서 이미 409다).
+     - cross-broker handoff의 `--execute` 계획은 영수증이 없거나 맞지 않으면
+       `[parent_round_registry_receipt]` blocker로 막히고 `taskPayload`는 null이다. 막힌
+       계획에도 `parentRoundRegistration`(실행할 선행 단계)은 그대로 실린다.
+     - dry-run 계획은 영수증 없이도 지금처럼 나오고 `[registry-receipt] not supplied`
+       줄만 붙는다. 넘긴 영수증이 틀리면 dry-run에서도 막는다.
+     - 결과는 계획의 `parentRoundRegistrationReceipt`(`verified` · `missing` · `invalid`,
+       anchor 개수)에 남는다. 영수증 원문은 계획에 싣지 않는다.
+     - **자식 task id는 dry-run과 `--execute`에서 다르다**(id 원문에 모드가 들어간다).
+       anchor는 `--execute` 계획이 출력한 값으로 등록해야 한다. 순서: `--execute`(막힘,
+       선행 단계 출력) → mint·anchor 실행 → `GET`으로 entry 저장 → 영수증을 넘겨 다시
+       `--execute`.
+     - 영수증은 절차를 강제할 뿐 권한이 아니다. 판정은 계속 부모 broker가 자기 레지스트리
+       항목과 anchor로 한다. helper를 거치지 않고 자식 broker에 `POST /tasks`를 직접 보내는
+       경로는 이 검사가 닿지 않는다(broker 쪽 검사는 별도 안건).
 2. **foreign-handoff**: 인증된 handoff envelope(webhook 서명 + 프로비저닝 시
    `handoff:create` peer scope)가 `parentRoundId`를 가지면, destination broker의
    handoff receiver가 자식 태스크를 만든 뒤 등록한다. 이때 origin·parent·initiating은

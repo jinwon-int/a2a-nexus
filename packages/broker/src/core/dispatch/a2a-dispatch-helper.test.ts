@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
@@ -182,22 +184,26 @@ test("Team2 execute-mode requires brokerbeta broker-of-record handoff evidence",
 });
 
 test("Team2 execute-mode allows explicit brokerbeta cross-broker handoff", () => {
-  const plan = buildA2ADispatchPlan(
-    {
-      ...BASE_SPEC,
-      brokerOfRecordId: "brokerbeta",
+  const spec = {
+    ...BASE_SPEC,
+    brokerOfRecordId: "brokerbeta",
+    originBrokerId: "brokeralpha",
+    operatorFacingOwner: "parent" as const,
+    crossBrokerHandoff: {
+      parentRoundId: "brokeralpha-parent-round-1",
+      handoffBrokerId: "brokerbeta",
       originBrokerId: "brokeralpha",
-      operatorFacingOwner: "parent",
-      crossBrokerHandoff: {
-        parentRoundId: "brokeralpha-parent-round-1",
-        handoffBrokerId: "brokerbeta",
-        originBrokerId: "brokeralpha",
-        originTaskId: "brokeralpha-parent-task-1",
-        childWorkerId: "workerepsilon",
-      },
+      originTaskId: "brokeralpha-parent-task-1",
+      childWorkerId: "workerepsilon",
     },
-    { dryRun: false, execute: true },
-  );
+  };
+  // #2556: execute mode needs the minting broker's registry entry for the round.
+  const unproven = buildA2ADispatchPlan(spec, { dryRun: false, execute: true });
+  const plan = buildA2ADispatchPlan(spec, {
+    dryRun: false,
+    execute: true,
+    parentRoundRegistrationReceipt: registryEntryFor(unproven),
+  });
 
   assert.equal(plan.decision.value, "warn_go");
   assert.equal(plan.taskPayload?.brokerOfRecordId, "brokerbeta");
@@ -451,4 +457,157 @@ test("#2339 PR-1c the child payload carries the registered round's teamScope and
   assert.equal(common.taskPayload?.initiatingBrokerId, "brokeralpha");
   assert.equal(common.taskPayload?.teamScope, undefined);
   assert.equal(buildA2ADispatchPlan({ ...BASE_SPEC }).taskPayload?.initiatingBrokerId, undefined, "local plans are unchanged");
+});
+
+// ---- #2556: execute mode needs proof that the [registry] pre-steps ran
+
+/** The registry entry the minting broker returns once a plan's pre-steps ran. */
+function registryEntryFor(plan: ReturnType<typeof buildA2ADispatchPlan>, overrides: Record<string, unknown> = {}) {
+  const registration = plan.parentRoundRegistration;
+  assert.ok(registration, "the plan carries the registration pre-steps");
+  return {
+    parentRoundId: registration.mint.body.parentRoundId,
+    originBrokerId: registration.mintingBrokerId,
+    parentBrokerId: registration.mintingBrokerId,
+    initiatingBrokerId: registration.mint.body.initiatingBrokerId,
+    ...(registration.mint.body.handoffBrokerId ? { handoffBrokerId: registration.mint.body.handoffBrokerId } : {}),
+    parentRoundTotal: registration.mint.body.parentRoundTotal,
+    kind: "local-origin",
+    mintedAt: "2026-11-27T03:00:00.000Z",
+    mintedBy: { requesterId: "operator-1", role: "operator" },
+    anchors: registration.anchors.map((anchor) => anchor.body.anchor).sort(),
+    ...overrides,
+  };
+}
+
+const RECEIPT_SPEC = { ...HANDOFF_SPEC, parentRoundTotal: 8, crossBrokerHandoff: COMPLETE_HANDOFF };
+const EXECUTE = { dryRun: false, execute: true };
+
+function assertReceiptBlocked(plan: ReturnType<typeof buildA2ADispatchPlan>, pattern: RegExp): void {
+  assert.equal(plan.decision.value, "blocked");
+  assert.equal(plan.taskPayload, null);
+  assert.ok(
+    plan.decision.blockers.some((blocker) => blocker.startsWith("[parent_round_registry_receipt]") && pattern.test(blocker)),
+    `expected a parent_round_registry_receipt blocker matching ${pattern}, got ${JSON.stringify(plan.decision.blockers)}`,
+  );
+  assert.ok(plan.dispatchActions.some((action) => action.includes("createTask: blocked")));
+}
+
+test("#2556 a dry-run handoff plan still goes without a receipt and says one is needed before --execute", () => {
+  const plan = buildA2ADispatchPlan(RECEIPT_SPEC);
+
+  assert.equal(plan.decision.value, "go");
+  assert.deepEqual(plan.parentRoundRegistrationReceipt, { status: "missing", issues: [], anchorsRegistered: 0, anchorsRequired: 2 });
+  assert.ok(plan.dispatchActions.includes("[registry-receipt] not supplied: required before --execute"));
+  assert.ok(plan.taskPayload, "dry-run planning is unchanged");
+});
+
+test("#2556 execute mode blocks a cross-broker handoff whose parent round registration is not proven", () => {
+  const plan = buildA2ADispatchPlan(RECEIPT_SPEC, EXECUTE);
+
+  assertReceiptBlocked(plan, /requires the minting broker's registry entry for parent round brokeralpha-parent-round/);
+  assert.equal(plan.parentRoundRegistrationReceipt?.status, "missing");
+  // The pre-steps to run stay in the blocked plan, with the execute-mode child task id.
+  assert.equal(plan.parentRoundRegistration?.anchors[1]?.body.anchor, plan.deterministicTaskId.taskId);
+  assert.ok(plan.dispatchActions.some((action) => action.startsWith("[registry] pre-step (not performed by this helper)")));
+});
+
+test("#2556 execute mode goes once the minting broker's entry matches the plan", () => {
+  const unproven = buildA2ADispatchPlan(RECEIPT_SPEC, EXECUTE);
+  const entry = registryEntryFor(unproven);
+
+  for (const receipt of [{ entry }, entry]) {
+    const plan = buildA2ADispatchPlan(RECEIPT_SPEC, { ...EXECUTE, parentRoundRegistrationReceipt: receipt });
+
+    assert.equal(plan.decision.value, "warn_go");
+    assert.deepEqual(plan.decision.blockers, []);
+    assert.deepEqual(plan.parentRoundRegistrationReceipt, {
+      status: "verified",
+      issues: [],
+      mintedAt: "2026-11-27T03:00:00.000Z",
+      anchorsRegistered: 2,
+      anchorsRequired: 2,
+    });
+    assert.ok(plan.dispatchActions.some((action) => action.startsWith("[registry-receipt] verified: parentRoundId=brokeralpha-parent-round ")));
+    assert.equal(plan.taskPayload?.crossBrokerHandoff?.parentRoundId, "brokeralpha-parent-round");
+    assert.deepEqual(plan.config, EXECUTE, "the receipt is input evidence and is not echoed in the plan");
+    assert.equal(plan.deterministicTaskId.taskId, unproven.deterministicTaskId.taskId, "the receipt does not change the child task id");
+  }
+});
+
+test("#2556 broker ids compare case-insensitively and an entry without a handoff broker is accepted", () => {
+  const unproven = buildA2ADispatchPlan(RECEIPT_SPEC, EXECUTE);
+  const { handoffBrokerId: _omitted, ...withoutHandoff } = registryEntryFor(unproven, { parentBrokerId: "BrokerAlpha" });
+  const plan = buildA2ADispatchPlan(RECEIPT_SPEC, { ...EXECUTE, parentRoundRegistrationReceipt: { entry: withoutHandoff } });
+
+  assert.equal(plan.parentRoundRegistrationReceipt?.status, "verified");
+  assert.equal(plan.decision.value, "warn_go");
+});
+
+test("#2556 a receipt that does not match the plan blocks it", () => {
+  const unproven = buildA2ADispatchPlan(RECEIPT_SPEC, EXECUTE);
+  const cases: Array<[unknown, RegExp]> = [
+    ["minted", /not a parent-round registry entry/],
+    [{ status: "unknown_round" }, /not a parent-round registry entry/],
+    [registryEntryFor(unproven, { parentRoundId: "another-round" }), /is for parent round "another-round"/],
+    [registryEntryFor(unproven, { kind: "foreign-handoff" }), /"foreign-handoff", not local-origin/],
+    [registryEntryFor(unproven, { parentBrokerId: "brokerbeta" }), /registered parent broker is "brokerbeta"/],
+    [registryEntryFor(unproven, { handoffBrokerId: "brokergamma" }), /registered handoff broker is "brokergamma".*routing_mismatch/],
+    [registryEntryFor(unproven, { mintedAt: "" }), /no valid mintedAt/],
+    [registryEntryFor(unproven, { anchors: ["brokeralpha-parent-task-1"] }), new RegExp(`anchor "${unproven.deterministicTaskId.taskId}" is not registered`)],
+    [registryEntryFor(unproven, { anchors: [] }), /anchor "brokeralpha-parent-task-1" is not registered/],
+  ];
+  for (const [receipt, pattern] of cases) {
+    const plan = buildA2ADispatchPlan(RECEIPT_SPEC, { ...EXECUTE, parentRoundRegistrationReceipt: receipt });
+    assertReceiptBlocked(plan, pattern);
+    assert.equal(plan.parentRoundRegistrationReceipt?.status, "invalid");
+  }
+  // A receipt that is supplied and wrong is an error in dry-run too.
+  const dryRun = buildA2ADispatchPlan(RECEIPT_SPEC, { parentRoundRegistrationReceipt: registryEntryFor(unproven, { kind: "foreign-handoff" }) });
+  assert.equal(dryRun.decision.value, "blocked");
+});
+
+test("#2556 anchors registered from the dry-run plan do not prove the execute-mode child", () => {
+  const dryRun = buildA2ADispatchPlan(RECEIPT_SPEC);
+  const execute = buildA2ADispatchPlan(RECEIPT_SPEC, EXECUTE);
+  assert.notEqual(dryRun.deterministicTaskId.taskId, execute.deterministicTaskId.taskId, "the task id pre-image carries the mode");
+
+  const plan = buildA2ADispatchPlan(RECEIPT_SPEC, { ...EXECUTE, parentRoundRegistrationReceipt: registryEntryFor(dryRun) });
+
+  assertReceiptBlocked(plan, new RegExp(`anchor "${execute.deterministicTaskId.taskId}" is not registered`));
+  assert.equal(plan.parentRoundRegistrationReceipt?.anchorsRegistered, 1);
+});
+
+test("#2556 a plan without a cross-broker handoff has no receipt check", () => {
+  const plan = buildA2ADispatchPlan(BASE_SPEC, { ...EXECUTE, parentRoundRegistrationReceipt: { entry: {} } });
+
+  assert.equal(plan.parentRoundRegistrationReceipt, null);
+  assert.ok(!plan.decision.blockers.some((blocker) => blocker.startsWith("[parent_round_registry_receipt]")));
+});
+
+test("#2556 helper CLI: --execute needs --parent-round-registration-receipt for a cross-broker handoff", () => {
+  const handoffArgs = ["--handoff-parent-round-id", "brokeralpha-parent-round", "--handoff-origin-task-id", "brokeralpha-parent-task-1", "--execute"];
+  const blocked = runHelperCli(handoffArgs);
+  assert.equal(blocked.status, 1);
+  assertReceiptBlocked(blocked.plan, /--parent-round-registration-receipt/);
+
+  const dir = mkdtempSync(join(tmpdir(), "a2a-dispatch-receipt-"));
+  try {
+    const receiptPath = join(dir, "entry.json");
+    writeFileSync(receiptPath, JSON.stringify({ entry: registryEntryFor(blocked.plan) }));
+    const proven = runHelperCli([...handoffArgs, "--parent-round-registration-receipt", receiptPath]);
+    assert.equal(proven.status, 0);
+    assert.equal(proven.plan.parentRoundRegistrationReceipt?.status, "verified");
+    assert.equal(proven.plan.decision.value, "warn_go");
+
+    const unreadable = spawnSync(
+      process.execPath,
+      [HELPER_CLI, ...CLI_BASE_ARGS, ...handoffArgs, "--parent-round-registration-receipt", join(dir, "missing.json"), "--json"],
+      { encoding: "utf8" },
+    );
+    assert.equal(unreadable.status, 2);
+    assert.match(unreadable.stderr, /registration receipt error/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -46,6 +46,14 @@ export interface A2ADispatchConfig {
   dryRun: boolean;
   execute: boolean;
   now?: string;
+  /**
+   * #2556: the minting broker's own record of the handoff's parent round, read
+   * after the `[registry]` pre-steps ran — the body of
+   * `GET /a2a/parent-rounds/:id` (`{ entry }`, or the bare entry). An
+   * execute-mode cross-broker handoff plan is blocked without one that matches
+   * the plan. It is input evidence, so the returned plan does not echo it.
+   */
+  parentRoundRegistrationReceipt?: unknown;
 }
 
 export interface A2AParentRoundDispatchMetadata {
@@ -115,6 +123,24 @@ export interface A2AParentRoundRegistrationPlan {
   expect: string;
 }
 
+/**
+ * #2556: result of comparing the registration receipt with this plan's
+ * `[registry]` pre-steps. The receipt enforces the procedure — a dispatch whose
+ * parent round was never registered cannot reach execute mode. It is not an
+ * authority: the parent broker still judges every projection against its own
+ * registry entry and anchors.
+ */
+export interface A2AParentRoundRegistrationReceiptCheck {
+  status: "verified" | "missing" | "invalid";
+  /** Why the receipt does not prove the pre-steps ran; empty unless `invalid`. */
+  issues: string[];
+  /** `mintedAt` of the registry entry, when the receipt carries a valid one. */
+  mintedAt?: string;
+  /** Plan anchors found in the entry, out of the anchors the plan registers. */
+  anchorsRegistered: number;
+  anchorsRequired: number;
+}
+
 export interface A2ADispatchPlan {
   kind: "a2a-broker.a2a-dispatch-plan.v1";
   version: 1;
@@ -149,8 +175,14 @@ export interface A2ADispatchPlan {
   };
   roundManifest: RoundManifest | null;
   roundManifestProjection: RoundManifestProjection | null;
-  /** Present for an unblocked cross-broker handoff plan (#2339 PR-1b). */
+  /**
+   * Present for a cross-broker handoff plan that passed the earlier preflight
+   * checks (#2339 PR-1b). It stays present when only the registration receipt
+   * blocks the plan, so the pre-steps to run are still printed.
+   */
   parentRoundRegistration: A2AParentRoundRegistrationPlan | null;
+  /** Present whenever `parentRoundRegistration` is (#2556). */
+  parentRoundRegistrationReceipt: A2AParentRoundRegistrationReceiptCheck | null;
 }
 
 const DEFAULT_CONFIG: A2ADispatchConfig = {
@@ -314,6 +346,84 @@ function buildParentRoundRegistrationPlan(
     },
     anchors,
     expect: "mint 201 minted or 200 replayed, anchors 201 added or 200 present; a 409 conflict blocks the dispatch",
+  };
+}
+
+function isReceiptRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function receiptText(entry: Record<string, unknown>, key: string): string {
+  const value = entry[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function sameBrokerId(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/**
+ * #2556: does the minting broker's registry entry prove this plan's
+ * `[registry]` pre-steps ran? Only what the parent broker later judges is
+ * compared: the round id, that the round is `local-origin` on the minting
+ * broker, the handoff broker when both sides name one, and every anchor the
+ * plan registers. `teamScope`, `initiatingBrokerId` and `parentRoundTotal` are
+ * left out because the mint route normalizes them; a real difference there
+ * already surfaced as a 409 conflict on the mint pre-step.
+ */
+function checkParentRoundRegistrationReceipt(
+  registration: A2AParentRoundRegistrationPlan,
+  receipt: unknown,
+): A2AParentRoundRegistrationReceiptCheck {
+  const requiredAnchors = registration.anchors.map((anchor) => anchor.body.anchor);
+  const counts = { anchorsRegistered: 0, anchorsRequired: requiredAnchors.length };
+  if (receipt === undefined || receipt === null) {
+    return { status: "missing", issues: [], ...counts };
+  }
+  const wrapped = isReceiptRecord(receipt) && isReceiptRecord(receipt["entry"]) ? receipt["entry"] : receipt;
+  if (!isReceiptRecord(wrapped) || !receiptText(wrapped, "parentRoundId")) {
+    return {
+      status: "invalid",
+      issues: ["the receipt is not a parent-round registry entry; pass the body of GET /a2a/parent-rounds/:id from the minting broker"],
+      ...counts,
+    };
+  }
+  const entry = wrapped;
+  const issues: string[] = [];
+  const parentRoundId = registration.mint.body.parentRoundId;
+  if (receiptText(entry, "parentRoundId") !== parentRoundId) {
+    issues.push(`the receipt is for parent round "${sanitizeText(receiptText(entry, "parentRoundId"))}", not "${sanitizeText(parentRoundId)}"`);
+  }
+  if (receiptText(entry, "kind") !== "local-origin") {
+    issues.push(`the registered round is "${sanitizeText(receiptText(entry, "kind")) || "(no kind)"}", not local-origin; only the minting broker's own round receives projections`);
+  }
+  const parentBrokerId = receiptText(entry, "parentBrokerId");
+  if (!sameBrokerId(parentBrokerId, registration.mintingBrokerId)) {
+    issues.push(`the registered parent broker is "${sanitizeText(parentBrokerId) || "(absent)"}", not the minting broker "${sanitizeText(registration.mintingBrokerId)}"`);
+  }
+  const plannedHandoff = registration.mint.body.handoffBrokerId;
+  const registeredHandoff = receiptText(entry, "handoffBrokerId");
+  if (plannedHandoff && registeredHandoff && !sameBrokerId(plannedHandoff, registeredHandoff)) {
+    issues.push(`the registered handoff broker is "${sanitizeText(registeredHandoff)}", not "${sanitizeText(plannedHandoff)}"; the parent would reject the projection as routing_mismatch`);
+  }
+  const mintedAt = receiptText(entry, "mintedAt");
+  if (!mintedAt || !Number.isFinite(Date.parse(mintedAt))) {
+    issues.push("the receipt has no valid mintedAt; it does not look like a stored registry entry");
+  }
+  const registeredAnchors = new Set(
+    Array.isArray(entry["anchors"]) ? entry["anchors"].filter((anchor): anchor is string => typeof anchor === "string") : [],
+  );
+  const missingAnchors = requiredAnchors.filter((anchor) => !registeredAnchors.has(anchor));
+  for (const anchor of missingAnchors) {
+    issues.push(`anchor "${sanitizeText(anchor)}" is not registered on the parent round; run its [registry] pre-step`);
+  }
+  const anchorsRegistered = requiredAnchors.length - missingAnchors.length;
+  return {
+    status: issues.length === 0 ? "verified" : "invalid",
+    issues,
+    ...(mintedAt && Number.isFinite(Date.parse(mintedAt)) ? { mintedAt } : {}),
+    anchorsRegistered,
+    anchorsRequired: requiredAnchors.length,
   };
 }
 
@@ -497,6 +607,33 @@ export function buildA2ADispatchPlan(roundSpec: A2ADispatchSpec, config?: Partia
     }
     dispatchActions.push(`[registry] ${parentRoundRegistration.expect}`);
   }
+  // #2556: the pre-steps above are printed, not performed. Execute mode
+  // therefore needs the minting broker's registry entry as proof that they
+  // ran; without it the child would be dispatched under an unregistered
+  // parent round and its projection would fall to the legacy task-id check.
+  const parentRoundRegistrationReceipt = parentRoundRegistration
+    ? checkParentRoundRegistrationReceipt(parentRoundRegistration, mergedConfig.parentRoundRegistrationReceipt)
+    : null;
+  if (parentRoundRegistration && parentRoundRegistrationReceipt) {
+    const receiptRoundId = sanitizeText(parentRoundRegistration.mint.body.parentRoundId);
+    if (parentRoundRegistrationReceipt.status === "invalid") {
+      for (const issue of parentRoundRegistrationReceipt.issues) {
+        blockers.push(`[parent_round_registry_receipt] ${issue}`);
+      }
+      dispatchActions.push(`[registry-receipt] rejected: ${parentRoundRegistrationReceipt.issues.length} issue(s) for parentRoundId=${receiptRoundId}`);
+    } else if (parentRoundRegistrationReceipt.status === "verified") {
+      dispatchActions.push(
+        `[registry-receipt] verified: parentRoundId=${receiptRoundId} mintedAt=${sanitizeText(parentRoundRegistrationReceipt.mintedAt ?? "")} anchors=${parentRoundRegistrationReceipt.anchorsRegistered}/${parentRoundRegistrationReceipt.anchorsRequired}`,
+      );
+    } else if (!mergedConfig.dryRun && mergedConfig.execute) {
+      blockers.push(
+        `[parent_round_registry_receipt] execute-mode cross-broker handoff requires the minting broker's registry entry for parent round ${receiptRoundId}; run the [registry] pre-steps, then pass --parent-round-registration-receipt with the body of GET ${parentRoundRegistration.mint.path}/${encodeURIComponent(parentRoundRegistration.mint.body.parentRoundId)}`,
+      );
+      dispatchActions.push("[registry-receipt] missing: execute mode is blocked until the pre-steps are proven");
+    } else {
+      dispatchActions.push("[registry-receipt] not supplied: required before --execute");
+    }
+  }
   dispatchActions.push(`[dispatch] broker /tasks: plan for ${deterministicTaskId.shortId}`);
   if (blockers.length > 0) {
     dispatchActions.push("[dispatch] createTask: blocked by preflight failures");
@@ -561,13 +698,14 @@ export function buildA2ADispatchPlan(roundSpec: A2ADispatchSpec, config?: Partia
     : null;
 
   const manifestResult = buildRoundManifest(roundSpec, mergedConfig, deterministicTaskId.taskId);
+  const { parentRoundRegistrationReceipt: _receiptInput, ...echoConfig } = mergedConfig;
   const decision = blockers.length > 0 ? "blocked" : warnings.length > 0 ? "warn_go" : "go";
 
   return {
     kind: "a2a-broker.a2a-dispatch-plan.v1",
     version: 1,
     generatedAt,
-    config: mergedConfig,
+    config: echoConfig,
     roundSpec,
     deterministicTaskId,
     decision: {
@@ -593,6 +731,7 @@ export function buildA2ADispatchPlan(roundSpec: A2ADispatchSpec, config?: Partia
     roundManifest: manifestResult?.manifest ?? null,
     roundManifestProjection: manifestResult?.projection ?? null,
     parentRoundRegistration,
+    parentRoundRegistrationReceipt,
   };
 }
 
