@@ -184,6 +184,16 @@ mintedAt, mintedBy: { requesterId, role }, anchors: Set<originTaskId>
      없으면 지금처럼 라운드의 팀을 넣는다. 대응에 mint broker가 없으면
      `[parent_round_registry]` blocker다(mint 라우트가 `unknown_initiating_broker`로 거부할
      요청이다).
+   - **자식 payload의 `parentRoundId` (#2556, 2026-11-27 오너 결정).** cross-broker handoff
+     계획의 `taskPayload.parentRoundId`는 이 계획의 로컬 라운드 id가 아니라 **handoff의
+     부모 라운드 id**(`--handoff-parent-round-id`, 선행 단계가 등록하는 그 id)다. relay는
+     자식 terminal 행의 `payload.parentRoundId`로 projection을 만들기 때문에, 로컬 id를 넣으면
+     부모 broker는 등록되지 않은 라운드를 받아 `missing_parent`로 끝난다(등록·anchor를 다 해도
+     마찬가지였다). 로컬 라운드 id는 계획의 `metadata.parentRoundId`와 자식 task id 원문에
+     그대로 남고, `--handoff-parent-round-id`가 로컬 id와 달라야 한다는 규칙도 그대로다.
+     handoff가 없는 계획의 payload는 바뀌지 않는다. `server-dispatch-helper-handoff.test.ts`가
+     이 계획을 broker 두 개에 양방향으로 끝까지 실행해 부모가 레지스트리 항목으로
+     수락하는 것을 고정한다.
    - **등록 영수증 (#2556, 2026-11-27 오너 결정).** helper는 선행 단계를 출력만 하므로,
      `--execute` 계획은 그 단계가 실제로 실행됐다는 증거를 받는다.
      `--parent-round-registration-receipt <entry.json>`에 mint broker의
