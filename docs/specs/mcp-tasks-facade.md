@@ -23,8 +23,14 @@ Checked 2026-11-25:
   [`contracts/a2a/checkpoint-interrupt.md`](../../contracts/a2a/checkpoint-interrupt.md).
 
 The MCP Tasks extension specification itself was not read for this version;
-field names follow the Claude Code documentation. Re-check them against the
-extension specification before building the live adapter.
+field names follow the Claude Code documentation.
+
+**Re-checked 2026-11-27** against the extension specification
+(`io.modelcontextprotocol/tasks`, revision 2026-07-28): every field name in
+this contract matches. Four semantic gaps (G1–G4: the meaning of `failed`,
+unique `inputRequests` keys, how operator-decision waits are presented, and
+task-id entropy) must be fixed in contract v1 before a live adapter is built.
+See [MCP Tasks server design](mcp-tasks-server-design.md) §1.
 
 ## Status mapping
 
