@@ -74,6 +74,7 @@ function parseArgs(argv) {
         : undefined,
     },
     workModeDecisionPath: readOption(argv, "--work-mode-decision"),
+    parentRoundRegistrationReceiptPath: readOption(argv, "--parent-round-registration-receipt"),
     config: {
       dryRun: hasDryRun || !hasExecute,
       execute: hasExecute && !hasDryRun,
@@ -115,6 +116,13 @@ function usage() {
     "  --handoff-origin-broker-id <id>",
     "  --handoff-broker-id <id>",
     "  --handoff-child-worker-id <id>",
+    "  --parent-round-registration-receipt <entry.json>",
+    "                              Body of GET /a2a/parent-rounds/<id> from the minting",
+    "                              broker, read after the printed [registry] pre-steps",
+    "                              ran. --execute with --cross-broker-handoff is blocked",
+    "                              without a matching one. The child task id differs",
+    "                              between --dry-run and --execute, so register the",
+    "                              anchors printed by the --execute plan.",
     "",
     "Evidence-only/read-only lanes:",
     "  --read-only-audit",
@@ -186,6 +194,14 @@ if (!options.spec.worker || !options.spec.runId || !options.spec.parentIssueUrl 
 }
 if (workModeDecision) {
   options.spec.workModeDecision = workModeDecision;
+}
+if (options.parentRoundRegistrationReceiptPath) {
+  try {
+    options.config.parentRoundRegistrationReceipt = JSON.parse(readFileSync(options.parentRoundRegistrationReceiptPath, "utf8"));
+  } catch (error) {
+    console.error("a2a-dispatch-helper registration receipt error: " + (error instanceof Error ? error.message : String(error)));
+    process.exit(2);
+  }
 }
 
 const plan = buildA2ADispatchPlan(options.spec, options.config);
