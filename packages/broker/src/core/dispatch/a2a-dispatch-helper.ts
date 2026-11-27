@@ -12,6 +12,20 @@ import type { A2AWorkModeDecisionEvidence } from "./work-mode-pre-dispatch-decis
 
 export type A2ADispatchTeamId = "team1" | "team2" | "common";
 
+/**
+ * #2556: one row of the broker-team registry the brokers run with
+ * (`A2A_TERMINAL_BRIEF_BROKER_TEAMS`). Declared here structurally — the
+ * dispatch domain does not import the completion domain's routing module; the
+ * CLI parses the env value and passes the rows in.
+ */
+export interface A2ADispatchBrokerTeam {
+  brokerId: string;
+  teamId: "team1" | "team2";
+}
+
+/** Team2's broker when no registry is given: the placeholder topology's id. */
+const PLACEHOLDER_TEAM2_BROKER_ID = "brokerbeta";
+
 export interface A2ADispatchSpec {
   teamId: A2ADispatchTeamId;
   lane: number;
@@ -46,6 +60,14 @@ export interface A2ADispatchConfig {
   dryRun: boolean;
   execute: boolean;
   now?: string;
+  /**
+   * #2556: the broker-team registry the brokers run with
+   * (`A2A_TERMINAL_BRIEF_BROKER_TEAMS`, for example
+   * `brokeralpha=team1,brokerbeta=team2`). The execute-mode Team2 gate reads
+   * the broker that owns Team2 from it. Unset keeps the placeholder default,
+   * which only matches a deployment whose brokers carry those placeholder ids.
+   */
+  brokerTeams?: readonly A2ADispatchBrokerTeam[];
   /**
    * #2556: the minting broker's own record of the handoff's parent round, read
    * after the `[registry]` pre-steps ran — the body of
@@ -576,11 +598,23 @@ export function buildA2ADispatchPlan(roundSpec: A2ADispatchSpec, config?: Partia
       blockers.push("[work_mode_decision_evidence] Execute-mode Team1/common dispatch requires --work-mode-decision");
     }
     if (roundSpec.teamId === "team2") {
-      const isbrokerbetaLocal = roundSpec.originBrokerId === "brokerbeta" && roundSpec.brokerOfRecordId === "brokerbeta";
-      const isbrokerbetaHandoff = roundSpec.brokerOfRecordId === "brokerbeta"
-        && roundSpec.crossBrokerHandoff?.handoffBrokerId === "brokerbeta";
-      if (!isbrokerbetaLocal && !isbrokerbetaHandoff) {
-        blockers.push("[team2_broker_of_record_handoff] Execute-mode Team2 dispatch must target brokerbeta broker-of-record via explicit crossBrokerHandoff, not local brokeralpha /tasks");
+      // #2556: the broker that owns Team2 comes from the broker-team registry,
+      // not from a literal id — a deployment's brokers carry their own ids.
+      const team2BrokerId = mergedConfig.brokerTeams
+        ? mergedConfig.brokerTeams.find((broker) => broker.teamId === "team2")?.brokerId
+        : PLACEHOLDER_TEAM2_BROKER_ID;
+      if (!team2BrokerId) {
+        blockers.push("[team2_broker_of_record_handoff] no broker is registered for team2; pass --broker-teams with the brokers' A2A_TERMINAL_BRIEF_BROKER_TEAMS value");
+      } else {
+        const isTeam2Broker = (brokerId: string | undefined): boolean => brokerId !== undefined && sameBrokerId(brokerId, team2BrokerId);
+        const isTeam2Local = isTeam2Broker(roundSpec.originBrokerId) && isTeam2Broker(roundSpec.brokerOfRecordId);
+        const isTeam2Handoff = isTeam2Broker(roundSpec.brokerOfRecordId)
+          && isTeam2Broker(roundSpec.crossBrokerHandoff?.handoffBrokerId);
+        if (!isTeam2Local && !isTeam2Handoff) {
+          blockers.push(
+            `[team2_broker_of_record_handoff] Execute-mode Team2 dispatch must target ${sanitizeText(team2BrokerId)} (the broker registered for team2) as broker-of-record, locally or via explicit crossBrokerHandoff, not another broker's local /tasks`,
+          );
+        }
       }
     }
   }

@@ -15,6 +15,7 @@ import {
   buildA2AWorkModeDecisionEvidence,
   extractA2AWorkModePreDispatchDecisionInput,
 } from "../dist/core/dispatch/work-mode-pre-dispatch-decision.js";
+import { parseTerminalBriefBrokerTeams } from "../dist/core/completion/terminal-brief-routing.js";
 
 function readOption(argv, name) {
   const prefix = name + "=";
@@ -75,6 +76,7 @@ function parseArgs(argv) {
     },
     workModeDecisionPath: readOption(argv, "--work-mode-decision"),
     parentRoundRegistrationReceiptPath: readOption(argv, "--parent-round-registration-receipt"),
+    brokerTeams: readOption(argv, "--broker-teams"),
     config: {
       dryRun: hasDryRun || !hasExecute,
       execute: hasExecute && !hasDryRun,
@@ -104,6 +106,11 @@ function usage() {
     "  --broker-of-record-id <id>",
     "  --origin-broker-id <id>",
     "  --operator-facing-owner <parent|child|local>",
+    "  --broker-teams <brokerId=team1,brokerId=team2>",
+    "                              The brokers' A2A_TERMINAL_BRIEF_BROKER_TEAMS value",
+    "                              (read from that env var when the flag is absent).",
+    "                              Names the broker that owns team2 for the --execute",
+    "                              team2 gate; unset keeps the placeholder default.",
     "  --cross-broker-handoff       Requires --handoff-parent-round-id, --handoff-origin-task-id,",
     "                              and the minting broker id",
     "                              (--handoff-origin-broker-id or --origin-broker-id).",
@@ -194,6 +201,13 @@ if (!options.spec.worker || !options.spec.runId || !options.spec.parentIssueUrl 
 }
 if (workModeDecision) {
   options.spec.workModeDecision = workModeDecision;
+}
+try {
+  const brokerTeams = parseTerminalBriefBrokerTeams(options.brokerTeams ?? process.env.A2A_TERMINAL_BRIEF_BROKER_TEAMS);
+  if (brokerTeams) options.config.brokerTeams = brokerTeams;
+} catch (error) {
+  console.error("a2a-dispatch-helper broker teams error: " + (error instanceof Error ? error.message : String(error)));
+  process.exit(2);
 }
 if (options.parentRoundRegistrationReceiptPath) {
   try {

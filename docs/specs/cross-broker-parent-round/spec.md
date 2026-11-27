@@ -168,6 +168,14 @@ mintedAt, mintedBy: { requesterId, role }, anchors: Set<originTaskId>
      performed by this helper)`)로 출력하고, 실행은 운영자/실행 주체가 한다. mint 대상
      broker(`--handoff-origin-broker-id` 또는 `--origin-broker-id`)가 없으면
      `[parent_round_registry]` blocker. `teamScope`는 helper 기본값 `common`이면 넣지 않는다.
+   - **Team2 실행 게이트의 broker id (#2556).** `--execute`의 Team2 검사(「Team2 라운드의
+     broker-of-record는 Team2 broker여야 한다」)는 Team2 broker를 글자 그대로의
+     자리표시자 id가 아니라 broker-팀 대응에서 읽는다. helper에 `--broker-teams
+     <brokerId=team1,brokerId=team2>`를 넘기거나 `A2A_TERMINAL_BRIEF_BROKER_TEAMS`(broker가
+     쓰는 값과 같은 형식)를 두면 그 대응을 쓰고, 없으면 자리표시자 기본값을 쓴다. 기본값은
+     broker가 그 자리표시자 id를 실제로 쓰는 배치에서만 맞으므로, 실제 배치에서는 대응을
+     넘겨야 Team2 handoff의 `--execute` 계획이 등록 영수증 검사까지 간다. broker id 비교는
+     대소문자를 가리지 않는다. dry-run 계획과 자식 task id는 이 값의 영향을 받지 않는다.
    - **등록 영수증 (#2556, 2026-11-27 오너 결정).** helper는 선행 단계를 출력만 하므로,
      `--execute` 계획은 그 단계가 실제로 실행됐다는 증거를 받는다.
      `--parent-round-registration-receipt <entry.json>`에 mint broker의
