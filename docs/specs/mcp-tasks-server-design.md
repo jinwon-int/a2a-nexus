@@ -215,7 +215,7 @@ approval in the current workstream.
    broker, with conformance tests for the capability gate, the error codes,
    per-request authorization, the refusal to start with a hub or operator
    role, and the ban on REST reads. Delivered: see §7.1.
-3. **Approval — local connection:** run the server on one operator node
+3. **Approval — local connection:** (preparation delivered, see §7.2) run the server on one operator node
    against the T1 broker through the existing private path. The broker is not
    restarted and its configuration is not changed. Rollback is removing
    the MCP registration.
@@ -265,6 +265,46 @@ and no broker URL or credential wiring. Those belong to step 3.
   session in `<stateDir>/mcp-tasks/<sessionId>.json` (file 0600, directory
   0700, atomic replace). The server refuses a symlinked, foreign-owned,
   group- or other-accessible, or malformed store instead of starting empty.
+
+### 7.2 Step 3 preparation (2026-11-28)
+
+The owner approved this preparation on 2026-11-28. This step prepares, but does not
+perform, the one-node local connection. Connecting a node still needs its own
+approval, with the target node named.
+
+- **Entry point:** `packages/broker/src/mcp-tasks-server/cli.ts`
+  (`node dist/mcp-tasks-server/cli.js`, stdio).
+  - Configuration comes from `A2A_MCP_TASKS_*` environment variables. The
+    edge secret is read only from the env file named by
+    `A2A_MCP_TASKS_ENV_FILE` (keys `A2A_BROKER_EDGE_SECRET` or
+    `A2A_EDGE_SECRET`). The file must be a regular file owned by this user,
+    with no group or other bits.
+  - The broker URL must be https, or plain http to a loopback host.
+  - A `hub` or `operator` role, an unknown argument, or a refused file exits
+    with code 2 and serves nothing.
+  - `--check-config` validates the configuration and prints a redacted
+    summary. It creates no state.
+  - stdout carries JSON-RPC only. Logs go to stderr as one JSON object per
+    line.
+- **Registration helper:** `packages/broker/scripts/mcp-tasks-register.sh`.
+  - It is a dry run by default and prints the exact
+    `claude mcp add --scope user a2a-tasks -e … -- node …/cli.js` command.
+  - `--apply` registers it after running `--check-config` with the same
+    environment the client will pass.
+  - `--remove` is the rollback.
+  - The registration carries the env file's path, never the secret.
+- **Package extraction: not done, by design decision.** Moving the server
+  into its own workspace package means that package depends on
+  `a2a-broker`, because the facade and its checkpoint classification stay in
+  the broker as the single source of truth (#2595). Every existing
+  cross-package edge runs the other way. A TypeScript project reference to
+  the broker requires `composite: true`, which emits declarations for the
+  whole broker. A trial build showed this is feasible (2 `TS6307` errors,
+  fixed by adding `src/**/*.mjs` to `include`). It still changes the broker's
+  build output and touches the release-gate solution build, the CI cache
+  jobs, the package registry checks, and the lockfile. That is a broker
+  build-system change beyond this step, so it is proposed separately. The §3
+  properties remain pinned by the import-boundary test.
 
 ## 8. Open questions
 
