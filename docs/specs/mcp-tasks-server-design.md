@@ -42,7 +42,7 @@ Names that only the earlier revision used (`ttl`, `pollInterval`,
 `tasks/result`, `tasks/list`, `notifications/tasks/status`, request-side
 `params.task`) must not appear in the server.
 
-### 1.2 Semantic gaps in contract v0 (contract v1 must fix these)
+### 1.2 Semantic gaps in contract v0 (fixed in contract v1)
 
 | # | Extension rule (quoted) | Contract v0 | Required change |
 |---|---|---|---|
@@ -210,7 +210,7 @@ Each step is a separate PR. Steps marked "approval" need explicit owner
 approval in the current workstream.
 
 1. **Contract v1** (code and spec): G1–G4 in `mcp-tasks-facade.ts`, with
-   tests that fail on v0 behaviour. No live effect.
+   tests that fail on v0 behaviour. No live effect. Done: [#2591](https://github.com/jinwon-int/a2a-nexus/issues/2591) contract v1.
 2. **Server package, no-live:** stdio server against an in-process fake
    broker, with conformance tests for the capability gate, the error codes,
    per-request authorization, the refusal to start with a hub or operator
