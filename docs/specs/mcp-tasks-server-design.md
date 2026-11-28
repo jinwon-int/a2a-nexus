@@ -244,14 +244,19 @@ and no broker URL or credential wiring. Those belong to step 3.
   broker is the real `InMemoryA2ABroker` behind the real `executeA2AJsonRpc`
   with requester identity enforced, so the task-party check is the broker's
   own. A cancel by a non-party (`-32012`) reads like an unknown task.
-- **Clarification is not offered (fail closed).** JSON-RPC `GetTask`
-  (`projectSpecTask`) carries the A2A state but no checkpoint id, decision
-  type, or `recordedAt`. The server cannot tell a clarification from an
-  operator decision, and it cannot build a G2 key. So every
-  `TASK_STATE_INPUT_REQUIRED` is an operator wait: `working`, no
-  `inputRequests`, poll at the cap. Offering clarification over MCP needs a
-  public-safe checkpoint summary in the broker projection. That is a separate
-  issue.
+- **Clarification (#2606).** JSON-RPC `GetTask` (`projectSpecTask`) now
+  carries a public-safe checkpoint summary in `metadata.checkpoint`: `state`,
+  `checkpointId`, `decisionType`, and `recordedAt`. The worker's `reason`,
+  `artifactRefs`, and `recordedBy` stay out, and the legacy/REST projection is
+  unchanged. With a well-formed summary, an `ambiguous_scope` checkpoint is
+  `input_required` with one G2 key, and an accepted answer is delivered as a
+  context message (`SendMessage` with `message.taskId`/`contextId`). The
+  broker's `assertCanResolveCheckpoint` (#2595) still decides whether this
+  identity may clear it, so a misclassified operator decision is refused by
+  the broker (pinned by a test with a tampered summary). Every other decision
+  type stays an operator wait. With no summary (an older broker) or one with
+  unexpected keys, every `TASK_STATE_INPUT_REQUIRED` fails closed to an
+  operator wait, as before.
 - **Q3 (decided 2026-11-28):** a completed task's `result` reuses the broker's
   public projection (status message and artifact text parts). It runs the
   shared egress redactor (`redactSecrets`) and is capped at 16000 characters

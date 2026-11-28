@@ -168,12 +168,39 @@ function specTaskArtifacts(task: TaskRecord, broker: InMemoryA2ABroker): Array<R
  * always carries the key. Omitted options mean the method has no such proto
  * field (GetTask), which keeps artifacts unconditionally.
  */
+/**
+ * Public-safe checkpoint summary for the spec (JSON-RPC) task projection
+ * (#2606). It lets a client tell a clarification wait (`ambiguous_scope`)
+ * from an operator decision and key its answer to this exact checkpoint
+ * (MCP Tasks G2), without widening the projection: the worker's `reason`
+ * text, `artifactRefs`, and `recordedBy` are never included. The legacy/REST
+ * projection (`projectBrokerTask`) is unchanged.
+ */
+export interface SpecCheckpointSummary {
+  state: NonNullable<TaskRecord["checkpoint"]>["state"];
+  checkpointId: string;
+  decisionType?: NonNullable<TaskRecord["checkpoint"]>["decisionType"];
+  recordedAt: string;
+}
+
+export function specCheckpointSummary(task: Pick<TaskRecord, "checkpoint">): SpecCheckpointSummary | undefined {
+  const checkpoint = task.checkpoint;
+  if (!checkpoint) return undefined;
+  return {
+    state: checkpoint.state,
+    checkpointId: checkpoint.checkpointId,
+    ...(checkpoint.decisionType ? { decisionType: checkpoint.decisionType } : {}),
+    recordedAt: checkpoint.recordedAt,
+  };
+}
+
 export function projectSpecTask(
   task: TaskRecord,
   broker: InMemoryA2ABroker,
   options?: { includeArtifacts?: boolean },
 ): Record<string, unknown> {
   const projected = projectBrokerTask(task);
+  const checkpoint = specCheckpointSummary(task);
   return {
     id: projected.id,
     contextId: task.exchangeId,
@@ -181,7 +208,7 @@ export function projectSpecTask(
     ...(options?.includeArtifacts === false
       ? {}
       : { artifacts: specTaskArtifacts(task, broker) }),
-    metadata: projected.metadata,
+    metadata: checkpoint ? { ...projected.metadata, checkpoint } : projected.metadata,
   };
 }
 

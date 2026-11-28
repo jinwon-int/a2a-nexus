@@ -2,12 +2,14 @@
  * Proto-JSON A2A task (broker JSON-RPC `GetTask`) → facade input, and the
  * `CallToolResult` for a completed task (a2a-nexus #2591 design §7-2, Q3).
  *
- * The JSON-RPC projection carries the A2A state but no checkpoint detail
- * (id, decision type, recordedAt) and no approval record. So every
- * `TASK_STATE_INPUT_REQUIRED` is treated as an operator-decision wait: the
- * facade then shows it as `working` with no `inputRequests` (G3), and the
- * server never offers a clarification it cannot key safely (G2). Clarification
- * over MCP needs a broker projection change and is out of scope here.
+ * Since #2606 the JSON-RPC projection carries a public-safe checkpoint
+ * summary (`metadata.checkpoint`: state, checkpointId, decisionType,
+ * recordedAt — never the reason text). With a well-formed summary the facade
+ * classifies the wait itself: only `ambiguous_scope` is a clarification
+ * (`input_required`, keyed per checkpoint, G2); every other decision type is
+ * an operator decision (`working`, no `inputRequests`, G3). Without one — an
+ * older broker, or a malformed summary — every `TASK_STATE_INPUT_REQUIRED`
+ * fails closed to an operator wait.
  */
 import { redactSecrets } from "a2a-attestation";
 
@@ -26,9 +28,35 @@ export class SpecTaskShapeError extends Error {
   }
 }
 
+type FacadeCheckpoint = NonNullable<FacadeTask["checkpoint"]>;
+
 /** Placeholder checkpoint for an input-required spec task: no decision type, so the facade classifies it as an operator decision. */
-function operatorWaitCheckpoint(timestamp: string): NonNullable<FacadeTask["checkpoint"]> {
+function operatorWaitCheckpoint(timestamp: string): FacadeCheckpoint {
   return { state: "awaiting_operator", checkpointId: "spec-projection", recordedAt: timestamp, recordedBy: "broker" };
+}
+
+const SUMMARY_KEYS = new Set(["state", "checkpointId", "decisionType", "recordedAt"]);
+
+/**
+ * The broker's public checkpoint summary (#2606), or `undefined` if it is
+ * absent or not exactly the expected shape. Unknown keys are refused rather
+ * than ignored, so a projection that starts carrying more than the summary is
+ * noticed instead of silently trusted.
+ */
+export function checkpointFromSpecSummary(value: unknown): FacadeCheckpoint | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const summary = value as Record<string, unknown>;
+  if (Object.keys(summary).some((key) => !SUMMARY_KEYS.has(key))) return undefined;
+  if (summary.state !== "awaiting_operator") return undefined;
+  if (typeof summary.checkpointId !== "string" || typeof summary.recordedAt !== "string") return undefined;
+  if (summary.decisionType !== undefined && typeof summary.decisionType !== "string") return undefined;
+  return {
+    state: "awaiting_operator",
+    checkpointId: summary.checkpointId,
+    recordedAt: summary.recordedAt,
+    recordedBy: "broker",
+    ...(summary.decisionType ? { decisionType: summary.decisionType as FacadeCheckpoint["decisionType"] } : {}),
+  };
 }
 
 function stringField(record: Record<string, unknown> | undefined, key: string): string | undefined {
@@ -48,7 +76,7 @@ export function facadeTaskFromSpec(spec: SpecTask): FacadeTask {
     case "TASK_STATE_WORKING":
       return { ...base, status: "running" };
     case "TASK_STATE_INPUT_REQUIRED":
-      return { ...base, status: "running", checkpoint: operatorWaitCheckpoint(timestamp) };
+      return { ...base, status: "running", checkpoint: checkpointFromSpecSummary(spec.metadata?.checkpoint) ?? operatorWaitCheckpoint(timestamp) };
     case "TASK_STATE_AUTH_REQUIRED":
       return { ...base, status: "blocked" };
     case "TASK_STATE_COMPLETED":
