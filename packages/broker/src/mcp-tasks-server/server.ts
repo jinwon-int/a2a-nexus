@@ -15,10 +15,12 @@
  *   `operator`: construction throws, so the server refuses to start.
  * - Every task request is authorized twice: the created-task set, then one
  *   fresh broker call whose task-party check is the real authorization.
- * - No MCP path changes an approval or a checkpoint (`tasks/update` is
- *   acknowledged and ignored for operator decisions, G3).
+ * - No MCP path changes an approval or an operator checkpoint (`tasks/update`
+ *   is acknowledged and ignored for operator decisions, G3). Only a
+ *   clarification (`ambiguous_scope`) answer is delivered, as a context
+ *   message the broker itself authorizes (#2606, #2595).
  */
-import { evaluateMcpTaskInputResponse, isValidMcpTaskId, projectMcpTask, type McpTask } from "../a2a/mcp-tasks-facade.js";
+import { evaluateMcpTaskInputResponse, isValidMcpTaskId, mcpInputRequestsForTask, projectMcpTask, type McpTask } from "../a2a/mcp-tasks-facade.js";
 import { BrokerRpcError, type BrokerIdentity, type BrokerRpcClient, type SpecTask } from "./broker-client.js";
 import type { CreatedTaskStore } from "./created-task-store.js";
 import { SpecTaskShapeError, callToolResultForSpec, facadeTaskFromSpec } from "./spec-task.js";
@@ -281,7 +283,11 @@ export class McpTasksServer {
       const result = callToolResultForSpec(spec);
       if (result) wire.result = result;
     }
-    // No inputRequests: v1 never shows input_required (see spec-task.ts), so nothing invites an answer.
+    // Only a clarification wait carries inputRequests (one key per checkpoint, G2); operator waits never do (G3).
+    if (task.status === "input_required") {
+      const inputRequests = mcpInputRequestsForTask(facadeTaskFromSpec(spec));
+      if (inputRequests) wire.inputRequests = inputRequests;
+    }
     return wire;
   }
 
@@ -291,8 +297,23 @@ export class McpTasksServer {
     const spec = await this.readTask("tasks/update", taskId);
     const inputResponses = isRecord(params) ? params.inputResponses : undefined;
     const verdict = evaluateMcpTaskInputResponse(facadeTaskFromSpec(spec), inputResponses);
-    // G3: acknowledged with an empty result and ignored; only the reason code is logged, never the payload.
-    this.log({ method: "tasks/update", reason: verdict.accepted ? "clarification_delivery_unsupported" : verdict.reason });
+    if (!verdict.accepted) {
+      // G3: acknowledged with an empty result and ignored; only the reason code is logged, never the payload.
+      this.log({ method: "tasks/update", reason: verdict.reason });
+      return {};
+    }
+    // #2606: deliver the answer to the outstanding clarification checkpoint on the task's own context.
+    if (typeof spec.contextId !== "string" || !spec.contextId) {
+      this.log({ method: "tasks/update", reason: "missing_context" });
+      throw new RpcError(JSONRPC_INTERNAL_ERROR, "task has no context to deliver to");
+    }
+    try {
+      await this.broker.answerClarification({ taskId, contextId: spec.contextId, text: verdict.text });
+    } catch (error) {
+      this.log({ method: "tasks/update", reason: error instanceof BrokerRpcError ? "broker_protocol_error" : "broker_error" });
+      throw new RpcError(JSONRPC_INTERNAL_ERROR, "broker did not accept the clarification");
+    }
+    this.log({ method: "tasks/update", reason: "clarification_delivered" });
     return {};
   }
 

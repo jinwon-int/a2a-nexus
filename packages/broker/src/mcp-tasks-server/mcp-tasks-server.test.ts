@@ -37,6 +37,7 @@ import {
   McpTasksServer,
   McpTasksServerConfigError,
   brokerJsonRpcEndpoint,
+  checkpointFromSpecSummary,
   handleStdioLine,
   httpJsonRpcCall,
   serveStdio,
@@ -281,16 +282,147 @@ function checkpoint(h: Harness, taskId: string, decisionType: string): void {
 }
 
 test("G3: an operator-decision checkpoint is working, has no inputRequests, and polls at the cap", async () => {
-  for (const decisionType of ["approval_required", "safety_gate", "ambiguous_scope"]) {
+  for (const decisionType of ["approval_required", "safety_gate", "conflict_detected"]) {
     const h = harness();
     const taskId = await h.dispatch();
     checkpoint(h, taskId, decisionType);
     const task = result(await h.rpc("tasks/get", { ...CAPS, taskId }));
-    // ambiguous_scope too: the JSON-RPC projection carries no checkpoint detail, so the server fails closed.
     assert.equal(task.status, "working", decisionType);
     assert.equal(task.pollIntervalMs, MCP_OPERATOR_WAIT_POLL_INTERVAL_MS, decisionType);
     assert.ok(!("inputRequests" in task), decisionType);
     assert.doesNotMatch(JSON.stringify(task), /SECRET/);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// #2606 — clarification over MCP, keyed by the broker's public checkpoint summary
+// ---------------------------------------------------------------------------
+
+function clarificationKey(h: Harness, taskId: string): string {
+  const cp = h.broker.getTask(taskId)!.checkpoint!;
+  return `clarification:${cp.checkpointId}@${cp.recordedAt}`;
+}
+
+/** A broker call that rewrites the spec task on the way back (an older broker, or a tampered projection). */
+function rewritingCall(broker: InMemoryA2ABroker, calls: string[], rewrite: (task: Record<string, unknown>) => void): JsonRpcCall {
+  const inner = brokerCall(broker, IDENTITY, calls);
+  return async (method, params) => {
+    const out = (await inner(method, params)) as Record<string, unknown>;
+    if (method === "GetTask") rewrite(out);
+    return out;
+  };
+}
+
+test("#2606: an ambiguous_scope checkpoint is input_required with one key bound to that checkpoint", async () => {
+  const h = harness();
+  const taskId = await h.dispatch();
+  checkpoint(h, taskId, "ambiguous_scope");
+  const task = result<{ status: string; pollIntervalMs: number; inputRequests: Record<string, { method: string; params: { mode: string } }> }>(
+    await h.rpc("tasks/get", { ...CAPS, taskId }),
+  );
+  assert.equal(task.status, "input_required");
+  assert.notEqual(task.pollIntervalMs, MCP_OPERATOR_WAIT_POLL_INTERVAL_MS);
+  assert.deepEqual(Object.keys(task.inputRequests), [clarificationKey(h, taskId)]);
+  assert.equal(Object.values(task.inputRequests)[0]!.params.mode, "form");
+  assert.doesNotMatch(JSON.stringify(task), /SECRET/);
+});
+
+test("#2606: an accepted clarification is delivered on the task's context and the broker resumes the task", async () => {
+  const h = harness();
+  const taskId = await h.dispatch();
+  checkpoint(h, taskId, "ambiguous_scope");
+  const key = clarificationKey(h, taskId);
+  h.calls.length = 0;
+  const answer = { [key]: { action: "accept", content: { text: "use the staging branch" } } };
+  assert.deepEqual(result(await h.rpc("tasks/update", { ...CAPS, taskId, inputResponses: answer })), {});
+  assert.deepEqual(h.calls, ["GetTask", "SendMessage"]);
+  const record = h.broker.getTask(taskId)!;
+  assert.equal(record.checkpoint, undefined, "the broker cleared the checkpoint");
+  assert.equal(record.status, "running");
+  assert.equal(h.broker.getExchange(record.exchangeId!)!.messageCount, 2, "the answer was added to the task's own context");
+  assert.equal(h.logs.at(-1)?.reason, "clarification_delivered");
+  assert.ok(!JSON.stringify(h.logs).includes("staging"), "the answer text is never logged");
+  assert.equal(result(await h.rpc("tasks/get", { ...CAPS, taskId })).status, "working");
+});
+
+test("#2606: an answer keyed to an earlier checkpoint is ignored and leaves the new one waiting", async () => {
+  const h = harness();
+  const taskId = await h.dispatch();
+  checkpoint(h, taskId, "ambiguous_scope");
+  const staleKey = clarificationKey(h, taskId);
+  await h.rpc("tasks/update", { ...CAPS, taskId, inputResponses: { [staleKey]: { action: "accept", content: { text: "first answer" } } } });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  h.broker.checkpointTask(taskId, "worker-a", { state: "awaiting_operator", decisionType: "ambiguous_scope", reason: "again" });
+  assert.notEqual(clarificationKey(h, taskId), staleKey);
+  const stale = { [staleKey]: { action: "accept", content: { text: "stale answer" } } };
+  assert.deepEqual(result(await h.rpc("tasks/update", { ...CAPS, taskId, inputResponses: stale })), {});
+  assert.equal(h.broker.getTask(taskId)!.checkpoint?.state, "awaiting_operator");
+  assert.equal(h.logs.at(-1)?.reason, "unexpected_keys");
+});
+
+test("#2606: without a valid summary (older broker, extra keys) every wait fails closed to an operator wait", async () => {
+  const rewrites: Array<[string, (task: Record<string, unknown>) => void]> = [
+    ["summary absent", (task) => { delete (task.metadata as Record<string, unknown>).checkpoint; }],
+    ["summary with reason", (task) => { ((task.metadata as Record<string, unknown>).checkpoint as Record<string, unknown>).reason = "x"; }],
+    ["summary with wrong state", (task) => { ((task.metadata as Record<string, unknown>).checkpoint as Record<string, unknown>).state = "paused"; }],
+  ];
+  for (const [label, rewrite] of rewrites) {
+    const broker = new InMemoryA2ABroker();
+    registerWorker(broker, "worker-a");
+    const calls: string[] = [];
+    const server = new McpTasksServer({
+      broker: new JsonRpcBrokerClient(rewritingCall(broker, calls, rewrite)),
+      identity: IDENTITY,
+      store: new InMemoryCreatedTaskStore(),
+      allowedTargetNodeIds: ["worker-a"],
+    });
+    const created = (await server.handle({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { ...CAPS, name: DISPATCH_TOOL_NAME, arguments: { prompt: "x", targetNodeId: "worker-a" } } }))!;
+    const taskId = result<{ taskId: string }>(created).taskId;
+    broker.claimTask(taskId, "worker-a");
+    broker.startTask(taskId, "worker-a");
+    broker.checkpointTask(taskId, "worker-a", { state: "awaiting_operator", decisionType: "ambiguous_scope" });
+    const task = result((await server.handle({ jsonrpc: "2.0", id: 2, method: "tasks/get", params: { ...CAPS, taskId } }))!);
+    assert.equal(task.status, "working", label);
+    assert.equal(task.pollIntervalMs, MCP_OPERATOR_WAIT_POLL_INTERVAL_MS, label);
+    assert.ok(!("inputRequests" in task), label);
+  }
+});
+
+test("#2606: even if a tampered summary claims a clarification, the broker refuses to clear an operator decision", async () => {
+  const broker = new InMemoryA2ABroker();
+  registerWorker(broker, "worker-a");
+  const calls: string[] = [];
+  const logs: McpTasksLogEvent[] = [];
+  const server = new McpTasksServer({
+    broker: new JsonRpcBrokerClient(rewritingCall(broker, calls, (task) => {
+      ((task.metadata as Record<string, unknown>).checkpoint as Record<string, unknown>).decisionType = "ambiguous_scope";
+    })),
+    identity: IDENTITY,
+    store: new InMemoryCreatedTaskStore(),
+    allowedTargetNodeIds: ["worker-a"],
+    log: (event) => logs.push(event),
+  });
+  const created = (await server.handle({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { ...CAPS, name: DISPATCH_TOOL_NAME, arguments: { prompt: "x", targetNodeId: "worker-a" } } }))!;
+  const taskId = result<{ taskId: string }>(created).taskId;
+  broker.claimTask(taskId, "worker-a");
+  broker.startTask(taskId, "worker-a");
+  broker.checkpointTask(taskId, "worker-a", { state: "awaiting_operator", decisionType: "approval_required" });
+  const cp = broker.getTask(taskId)!.checkpoint!;
+  const key = `clarification:${cp.checkpointId}@${cp.recordedAt}`;
+  const response = (await server.handle({ jsonrpc: "2.0", id: 2, method: "tasks/update", params: { ...CAPS, taskId, inputResponses: { [key]: { action: "accept", content: { text: "approved" } } } } }))!;
+  assert.equal(errorCode(response), JSONRPC_INTERNAL_ERROR);
+  assert.equal(broker.getTask(taskId)!.checkpoint?.state, "awaiting_operator", "the operator decision still stands");
+  assert.equal(broker.getTask(taskId)!.checkpoint?.decisionType, "approval_required");
+  assert.equal(logs.at(-1)?.reason, "broker_protocol_error");
+});
+
+test("#2606: checkpointFromSpecSummary accepts exactly the public summary shape", () => {
+  const ok = { state: "awaiting_operator", checkpointId: "cp-1", decisionType: "ambiguous_scope", recordedAt: "2026-11-28T00:00:00.000Z" };
+  assert.equal(checkpointFromSpecSummary(ok)?.decisionType, "ambiguous_scope");
+  const { decisionType: _omit, ...noDecision } = ok;
+  assert.equal(checkpointFromSpecSummary(noDecision)?.decisionType, undefined);
+  for (const bad of [undefined, null, [], "x", { ...ok, reason: "r" }, { ...ok, recordedBy: "w" }, { ...ok, state: "paused" }, { ...ok, checkpointId: 1 }, { ...ok, decisionType: 3 }]) {
+    assert.equal(checkpointFromSpecSummary(bad), undefined, JSON.stringify(bad));
   }
 });
 

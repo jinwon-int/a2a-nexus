@@ -51,6 +51,12 @@ export class BrokerRpcError extends Error {
   }
 }
 
+export interface ClarificationAnswer {
+  taskId: string;
+  contextId: string;
+  text: string;
+}
+
 export interface BrokerRpcClient {
   /** JSON-RPC SendMessage on a new context; the broker assigns the task id. */
   dispatchAnalysis(request: DispatchRequest): Promise<SpecTask>;
@@ -58,6 +64,14 @@ export interface BrokerRpcClient {
   getTask(taskId: string): Promise<SpecTask | undefined>;
   /** JSON-RPC CancelTask; `"invisible"` / `"terminal"` mirror the broker's refusal. */
   cancelTask(taskId: string): Promise<"ok" | "invisible" | "terminal">;
+  /**
+   * #2606: a clarification answer as a context message on the task's own
+   * context (JSON-RPC SendMessage with `message.taskId`/`contextId`). The
+   * broker resumes the checkpoint only if this identity may resolve it
+   * (`assertCanResolveCheckpoint`, #2595), so an operator decision can never
+   * be cleared this way even if the server misclassified one.
+   */
+  answerClarification(answer: ClarificationAnswer): Promise<void>;
 }
 
 /** One JSON-RPC exchange: `(method, params) => result`, throwing {@link BrokerRpcError} on any failure. */
@@ -90,6 +104,18 @@ export class JsonRpcBrokerClient implements BrokerRpcClient {
     });
     if (!isRecord(result) || !("task" in result)) throw new BrokerRpcError("broker did not create a task");
     return asSpecTask(result.task);
+  }
+
+  async answerClarification(answer: ClarificationAnswer): Promise<void> {
+    await this.call("SendMessage", {
+      message: {
+        messageId: this.newMessageId(),
+        role: "ROLE_USER",
+        taskId: answer.taskId,
+        contextId: answer.contextId,
+        parts: [{ text: answer.text }],
+      },
+    });
   }
 
   async getTask(taskId: string): Promise<SpecTask | undefined> {
