@@ -4,11 +4,11 @@
 // broker's own, not a stub.
 
 import { randomUUID } from "node:crypto";
-import { chmodSync, lstatSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 
 import { createBrokerAgentCard } from "../a2a/agent-card.js";
@@ -51,6 +51,17 @@ const agentCard = createBrokerAgentCard({ serviceName: "test-broker", publicBase
 const IDENTITY: BrokerIdentity = { id: "node-a", kind: "node", role: "analyst" };
 const CAPS = { _meta: { [MCP_CLIENT_CAPABILITIES_META_KEY]: { extensions: { [MCP_TASKS_EXTENSION_ID]: {} } } } };
 const FAKE_TOKEN = `ghp_${"A1b2C3d4".repeat(5)}`;
+
+// Every temp directory is removed after the file's tests (#2386 mkdtemp cleanup guard).
+const tempDirs: string[] = [];
+function tempDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), "mcp-tasks-store-"));
+  tempDirs.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 interface Harness {
   broker: InMemoryA2ABroker;
@@ -424,7 +435,7 @@ test("import boundary: server modules import only node built-ins, each other, th
 // ---------------------------------------------------------------------------
 
 test("Q4: the created-task set persists per session in a 0600 file under a 0700 directory", () => {
-  const stateDir = mkdtempSync(join(tmpdir(), "mcp-tasks-store-"));
+  const stateDir = tempDir();
   const first = new FileCreatedTaskStore(stateDir, "session-1");
   const id = randomUUID();
   first.add(id);
@@ -437,7 +448,7 @@ test("Q4: the created-task set persists per session in a 0600 file under a 0700 
 });
 
 test("Q4: an insecure, foreign, or malformed store fails closed", () => {
-  const stateDir = mkdtempSync(join(tmpdir(), "mcp-tasks-store-"));
+  const stateDir = tempDir();
   const store = new FileCreatedTaskStore(stateDir, "s");
   store.add(randomUUID());
   chmodSync(store.path, 0o644);
@@ -449,7 +460,7 @@ test("Q4: an insecure, foreign, or malformed store fails closed", () => {
   assert.throws(() => new FileCreatedTaskStore(stateDir, "badid"), /invalid task id/);
   symlinkSync(store.path, join(stateDir, "mcp-tasks", "link.json"));
   assert.throws(() => new FileCreatedTaskStore(stateDir, "link"), /symlink/);
-  const openDir = mkdtempSync(join(tmpdir(), "mcp-tasks-store-"));
+  const openDir = tempDir();
   new FileCreatedTaskStore(openDir, "s");
   chmodSync(join(openDir, "mcp-tasks"), 0o755);
   assert.throws(() => new FileCreatedTaskStore(openDir, "s"), /accessible by group or other/);
@@ -459,7 +470,7 @@ test("Q4: an insecure, foreign, or malformed store fails closed", () => {
 });
 
 test("a server restarted on the same session file keeps answering tasks/get for earlier tasks", async () => {
-  const stateDir = mkdtempSync(join(tmpdir(), "mcp-tasks-store-"));
+  const stateDir = tempDir();
   const h = harness({ store: new FileCreatedTaskStore(stateDir, "resume") });
   const taskId = await h.dispatch();
   const again = new McpTasksServer({
