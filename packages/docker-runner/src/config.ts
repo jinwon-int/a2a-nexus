@@ -224,7 +224,7 @@ export async function loadConfig(env = process.env): Promise<RunnerConfig> {
   validatePatchCommandProfileSelection({ profile, expectedProfile, image });
   const claudeHostRefresh = loadClaudeHostRefreshConfig(env);
   const claudeOauthToken = loadClaudeOauthTokenFileConfig(env);
-  const egress = loadEgressConfig(env, profile);
+  const egress = loadEgressConfig(env, profile, trustedOperator);
 
   const config: RunnerConfig = {
     rootDir: env.A2A_DOCKER_RUNNER_ROOT || DEFAULT_ROOT, // validated below; resolveRootDir() is the lite path
@@ -1025,17 +1025,27 @@ function parseOptionalPositiveInteger(value: string | undefined, fallback: numbe
 /**
  * #2395: patch-lane egress control. Returns undefined for mode `off` so the
  * resulting config is byte-identical to the pre-#2395 shape.
+ *
+ * a2a-nexus#2589 item 4: an UNSET mode defaults to `enforce` for a trusted
+ * operator whose patch-command profile has a measured base allowlist (today
+ * `claude-code`) and who did not pin `A2A_DOCKER_RUNNER_NETWORK`. Every other
+ * unset case keeps the old `off` (public mode, profiles without a base set —
+ * `enforce` would be a config error there — and an explicit network). An
+ * explicit `A2A_DOCKER_RUNNER_EGRESS_MODE=off` is the opt-out.
  */
 function loadEgressConfig(
   env: NodeJS.ProcessEnv,
   profile: RunnerCommandProfile | undefined,
-): Pick<RunnerConfig, "egressMode" | "egressNetwork" | "egressProxyName" | "egressProxyAllowlist" | "egressProxyBaseAllowlist" | "egressStateDir"> | undefined {
-  const egressMode = parseEgressMode(env.A2A_DOCKER_RUNNER_EGRESS_MODE);
-  if (egressMode === "off") return undefined;
+  trustedOperator = false,
+): Pick<RunnerConfig, "egressMode" | "egressModeDefaulted" | "egressNetwork" | "egressProxyName" | "egressProxyAllowlist" | "egressProxyBaseAllowlist" | "egressStateDir"> | undefined {
   // #2395 §5.2: effective allowlist = profile base set ∪ operator env.
   const baseAllowlist = egressProxyBaseAllowlist(profile);
-  const egressNetwork = (env.A2A_DOCKER_RUNNER_EGRESS_NETWORK ?? "").trim() || DEFAULT_EGRESS_NETWORK;
   const explicitNetwork = (env.A2A_DOCKER_RUNNER_NETWORK ?? "").trim();
+  const modeUnset = (env.A2A_DOCKER_RUNNER_EGRESS_MODE ?? "").trim() === "";
+  const defaulted = modeUnset && trustedOperator && baseAllowlist.length > 0 && !explicitNetwork;
+  const egressMode = defaulted ? "enforce" : parseEgressMode(env.A2A_DOCKER_RUNNER_EGRESS_MODE);
+  if (egressMode === "off") return undefined;
+  const egressNetwork = (env.A2A_DOCKER_RUNNER_EGRESS_NETWORK ?? "").trim() || DEFAULT_EGRESS_NETWORK;
   if (explicitNetwork && explicitNetwork !== egressNetwork) {
     throw new Error(
       `A2A_DOCKER_RUNNER_NETWORK=${JSON.stringify(explicitNetwork)} conflicts with A2A_DOCKER_RUNNER_EGRESS_MODE=${egressMode}; ` +
@@ -1045,6 +1055,7 @@ function loadEgressConfig(
   const stateDir = (env.A2A_DOCKER_RUNNER_EGRESS_STATE_DIR ?? "").trim();
   return {
     egressMode,
+    ...(defaulted ? { egressModeDefaulted: true as const } : {}),
     egressNetwork,
     egressProxyName: (env.A2A_DOCKER_RUNNER_EGRESS_PROXY_NAME ?? "").trim() || DEFAULT_EGRESS_PROXY_NAME,
     egressProxyAllowlist: mergeEgressProxyAllowlist(baseAllowlist, parseCommaList(env.A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST)),

@@ -351,7 +351,10 @@ test("mergeRunnerEnvFile supports Claude Code cccb patch profile", async () => {
 
     assert.equal(config.commandProfile, "claude-code");
     assert.equal(config.image, "a2a-docker-runner-cccb:latest");
-    assert.equal(config.network, "bridge");
+    // a2a-nexus#2589: a trusted claude-code lane defaults to egress enforce (was bridge).
+    assert.equal(config.network, "a2a-egress-internal");
+    assert.equal(config.egressMode, "enforce");
+    assert.equal(config.egressModeDefaulted, true);
   assert.equal(config.readOnlyRootFilesystem, true);
     assert.equal(config.user, "1000:1000");
     assert.match(config.commandScript ?? "", /claude-a2a-patch-bridge\.mjs/);

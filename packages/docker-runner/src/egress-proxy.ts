@@ -4,7 +4,8 @@
  *
  * This module is the proxy component only. Nothing in the runner starts it or
  * routes task containers through it yet; that wiring ships separately behind
- * `A2A_DOCKER_RUNNER_EGRESS_MODE` (default `off`).
+ * `A2A_DOCKER_RUNNER_EGRESS_MODE` (default `enforce` for a trusted claude-code
+ * lane without an explicit network, else `off` — a2a-nexus#2589).
  *
  * Behaviour:
  * - Only `CONNECT host:port` tunnels are served. Plain-HTTP proxy requests get
