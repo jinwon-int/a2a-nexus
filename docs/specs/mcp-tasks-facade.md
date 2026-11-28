@@ -1,6 +1,7 @@
 # MCP Tasks facade contract
 
-> Status: contract v0 (no-live). Tracking: [#2591](https://github.com/jinwon-int/a2a-nexus/issues/2591)
+> Status: contract v1 (no-live). v1 closes gaps G1–G4 from the
+> [server design](mcp-tasks-server-design.md) §1.2. Tracking: [#2591](https://github.com/jinwon-int/a2a-nexus/issues/2591)
 > (mapping [#2592](https://github.com/jinwon-int/a2a-nexus/issues/2592), operator-decision gate
 > [#2593](https://github.com/jinwon-int/a2a-nexus/issues/2593)).
 > Code: `packages/broker/src/a2a/mcp-tasks-facade.ts`, tests `mcp-tasks-facade.test.ts`.
@@ -29,27 +30,37 @@ field names follow the Claude Code documentation.
 (`io.modelcontextprotocol/tasks`, revision 2026-07-28): every field name in
 this contract matches. Four semantic gaps (G1–G4: the meaning of `failed`,
 unique `inputRequests` keys, how operator-decision waits are presented, and
-task-id entropy) must be fixed in contract v1 before a live adapter is built.
-See [MCP Tasks server design](mcp-tasks-server-design.md) §1.
+task-id entropy) were fixed in contract v1, described below. See
+[MCP Tasks server design](mcp-tasks-server-design.md) §1.
 
 ## Status mapping
 
 The MCP status is derived from the existing A2A projection (`mapTaskState` in
 `task-projection.ts`), so the A2A and MCP faces of a task cannot drift apart.
 
-| Broker status / checkpoint | A2A state | MCP `status` | Input kind |
-|---|---|---|---|
-| `queued` | `submitted` | `working` | — |
-| `claimed`, `running` | `working` | `working` | — |
-| `claimed`, `running` + checkpoint `paused` | `working` | `working` | — |
-| `claimed`, `running` + checkpoint `awaiting_operator`, decision `ambiguous_scope` | `input-required` | `input_required` | `clarification` |
-| `claimed`, `running` + checkpoint `awaiting_operator`, any other or no decision type | `input-required` | `input_required` | `operator_decision` |
-| `blocked` (approval-gated) | `auth-required` | `input_required` | `operator_decision` |
-| `succeeded` | `completed` | `completed` | — |
-| `failed` | `failed` | `failed` | — |
-| `canceled` with `approvalOutcome.status: "rejected"` | `rejected` | `failed` | — |
-| `canceled` | `canceled` | `cancelled` | — |
+| Broker status / checkpoint | A2A state | MCP `status` | Wait kind | Tool outcome |
+|---|---|---|---|---|
+| `queued` | `submitted` | `working` | — | — |
+| `claimed`, `running` | `working` | `working` | — | — |
+| `claimed`, `running` + checkpoint `paused` | `working` | `working` | — | — |
+| `claimed`, `running` + checkpoint `awaiting_operator`, decision `ambiguous_scope` | `input-required` | `input_required` | `clarification` | — |
+| `claimed`, `running` + checkpoint `awaiting_operator`, any other or no decision type | `input-required` | `working` (G3) | `operator_decision` | — |
+| `blocked` (approval-gated) | `auth-required` | `working` (G3) | `operator_decision` | — |
+| `succeeded` | `completed` | `completed` | — | `isError: false` |
+| `failed` | `failed` | `completed` (G1) | — | `isError: true`, `broker:failed` |
+| `canceled` with `approvalOutcome.status: "rejected"` | `rejected` | `completed` (G1) | — | `isError: true`, `approval:rejected` |
+| `canceled` | `canceled` | `cancelled` | — | — |
 
+- **G1, `failed` is protocol-only:** the extension reserves `failed` for a
+  JSON-RPC error during execution and forbids it for a tool result with
+  `isError: true`. `projectMcpTask` never returns `failed`
+  (`MCP_PROTOCOL_ONLY_STATUSES`). A task that ran and failed, or that an
+  operator rejected, is `completed`. The facade annotation `toolOutcome`
+  gives the `CallToolResult` `isError` flag and a closed-vocabulary reason.
+  Only the server's own broker call failing at the protocol level (for
+  example the broker rejecting `SendMessage`, or `-32603`) may report
+  `failed`.
+- **G3, operator waits are `working`:** see the operator-decision section.
 - **Spelling:** the broker and A2A write `canceled`; MCP writes `cancelled`.
   An MCP cancel request maps back to broker `canceled` (`MCP_CANCEL_BROKER_STATUS`).
 - **Exhaustiveness:** the tests read the three unions from `types.ts` and
@@ -65,13 +76,13 @@ The MCP status is derived from the existing A2A projection (`mapTaskState` in
 
 | MCP field | Value |
 |---|---|
-| `taskId` | The broker task id, verbatim. It must be 1..128 printable ASCII characters (0x20-0x7E). Any other id is **rejected** (`McpTaskIdError`), never rewritten, so the id stays a lossless reference. |
+| `taskId` | G4: the broker task id, verbatim, and only if it is a lowercase RFC 9562 version-4 UUID (`MCP_TASK_ID_PATTERN`). That is what the broker assigns (`randomUUID()`, 122 random bits) when JSON-RPC `SendMessage` creates a task, and `SendMessage` never takes an id from the caller. Caller-chosen ids (REST `POST /tasks`) and time-based UUID versions are **rejected** (`McpTaskIdError`), never rewritten. The id is still not a bearer token: every read is authorized by the broker. |
 | `status` | From the table above. |
-| `statusMessage` | Closed-vocabulary tokens only: `broker:<status>`, `checkpoint:<state>`, `decision:<type>`, `approval:<outcome>`. Never checkpoint `reason`, task text, or result text, so nothing needs redaction. Capped at 160 characters. |
+| `statusMessage` | Closed-vocabulary tokens only: `broker:<status>`, `checkpoint:<state>`, `decision:<type>`, `approval:<outcome>`, and `approval:pending` for an approval-gated task. Never checkpoint `reason`, task text, or result text, so nothing needs redaction. Capped at 160 characters. |
 | `createdAt` / `lastUpdatedAt` | Task `createdAt` / `updatedAt`. |
 | `ttlMs` | `null`: the broker does not expire tasks on a TTL. |
-| `pollIntervalMs` | Clamped to 250..30000, default 2000. |
-| `inputRequests` | Present only for `input_required`, with exactly one key: `clarification` or `operator_decision`. |
+| `pollIntervalMs` | Clamped to 250..30000, default 2000. G3: 30000 (the cap) while the task waits on an operator decision. |
+| `inputRequests` | Present only for a clarification wait (`input_required`), with exactly one key. G2: the key is `clarification:<checkpointId>@<recordedAt>`. The extension requires a key to be unique over the task's lifetime, and a worker may reuse its own checkpoint id, so the key binds both. The broker's checkpoint-id charset has no `@`. A resolved checkpoint retires its key; a later checkpoint gets a new one. A checkpoint that cannot be keyed safely fails closed to an operator wait. |
 
 ## Operator decisions are never answered through `tasks/update`
 
@@ -85,6 +96,12 @@ the player would act as the judge ([trust boundaries](../trust-boundaries.md),
 
 Rules:
 
+0. G3: an operator-decision wait is shown as **`working`** with `statusMessage`
+   `approval:pending` or `checkpoint:awaiting_operator`, **no `inputRequests`**,
+   and `pollIntervalMs` at the 30000 cap. Nothing invites the client to answer.
+   A `tasks/update` aimed at it is acknowledged with an empty result and
+   ignored (the extension ignores keys that are not outstanding); the server
+   logs the reason code below.
 1. An `operator_decision` wait rejects **every** `tasks/update` payload with
    `operator_decision_out_of_band`. This includes `true`, `"approve"`, a localized approval word,
    a well-formed elicitation result, and any approval id (genuine or forged).
@@ -100,7 +117,8 @@ Rules:
    clarification. `approval_required`, `safety_gate`, `conflict_detected`, and
    a checkpoint with no decision type (the broker defaults it to
    `approval_required`) are operator decisions.
-5. A `clarification` wait accepts exactly one key (`clarification`) whose value
+5. A `clarification` wait accepts exactly the one outstanding key (G2; a key
+   from an earlier checkpoint is `unexpected_keys`) whose value
    is an elicitation result with `action: "accept"` and a non-empty
    `content.text` of at most 4000 characters (trimmed). `decline`/`cancel`,
    extra keys, and malformed content are rejected. Accepting a clarification
