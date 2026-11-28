@@ -328,6 +328,8 @@ export interface RunnerConfig {
    * managed internal network and the allowlist CONNECT proxy.
    */
   egressMode?: "off" | "observe" | "enforce";
+  /** a2a-nexus#2589: present (true) when egressMode came from the trusted default, not from the env. */
+  egressModeDefaulted?: true;
   /** #2395: managed `--internal` Docker network the task containers join when egressMode is on. */
   egressNetwork?: string;
   /** #2395: proxy container name; also its alias on the internal network. */

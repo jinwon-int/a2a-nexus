@@ -240,7 +240,7 @@ Usage:
     (--cleanup-timer writes <unit>.service/.timer for a daily cleanup; TTL from --ttl or A2A_DOCKER_RUNNER_WORKDIR_TTL;
      enabling the timer is left to the operator — see cleanupTimer.nextSteps in the output)
   a2a-docker-runner install --egress [--dry-run] [--env-file /etc/default/a2a-hermes-worker]
-    (#2395: needs A2A_DOCKER_RUNNER_EGRESS_MODE=observe|enforce; creates the --internal network and (re)creates the
+    (#2395: needs A2A_DOCKER_RUNNER_EGRESS_MODE=observe|enforce — unset means enforce on a trusted claude-code lane (#2589); creates the --internal network and (re)creates the
      labelled allowlist proxy container, then checks readiness; recreating drops open tunnels — run with no task in flight)
   a2a-docker-runner cleanup [--env-file /etc/default/a2a-hermes-worker] [--root /var/lib/openclaw-a2a/tasks] [--ttl 24h] [--dry-run]
     (cleanup reads only A2A_DOCKER_RUNNER_ROOT / --root; it does not validate the full runner config;

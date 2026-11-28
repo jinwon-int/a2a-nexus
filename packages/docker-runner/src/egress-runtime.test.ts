@@ -117,14 +117,47 @@ test("parseEgressMode defaults to off and rejects unknown values", () => {
   assert.throws(() => parseEgressMode("on"), /off, observe, enforce/);
 });
 
-test("mode off leaves the config exactly as before (no egress fields, bridge network)", async () => {
-  const config = await loadConfig({ ...trustedClaude });
+const EGRESS_KEYS = ["egressMode", "egressModeDefaulted", "egressNetwork", "egressProxyName", "egressProxyAllowlist", "egressStateDir"] as const;
+
+test("explicit mode off leaves the config exactly as before (no egress fields, bridge network)", async () => {
+  const config = await loadConfig({ ...trustedClaude, A2A_DOCKER_RUNNER_EGRESS_MODE: "off" });
   assert.equal(config.network, "bridge");
-  for (const key of ["egressMode", "egressNetwork", "egressProxyName", "egressProxyAllowlist", "egressStateDir"] as const) {
-    assert.equal(key in config, false, key);
+  for (const key of EGRESS_KEYS) assert.equal(key in config, false, key);
+});
+
+// a2a-nexus#2589 item 4: trusted default flips from bridge to enforce.
+test("unset mode defaults to enforce on a trusted claude-code lane and says so", async () => {
+  const config = await loadConfig({ ...trustedClaude });
+  assert.equal(config.egressMode, "enforce");
+  assert.equal(config.egressModeDefaulted, true);
+  assert.equal(config.network, "a2a-egress-internal");
+  assert.equal(config.egressProxyName, "a2a-egress-proxy");
+  assert.deepEqual(config.egressProxyAllowlist, CLAUDE_CODE_BASE);
+  // an explicit enforce carries no default marker, otherwise the same shape
+  const explicit = await loadConfig({ ...trustedClaude, A2A_DOCKER_RUNNER_EGRESS_MODE: "enforce" });
+  assert.equal("egressModeDefaulted" in explicit, false);
+  const { egressModeDefaulted: _marker, ...rest } = config;
+  assert.deepEqual(rest, explicit);
+});
+
+test("unset mode stays off where enforce has no measured base or the operator pinned a network", async () => {
+  for (const profile of ["codex", "hermes", "openclaw", "piri", "danso"]) {
+    const config = await loadConfig({ ...trustedClaude, A2A_DOCKER_RUNNER_PATCH_COMMAND_PROFILE: profile });
+    for (const key of EGRESS_KEYS) assert.equal(key in config, false, `${profile}:${key}`);
+    assert.equal(config.network, "bridge", profile);
   }
-  const explicitOff = await loadConfig({ ...trustedClaude, A2A_DOCKER_RUNNER_EGRESS_MODE: "off" });
-  assert.deepEqual(Object.keys(explicitOff).sort(), Object.keys(config).sort());
+  for (const network of ["bridge", "host"]) {
+    const pinned = await loadConfig({ ...trustedClaude, A2A_DOCKER_RUNNER_NETWORK: network });
+    for (const key of EGRESS_KEYS) assert.equal(key in pinned, false, `${network}:${key}`);
+    assert.equal(pinned.network, network);
+  }
+});
+
+test("unset mode stays off in public mode (network none)", async () => {
+  const { A2A_DOCKER_RUNNER_TRUSTED_OPERATOR: _trusted, ...publicClaude } = trustedClaude;
+  const config = await loadConfig({ ...publicClaude });
+  for (const key of EGRESS_KEYS) assert.equal(key in config, false, key);
+  assert.equal(config.network, "none");
 });
 
 test("observe routes the task network onto the managed internal network", async () => {

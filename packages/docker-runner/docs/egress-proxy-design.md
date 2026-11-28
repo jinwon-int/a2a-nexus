@@ -1,8 +1,10 @@
 # Egress control for trusted patch lanes — design (#2395 stage 2)
 
-Status: **implemented behind `A2A_DOCKER_RUNNER_EGRESS_MODE` (default `off`).**
-Proxy component (§5.4, #2415) and runner wiring (§5.3, §5.6) are in. No node runs
-it until an operator sets the mode and runs `install --egress` (per-node approval).
+Status: **implemented; `A2A_DOCKER_RUNNER_EGRESS_MODE` defaults to `enforce` on a
+trusted `claude-code` lane** without an explicit `A2A_DOCKER_RUNNER_NETWORK`
+(a2a-nexus#2589 item 4, §6.2), and to `off` everywhere else. Proxy component (§5.4,
+#2415) and runner wiring (§5.3, §5.6) are in. A node still needs `install --egress`
+(per-node approval) before an enforce task can start; `EGRESS_MODE=off` opts out.
 
 Stage 1 (#2397) made the gap visible:
 `doctor` reports `containerHardening.detail.egress.mode = "unrestricted"` and the
@@ -83,7 +85,10 @@ them. That is why §5 starts with an observe mode instead of a hand-written list
 
 ### 5.1 Modes
 
-`A2A_DOCKER_RUNNER_EGRESS_MODE = off | observe | enforce` (default `off` = today).
+`A2A_DOCKER_RUNNER_EGRESS_MODE = off | observe | enforce`. Unset means `enforce` for a
+trusted operator whose patch-command profile has a measured base allowlist (today
+`claude-code`) and no explicit `A2A_DOCKER_RUNNER_NETWORK`; otherwise unset means
+`off` (§6.2). Before a2a-nexus#2589 unset always meant `off`.
 
 - `off` — current behaviour (`--network bridge`).
 - `observe` — task containers use the internal network and the proxy, but the
@@ -296,6 +301,35 @@ with `wouldDeny` for a non-allowlisted host in observe.
 - `codex` and `danso` still have no measured set; their first
   real patch task must run in `observe` before `enforce` (or an operator
   supplies `A2A_DOCKER_RUNNER_EGRESS_PROXY_ALLOWLIST` explicitly).
+
+### 6.2 Trusted default flipped to `enforce` (a2a-nexus#2589 item 4, 2026-11-28)
+
+Every trusted worker that receives work now runs `enforce` with the profile base
+allowlist: the two patch workers (#2395), the observe PoC node (#2589 item 3,
+2026-11-27) and the four remaining analysis-only workers (#2589 item 2, 2026-11-28 —
+each an env line, `install --egress`, doctor `egressProxy ok`, an idle restart and an
+analysis canary through the proxy: allowed hosts passed, `example.com` 403, proxy
+bypass unresolvable, credentials removed). An unset mode therefore no longer means
+"unrestricted":
+
+| `EGRESS_MODE` | trusted, `claude-code`, no explicit network | anything else |
+|---|---|---|
+| unset | **`enforce`** (`egressModeDefaulted: true`; doctor says `(enforce, default)`) | `off` (unchanged) |
+| `off` | `off` — the opt-out, back to `--network bridge` | `off` |
+| `observe` / `enforce` | as set | as set (enforce still needs a base or env allowlist) |
+
+"Anything else" is public mode (`--network none` already), a profile without a
+measured base set (`codex`, `hermes`, `openclaw`, `piri`, `danso` — `enforce` would be
+a configuration error there until an observe run records their hosts) and an
+operator who pinned `A2A_DOCKER_RUNNER_NETWORK` (the explicit network wins instead of
+failing the config with a network conflict).
+
+**Rollout of this code (per-node approval):** a trusted claude-code worker whose env
+has no mode line and no proxy installed would start failing its tasks with
+`egress proxy not ready … run install --egress or set A2A_DOCKER_RUNNER_EGRESS_MODE=off`
+after it picks up this runner. Before deploying, either run `install --egress` on
+such a node (then the default needs no env line) or write `EGRESS_MODE=off` into its
+env on purpose. The nodes above already set `enforce` explicitly and are unaffected.
 
 ## 7. Open questions
 

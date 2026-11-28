@@ -919,7 +919,8 @@ export async function checkEgressProxy(config: RunnerConfig, exec?: EgressExec):
   if (!readiness.ready) {
     return { status: "fail", message: egressNotReadyMessage(readiness), detail: { ...detail, reason: readiness.reason } };
   }
-  return { status: "ok", message: `egress proxy ready (${config.egressMode}) on ${readiness.detail.network}`, detail };
+  const mode = config.egressModeDefaulted ? `${config.egressMode}, default` : config.egressMode;
+  return { status: "ok", message: `egress proxy ready (${mode}) on ${readiness.detail.network}`, detail };
 }
 
 export async function checkDeployedRevision(cwd = process.cwd(), upstreamRef = "origin/main"): Promise<OpsCheck> {
