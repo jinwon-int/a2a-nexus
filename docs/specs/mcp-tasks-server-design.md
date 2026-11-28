@@ -214,13 +214,52 @@ approval in the current workstream.
 2. **Server package, no-live:** stdio server against an in-process fake
    broker, with conformance tests for the capability gate, the error codes,
    per-request authorization, the refusal to start with a hub or operator
-   role, and the ban on REST reads.
+   role, and the ban on REST reads. Delivered: see §7.1.
 3. **Approval — local connection:** run the server on one operator node
    against the T1 broker through the existing private path. The broker is not
    restarted and its configuration is not changed. Rollback is removing
    the MCP registration.
 4. **Approval — wider use:** other nodes, notifications, and any Streamable
    HTTP transport.
+
+### 7.1 Step 2 as delivered (2026-11-28)
+
+Code: `packages/broker/src/mcp-tasks-server/` (`server.ts`, `broker-client.ts`,
+`spec-task.ts`, `created-task-store.ts`, `stdio.ts`), tests
+`mcp-tasks-server.test.ts`. There is no CLI entry point, no MCP registration,
+and no broker URL or credential wiring. Those belong to step 3.
+
+- **Location, a deliberate deviation from §3.** The code is a module inside
+  `packages/broker`, not a new workspace package. A new package also needs CI
+  path filters, cache jobs, the release-gate solution build, and a lockfile
+  entry, which is a lot of infrastructure for a no-live step. The §3
+  properties still hold and are pinned by an import-boundary test: server
+  modules import only `node:` built-ins, each other, the facade, and the shared
+  redactor (`a2a-attestation`). They never import broker core, the state
+  store, or the HTTP server, and no source refers to a REST `/tasks/` route.
+  Extracting the module into its own package is part of step 3.
+- **Broker access.** `JsonRpcBrokerClient` over `httpJsonRpcCall`. Every
+  call is `POST /a2a/jsonrpc` with the fixed identity headers and the edge
+  secret as a header. The secret never appears in errors. The tests' fake
+  broker is the real `InMemoryA2ABroker` behind the real `executeA2AJsonRpc`
+  with requester identity enforced, so the task-party check is the broker's
+  own. A cancel by a non-party (`-32012`) reads like an unknown task.
+- **Clarification is not offered (fail closed).** JSON-RPC `GetTask`
+  (`projectSpecTask`) carries the A2A state but no checkpoint id, decision
+  type, or `recordedAt`. The server cannot tell a clarification from an
+  operator decision, and it cannot build a G2 key. So every
+  `TASK_STATE_INPUT_REQUIRED` is an operator wait: `working`, no
+  `inputRequests`, poll at the cap. Offering clarification over MCP needs a
+  public-safe checkpoint summary in the broker projection. That is a separate
+  issue.
+- **Q3 (decided 2026-11-28):** a completed task's `result` reuses the broker's
+  public projection (status message and artifact text parts). It runs the
+  shared egress redactor (`redactSecrets`) and is capped at 16000 characters
+  with a truncation marker. Non-text parts are referenced by artifact id only.
+- **Q4 (decided 2026-11-28):** the created-task set is persisted per client
+  session in `<stateDir>/mcp-tasks/<sessionId>.json` (file 0600, directory
+  0700, atomic replace). The server refuses a symlinked, foreign-owned,
+  group- or other-accessible, or malformed store instead of starting empty.
 
 ## 8. Open questions
 
@@ -230,12 +269,12 @@ approval in the current workstream.
 - **Q2. REST `GET /tasks/:id`.** Should it get the same task-party check as
   JSON-RPC `GetTask`? This is independent of MCP. It also needs a separate
   issue.
-- **Q3. Result content.** A completed task's `result` carries worker output
+- **Q3. Result content.** *(Decided 2026-11-28, see §7.1.)* A completed task's `result` carries worker output
   into the model's context. Should the server pass the broker's projected
   artifact text as-is, or only a summary and links? Recommended: reuse the
   existing redacted projection (`projectSpecTask`) and set a size cap.
   Decide before step 2.
-- **Q4. Session scope.** The created-task set is in memory, so a server
+- **Q4. Session scope.** *(Decided 2026-11-28, see §7.1.)* The created-task set is in memory, so a server
   restart forgets it. The extension suggests clients persist task ids and
   resume polling. Should the server persist its set, for example in a file
   with mode 0600 under the node state directory, so that `claude --resume`
